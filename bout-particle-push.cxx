@@ -15,6 +15,7 @@
 #include <petscsystypes.h>
 #include <petscviewerhdf5.h>
 #include <reactions_lib/common_transformations.hpp>
+#include <reactions_lib/reaction_data/fixed_coefficient_data.hpp>
 #include <reactions_lib/transformation_wrapper.hpp>
 #include <string>
 #include <vector>
@@ -776,9 +777,14 @@ int main(int argc, char** argv) {
     auto dg0 = std::make_shared<PetscInterface::DMPlexProjectEvaluateDG>(
         neso_mesh, sycl_target, "DG", 0);
     const REAL iz_rate = Options::root()["VANTAGE_reactions"]["iz_rate"].withDefault(1.0);
-    auto iz_rate_data = FixedRateData(iz_rate);
+    // // weights W are reduced by d W / dt = - rate
+    // auto iz_rate_data = FixedRateData(iz_rate);
+    // weights W are reduced by d W / dt = - rate * W
+    auto iz_rate_data = FixedCoefficientData(iz_rate);
     main_species.set_id(0);
-    auto ionisation_reaction = ElectronImpactIonisation<FixedRateData, FixedRateData>(
+    // uncomment if using FixedRateData
+    // auto ionisation_reaction = ElectronImpactIonisation<FixedRateData, FixedRateData>(
+    auto ionisation_reaction = ElectronImpactIonisation<FixedCoefficientData, FixedCoefficientData>(
         A_particle_group->sycl_target, iz_rate_data, iz_rate_data, main_species,
         electron_species);
 
