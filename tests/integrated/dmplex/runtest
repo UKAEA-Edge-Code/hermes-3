@@ -5,6 +5,7 @@ from urllib.request import urlretrieve
 import numpy as np
 from boututils.run_wrapper import shell, launch, getmpirun
 from boutdata.collect import collect
+from boutdata.data import BoutOptionsFile
 from petsc4py import PETSc
 import zipfile
 import xhermes
@@ -20,14 +21,15 @@ It does this by:
 
 cwd = Path.cwd()
 case_path = cwd / "data"
-datafile = case_path / "BOUT.dmp.*.nc"
-inputfile = case_path / "BOUT.inp"
+datafile_path = case_path / "BOUT.dmp.*.nc"
+inputfile_path = case_path / "BOUT.inp"
 exec_path = cwd.parents[2] / "bout-particle-push"
 dmplex_path = cwd / "hypnotoad_dmplex_mesh_output.h5"
-logfile = cwd / "run.log"
+logfile_path = cwd / "run.log"
 
 gridzipfile = cwd / "Hypnotoad_examples.zip"
 gridurl = "https://zenodo.org/records/17966926/files/Hypnotoad_examples.zip"
+
 
 ### Define functions
 def get_DMPlex_vertices(dmplex_path):
@@ -87,50 +89,60 @@ def get_hypnotoad_vertices(gridfile):
 
 ### Prepare for test
 
-for gridfile in ["example_cdn.grd.nc",
-                 "example_ldn.grd.nc",
-                 "example_lsn.grd.nc",
-                 "example_udn.grd.nc",
-                 "example_udn2.grd.nc",
-                 "example_usn.grd.nc"]:
-    
+for gridfile in [
+    "example_cdn.grd.nc",
+    "example_ldn.grd.nc",
+    "example_lsn.grd.nc",
+    "example_udn.grd.nc",
+    "example_udn2.grd.nc",
+    "example_usn.grd.nc",
+]:
+
+    print("\n", "*" * 30, "\n")
     print(f"Testing {gridfile}")
 
     ### Remove old data file, log file and link if they exist
-    
+
     to_remove = []
     for file in case_path.glob(".BOUT.pid.*"):
         to_remove.append(file)
-        
+
     for file in case_path.glob("BOUT.log.*"):
         to_remove.append(file)
-        
+
     for file in case_path.glob("BOUT.dmp.*.nc"):
         to_remove.append(file)
-        
+
     for file in case_path.glob("BOUT.settings"):
         to_remove.append(file)
-        
-    if logfile.exists():
-        to_remove.append(logfile)
-        
+
+    if logfile_path.exists():
+        to_remove.append(logfile_path)
+
     if len(to_remove) > 0:
         for file in to_remove:
             shell(f"rm {file}")
-        
-        
+
     ## Download grids
     urlretrieve(gridurl, gridzipfile)
-    with zipfile.ZipFile("Hypnotoad_examples.zip", 'r') as z:
+    with zipfile.ZipFile("Hypnotoad_examples.zip", "r") as z:
         try:
             z.extractall(".")
         except Exception as e:
             print(e)
 
-
     ## Run Hermes-3 to generate DMPlex mesh
-    ncores = xhermes.HypnotoadGrid(gridfile).num_processors(1, 12)[0]  # Find how many cores to use
+
+    # Find how many cores to use
+    ncores = xhermes.HypnotoadGrid(gridfile).num_processors(1, 12)[0]
     print(f'"{gridfile}" : {ncores}')
+
+    # Change input file to select grid
+    inputfile = BoutOptionsFile(inputfile_path)
+    inputfile["mesh"]["file"] = gridfile
+    inputfile.write(inputfile_path, overwrite=True)
+
+    # Run
     s, out = launch(f"{exec_path} -d {case_path}", nproc=ncores, mthread=1, pipe=True)
 
     # Check if it crashed
@@ -140,18 +152,19 @@ for gridfile in ["example_cdn.grd.nc",
         exit(1)
 
     # Save output to log file
-    with open(logfile, "w") as f:
+    with open(logfile_path, "w") as f:
         f.write(out)
 
     # Check if Hermes-3 exception was thrown
-    with open(logfile, "r") as f:
+    with open(logfile_path, "r") as f:
         lines = f.readlines()
         for i, line in enumerate(lines):
             if "====== Exception thrown ======" in line:
                 message = lines[i + 1]
-                print(f" => DMPLex vertex match test failed for {gridfile}: \n{message}")
+                print(
+                    f" => DMPLex vertex match test failed for {gridfile}: \n{message}"
+                )
                 exit(1)
-
 
     ### Check vertices
 
@@ -165,7 +178,9 @@ for gridfile in ["example_cdn.grd.nc",
         Z_diff = abs(hypno_vertices[:, 1] - dmplex_vertices[i, 1])
 
         if not min(R_diff) < 1e-3 and min(Z_diff) < 1e-3:
-            raise AssertionError(f"DMPLex vertex match test failed for {gridfile}: Found DMPlex vertex with no match in Hypnotoad")
+            raise AssertionError(
+                f"DMPLex vertex match test failed for {gridfile}: Found DMPlex vertex with no match in Hypnotoad"
+            )
 
     # Ensure all Hypnotoad vertices exist in DMPLex
     # (Hypnotoad has duplicate vertices)
@@ -174,6 +189,6 @@ for gridfile in ["example_cdn.grd.nc",
         Z_diff = abs(dmplex_vertices[:, 1] - hypno_vertices[i, 1])
 
         if not min(R_diff) < 1e-3 and min(Z_diff) < 1e-3:
-            raise AssertionError(f"DMPLex vertex match test failed for {gridfile}: Found Hypnotoad vertex with no match in DMPlex")
-
-
+            raise AssertionError(
+                f"DMPLex vertex match test failed for {gridfile}: Found Hypnotoad vertex with no match in DMPlex"
+            )
