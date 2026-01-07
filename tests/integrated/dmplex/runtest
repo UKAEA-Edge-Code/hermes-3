@@ -50,16 +50,18 @@ def get_DMPlex_vertices(dmplex_path):
     dim = dm.getCoordinateDim()  # Number of dimensions in the grid
 
     ## Get vertices
+    # vertices are the simplest object, so depth = 0
     vertex_start, vertex_end = dm.getDepthStratum(
         0
-    )  # vertices are the simplest object, so depth = 0
+    )  
     R = []
     Z = []
 
+    # Find offset to locate matching coordinates to point p
     for p in range(vertex_start, vertex_end):
         off = section.getOffset(
             p
-        )  # Find offset to locate matching coordinates to point p
+        )  
 
         R.append(coords[off])
         Z.append(coords[off + 1])
