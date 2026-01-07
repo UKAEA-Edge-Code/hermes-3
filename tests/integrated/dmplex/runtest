@@ -28,7 +28,7 @@ dmplex_path = cwd / "hypnotoad_dmplex_mesh_output.h5"
 logfile_path = cwd / "run.log"
 
 gridzipfile = cwd / "Hypnotoad_examples.zip"
-gridurl = "https://zenodo.org/records/17966926/files/Hypnotoad_examples.zip"
+gridurl = "https://zenodo.org/records/18173856/files/Hypnotoad_examples_v1.1_fixLDN.zip"
 
 
 ### Define functions
