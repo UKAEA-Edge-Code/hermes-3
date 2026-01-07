@@ -101,8 +101,9 @@ for gridfile in [
     "example_usn.grd.nc",
 ]:
 
-    print("\n", "*" * 30, "\n")
-    print(f"Testing {gridfile}")
+    if verbose:
+        print("\n", "*" * 30, "\n")
+        print(f"Testing {gridfile}")
 
     ### Remove old data file, log file and link if they exist
 
@@ -177,10 +178,10 @@ for gridfile in [
 
     # Ensure all DMPLex vertices exist in Hypnotoad
     for i in range(dmplex_vertices.shape[0]):
-        R_diff = abs(hypno_vertices[:, 0] - dmplex_vertices[i, 0])
-        Z_diff = abs(hypno_vertices[:, 1] - dmplex_vertices[i, 1])
+        R_diff = abs(hypno_vertices[:, 0] - dmplex_vertices[i, 0])/hypno_vertices[:, 0]
+        Z_diff = abs(hypno_vertices[:, 1] - dmplex_vertices[i, 1])/hypno_vertices[:, 1]
 
-        if not min(R_diff) < 1e-3 and min(Z_diff) < 1e-3:
+        if not min(R_diff) < 1e-6 and min(Z_diff) < 1e-6:
             raise AssertionError(
                 f"DMPLex vertex match test failed for {gridfile}: Found DMPlex vertex with no match in Hypnotoad"
             )
@@ -188,10 +189,10 @@ for gridfile in [
     # Ensure all Hypnotoad vertices exist in DMPLex
     # (Hypnotoad has duplicate vertices)
     for i in range(hypno_vertices.shape[0]):
-        R_diff = abs(dmplex_vertices[:, 0] - hypno_vertices[i, 0])
-        Z_diff = abs(dmplex_vertices[:, 1] - hypno_vertices[i, 1])
+        R_diff = abs(dmplex_vertices[:, 0] - hypno_vertices[i, 0])/dmplex_vertices[:, 0]
+        Z_diff = abs(dmplex_vertices[:, 1] - hypno_vertices[i, 1])/dmplex_vertices[:, 1]
 
-        if not min(R_diff) < 1e-3 and min(Z_diff) < 1e-3:
+        if not min(R_diff) < 1e-6 and min(Z_diff) < 1e-6:
             raise AssertionError(
                 f"DMPLex vertex match test failed for {gridfile}: Found Hypnotoad vertex with no match in DMPlex"
             )
