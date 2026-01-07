@@ -18,6 +18,7 @@ It does this by:
 - Checks that all the vertices from the DMPlex exist in the Hypnotoad grid and vice versa
 """
 
+verbose = False
 
 cwd = Path.cwd()
 case_path = cwd / "data"
