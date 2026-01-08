@@ -49,7 +49,6 @@ def get_DMPlex_vertices(dmplex_path):
 
     coords = dm.getCoordinatesLocal().array  # Get all RZ coordinates
     section = dm.getCoordinateSection()
-    dim = dm.getCoordinateDim()  # Number of dimensions in the grid
 
     ## Get vertices
     # vertices are the simplest object, so depth = 0
