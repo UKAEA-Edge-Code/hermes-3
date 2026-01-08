@@ -14,8 +14,9 @@ import xhermes
 This test checks that the DMPLex and Hypnotoad grids have matching vertices.
 It does this by:
 - Downloading a set of Hypnotoad example grids
-- Running a simple NESO-Particles example to generate the DMPlex
-- Checks that all the vertices from the DMPlex exist in the Hypnotoad grid and vice versa
+- Running bout-particle-push to generate the DMPlex
+- Checking that all the vertices from the DMPlex exist in the Hypnotoad grid and vice versa
+- Repeating the above for 6 Hypnotoad example grids
 """
 
 verbose = False
