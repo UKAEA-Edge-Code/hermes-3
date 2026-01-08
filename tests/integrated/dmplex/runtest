@@ -175,24 +175,27 @@ for gridfile in [
     # Extract
     dmplex_vertices = get_DMPlex_vertices(dmplex_path)
     hypno_vertices = get_hypnotoad_vertices(gridfile)
+    
+    R_dmplex = dmplex_vertices[:, 0]
+    Z_dmplex = dmplex_vertices[:, 1]
+    R_hypno = hypno_vertices[:, 0]
+    Z_hypno = hypno_vertices[:, 1]
+
+    # Vertex position error tolerance is factor of characteristic geometry size
+    geometry_size = np.max(np.sqrt(R_hypno**2 + Z_hypno**2))
+    tolerance = 1e-6 * geometry_size
 
     # Ensure all DMPLex vertices exist in Hypnotoad
-    for i in range(dmplex_vertices.shape[0]):
-        R_diff = abs(hypno_vertices[:, 0] - dmplex_vertices[i, 0])/hypno_vertices[:, 0]
-        Z_diff = abs(hypno_vertices[:, 1] - dmplex_vertices[i, 1])/hypno_vertices[:, 1]
-
-        if not min(R_diff) < 1e-6 and min(Z_diff) < 1e-6:
-            raise AssertionError(
-                f"DMPLex vertex match test failed for {gridfile}: Found DMPlex vertex with no match in Hypnotoad"
-            )
-
+    for i in range(len(R_hypno)):
+        nearest_distance = np.min(np.sqrt((R_dmplex - R_hypno[i])**2 + (Z_dmplex - Z_hypno[i])**2))
+        
+        if not nearest_distance < tolerance:
+            raise AssertionError("Found DMPlex vertex with no match in Hypnotoad")
+        
     # Ensure all Hypnotoad vertices exist in DMPLex
     # (Hypnotoad has duplicate vertices)
-    for i in range(hypno_vertices.shape[0]):
-        R_diff = abs(dmplex_vertices[:, 0] - hypno_vertices[i, 0])/dmplex_vertices[:, 0]
-        Z_diff = abs(dmplex_vertices[:, 1] - hypno_vertices[i, 1])/dmplex_vertices[:, 1]
-
-        if not min(R_diff) < 1e-6 and min(Z_diff) < 1e-6:
-            raise AssertionError(
-                f"DMPLex vertex match test failed for {gridfile}: Found Hypnotoad vertex with no match in DMPlex"
-            )
+    for i in range(len(R_dmplex)):
+        nearest_distance = np.min(np.sqrt((R_hypno - R_dmplex[i])**2 + (Z_hypno - Z_dmplex[i])**2))
+        
+        if not nearest_distance < tolerance:
+            raise AssertionError("Found Hypnotoad vertex with no match in DMPlex")
