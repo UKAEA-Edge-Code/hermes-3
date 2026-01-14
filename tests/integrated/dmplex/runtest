@@ -147,9 +147,15 @@ for gridfile in grid_filenames:
     # Rename temp file with the correct name
     tmp_path.replace(gridzipfile_path)
 
-    with zipfile.ZipFile(gridzipfile_path, "r") as z:
+    with zipfile.ZipFile(gridzipfile_path, "r") as zf:
+
+        zip_contents = set(zf.namelist())
         try:
-            z.extractall(".")
+            # Extract only expected grids
+            for filename in grid_filenames:
+                if filename in zip_contents:
+                    zf.extract(filename, path=cwd)
+
         except Exception as e:
             print("Extracting test grids failed:", e)
 
