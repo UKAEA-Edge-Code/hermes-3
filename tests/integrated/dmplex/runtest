@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 import os
 from pathlib import Path
-from urllib.request import urlretrieve
 import numpy as np
+import urllib.request
+import shutil
 from boututils.run_wrapper import shell, launch, getmpirun
 from boutdata.collect import collect
 from boutdata.data import BoutOptionsFile
@@ -29,7 +30,7 @@ exec_path = cwd.parents[2] / "bout-particle-push"
 dmplex_path = cwd / "hypnotoad_dmplex_mesh_output.h5"
 logfile_path = cwd / "run.log"
 
-gridzipfile = cwd / "Hypnotoad_examples.zip"
+gridzipfile_path = cwd / "Hypnotoad_examples.zip"
 gridurl = "https://zenodo.org/records/18173856/files/Hypnotoad_examples_v1.1_fixLDN.zip"
 
 
@@ -127,13 +128,26 @@ for gridfile in [
         for file in to_remove:
             shell(f"rm {file}")
 
-    ## Download grids
-    urlretrieve(gridurl, gridzipfile)
-    with zipfile.ZipFile("Hypnotoad_examples.zip", "r") as z:
+    tmp_path = gridzipfile_path.with_name(gridzipfile_path.name + ".tmp")
+
+    with urllib.request.urlopen(gridurl, timeout=60) as response:
+
+        if response.status != 200:
+            raise RuntimeError(f"Test grid download failed: HTTP {response.status}")
+        
+        # Copy bits of the file from response to a temp file
+        # This ensures no partial files are left if the download fails
+        with open(tmp_path, "wb") as out_file:
+            shutil.copyfileobj(response, out_file)
+
+    # Rename temp file with the correct name
+    tmp_path.replace(gridzipfile_path)
+
+    with zipfile.ZipFile(gridzipfile_path, "r") as z:
         try:
             z.extractall(".")
         except Exception as e:
-            print(e)
+            print("Extracting test grids failed:", e)
 
     ## Run Hermes-3 to generate DMPlex mesh
 
