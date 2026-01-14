@@ -215,6 +215,12 @@ for gridfile in grid_filenames:
     geometry_size = np.max(np.sqrt(R_hypno**2 + Z_hypno**2))
     tolerance = 1e-6 * geometry_size
 
+    # Hypnotoad has duplicate vertices due to overlapping vertices between cells.
+    # The vertices are not in an exactly identical position due to finite precision
+    # on the equilibrium interpolation done in Hypnotoad.
+    # The test just ensures that every vertex in one mesh has a matching vertex in 
+    # the other mesh within the tolerance.
+    
     # Ensure all DMPLex vertices exist in Hypnotoad
     for i in range(len(R_hypno)):
         nearest_distance = np.min(np.sqrt((R_dmplex - R_hypno[i])**2 + (Z_dmplex - Z_hypno[i])**2))
@@ -223,7 +229,6 @@ for gridfile in grid_filenames:
             raise AssertionError("Found DMPlex vertex with no match in Hypnotoad")
         
     # Ensure all Hypnotoad vertices exist in DMPLex
-    # (Hypnotoad has duplicate vertices)
     for i in range(len(R_dmplex)):
         nearest_distance = np.min(np.sqrt((R_hypno - R_dmplex[i])**2 + (Z_hypno - Z_dmplex[i])**2))
         
