@@ -21,7 +21,7 @@ spack:
     unify: when_possible
   repos:
   - ./external/BOUT-spack
-  - ./external/Reactions/Reactions-repo
+  - ./external/Reactions/VANTAGE-repo
   - ./external/Reactions/NESO-Spack
   - $spack/var/spack/repos/builtin
   packages:
