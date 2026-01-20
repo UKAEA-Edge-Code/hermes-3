@@ -5,7 +5,7 @@
 spack:
   # add package specs to the `specs` list
   specs:
-  - hermes-3%gcc+petsc+reactions ^py-numpy@1.26.4 ^vantage-reactions.reactions~nvcxx+enable_tests
+  - hermes-3%gcc+petsc+vantagereactions ^py-numpy@1.26.4 ^vantage.vantagereactions~nvcxx+enable_tests
     ^neso.neso-particles~nvcxx+petsc+build_tests ^openblas ^neso.adaptivecpp ^hdf5
   - cmake@3.30.5
   - py-meshio
@@ -37,9 +37,9 @@ spack:
     hermes-3:
       path: .
       spec: hermes-3@develop
-    reactions:
+    vantagereactions:
       path: ./external/Reactions
-      spec: reactions@working
+      spec: vantagereactions@working
     neso-particles:
       path: ./external/Reactions/neso-particles
       spec: neso-particles@working
