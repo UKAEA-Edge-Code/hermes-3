@@ -12,7 +12,6 @@ spack:
   - py-petsc4py
   - py-h5py
   - py-matplotlib+animation
-  - py-ipykernel
   - py-pip
   - py-xbout
   - py-xhermes
