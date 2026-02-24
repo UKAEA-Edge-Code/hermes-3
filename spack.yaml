@@ -5,15 +5,17 @@
 spack:
   # add package specs to the `specs` list
   specs:
-  - hermes-3+vantagereactions ^boutpp+petsc+sundials ^petsc+hypre+mumps ^py-numpy@1.26.4 ^vantage.vantagereactions+enable_tests
-    ^neso.neso-particles~nvcxx+petsc+build_tests ^openblas ^neso.adaptivecpp ^hdf5 %gcc
+  - hermes-3+vantagereactions ^boutpp+petsc+sundials ^petsc+hypre+mumps ^py-numpy@1.26.4 ^vantage.vantagereactions~enable_tests
+    ^neso.neso-particles~nvcxx+petsc~build_tests ^openblas ^neso.adaptivecpp ^hdf5 %gcc
   - cmake
   - py-meshio
   - py-petsc4py
   - py-h5py
   - py-matplotlib+animation
-  - py-ipykernel
   - py-pip
+  - py-xbout
+  - py-xhermes
+  - py-boutdata
   view:
     gcc:
       root: ./views/gcc
@@ -47,4 +49,13 @@ spack:
     neso-particles:
       path: ./external/Reactions/neso-particles
       spec: neso-particles@working
+    py-xhermes:
+      path: ./external/xhermes
+      spec: py-xhermes
+    py-xbout:
+      path: ./external/xbout
+      spec: py-xbout
+    py-boutdata:
+      path: ./external/boutdata
+      spec: py-boutdata
 
