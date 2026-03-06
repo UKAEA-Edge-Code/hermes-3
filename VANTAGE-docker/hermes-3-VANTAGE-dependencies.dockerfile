@@ -1,9 +1,9 @@
 # Build stage with Spack pre-installed and ready to be used
 FROM spack/ubuntu-noble:1.1.0
 
-RUN apt update && apt upgrade -y 
-RUN apt install -y git
-
+RUN apt update && \
+ apt install -y git --no-install-recommends \
+ && rm -rf /var/lib/apt/lists/*
 # use develop version of spack repos
 RUN sed -i '/^[[:space:]]*branch:/ s|releases/v2025\.11|develop|g' /opt/spack/etc/spack/defaults/base/repos.yaml
 # update spack repos
