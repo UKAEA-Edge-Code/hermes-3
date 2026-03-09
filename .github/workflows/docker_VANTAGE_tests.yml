@@ -15,7 +15,7 @@ jobs:
   docker_spack_install_tests:
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/UKAEA-Edge-Code/hermes-3:edge
+      image: ghcr.io/ukaea-edge-code/hermes-3:edge
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.github_token }}
