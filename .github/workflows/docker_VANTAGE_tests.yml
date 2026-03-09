@@ -25,7 +25,8 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
       - name: Install
-        run: source /opt/spack/share/spack/setup-env.sh &&
+        run: git submodule update --init --recursive &&
+             source /opt/spack/share/spack/setup-env.sh &&
              spack env activate . -v gcc &&
              spack concretize -f &&
              spack install -j 4
