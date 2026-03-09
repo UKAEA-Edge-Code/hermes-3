@@ -13,6 +13,7 @@ defaults:
 
 jobs:
   docker_spack_install_tests:
+    runs-on: ubuntu-latest
     
     container:
     image: ghcr.io/UKAEA-Edge-Code/hermes-3:${{branch}}
