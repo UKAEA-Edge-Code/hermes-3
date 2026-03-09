@@ -14,19 +14,16 @@ defaults:
 jobs:
   docker_spack_install_tests:
     runs-on: ubuntu-latest
-    
     container:
-    image: ghcr.io/UKAEA-Edge-Code/hermes-3:${{branch}}
-    
-    credentials:
-      username: ${{ github.actor }}
-      password: ${{ secrets.github_token }}
-    
-    
+      image: ghcr.io/UKAEA-Edge-Code/hermes-3:${{branch}}  
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.github_token }}
+    permissions:
+      packages: read
     steps:
       - name: Check out repository
         uses: actions/checkout@v
-
       - name: Inspect repo
         run: ls
       - name : hello world
