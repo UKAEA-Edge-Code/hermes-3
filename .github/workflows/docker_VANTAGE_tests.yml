@@ -24,7 +24,13 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
-      - name: Inspect repo
-        run: ls
-      - name : hello world
-        run: echo "Hello world"
+      - name: Install
+        run: source /opt/spack/share/spack/setup-env.sh &&
+             . activate_h3env &&
+             spack concretize -f &&
+             spack install -j 4
+      - name : Run tests
+        run: source /opt/spack/share/spack/setup-env.sh &&
+             . activate_h3env &&
+             spack cd -b hermes-3 &&
+             ctest -j 4 --output-on-failure --timeout 300
