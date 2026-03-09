@@ -1,0 +1,33 @@
+---
+name: hermes-3 + VANTAGE Tests
+on:
+  push:
+    branches:
+      - '**'
+  pull_request:
+    branches:
+      - '**'  # This will trigger for PRs against any branch
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  docker_spack_install_tests:
+    
+    container:
+    image: ghcr.io/UKAEA-Edge-Code/hermes-3:${{branch}}
+    
+    credentials:
+      username: ${{ github.actor }}
+      password: ${{ secrets.github_token }}
+    
+    
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v
+
+      - name: Inspect repo
+        run: ls
+      - name : hello world
+        run: echo "Hello world"
