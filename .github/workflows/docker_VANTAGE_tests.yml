@@ -1,4 +1,3 @@
----
 name: hermes-3 + VANTAGE Tests
 on:
   push:
