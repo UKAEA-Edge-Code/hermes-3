@@ -13,6 +13,9 @@ env:
   IMAGE_NAME: UKAEA-Edge-Code/hermes-3
   DOCKERFILE: VANTAGE-docker/hermes-3-VANTAGE-dependencies.dockerfile
 
+permissions:
+  packages: write
+
 jobs:
 
   build-final-image:
