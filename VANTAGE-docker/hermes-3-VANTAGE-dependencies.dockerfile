@@ -16,24 +16,24 @@ RUN git clone https://github.com/UKAEA-Edge-Code/hermes-3.git hermes-3
 WORKDIR /root/hermes-3
 RUN git submodule update --init --recursive
 
-# Install hermes-3 dependencies via spack
-# Activate the hermes-3 environment, install dependencies
-RUN <<EOF 
-spack env activate . -v gcc
-# Install the dependencies
-spack install -j 4 --only dependencies
-EOF
-# uninstall any top-level packages
-RUN <<EOF 
-spack env activate . -v gcc
-# Uninstall the packages that we expect to develop regularly
-spack uninstall -y --dependents boutpp@develop || true
-spack uninstall -y --dependents vantagereactions@working || true
-spack uninstall -y --dependents neso-particles@working || true
-EOF
+# # Install hermes-3 dependencies via spack
+# # Activate the hermes-3 environment, install dependencies
+# RUN <<EOF 
+# spack env activate . -v gcc
+# # Install the dependencies
+# spack install -j 4 --only dependencies
+# EOF
+# # uninstall any top-level packages
+# RUN <<EOF 
+# spack env activate . -v gcc
+# # Uninstall the packages that we expect to develop regularly
+# spack uninstall -y --dependents boutpp@develop || true
+# spack uninstall -y --dependents vantagereactions@working || true
+# spack uninstall -y --dependents neso-particles@working || true
+# EOF
 # set workdir back to /root
 WORKDIR /root
 # remove hermes-3 clone, leaving dependencies installed
-RUN rm -rf /root/hermes-3
+# RUN rm -rf /root/hermes-3
 
 ENTRYPOINT ["/bin/bash"]
