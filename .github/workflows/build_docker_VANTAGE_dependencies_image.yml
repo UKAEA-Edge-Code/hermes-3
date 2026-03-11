@@ -1,11 +1,11 @@
 name: Build hermes-3+vantagereactions dependencies Docker image
 
-# Configures this workflow to run every time a change is pushed to the master branch,
+# Configures this workflow to run every time a change is pushed to the default branch in this repo,
 # or when manually triggered.
 on:
-  # push:
-  #   branches:
-  #     - '**'
+  push:
+    branches:
+      - 'VANTAGE-Reactions-Coupling/dev'
   workflow_dispatch:  # Allows manual triggering
 
 env:
