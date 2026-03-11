@@ -24,8 +24,9 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
+          submodules: recursive
           fetch-depth: 1
 
       # Set up BuildKit Docker container builder to be able to build

@@ -10,16 +10,19 @@ RUN sed -i '/^[[:space:]]*branch:/ s|releases/v2025\.11|develop|g' /opt/spack/et
 RUN spack repo update
 # find the gcc compiler
 RUN spack compiler find gcc
-# clone the hermes-3 repo
-RUN git clone https://github.com/UKAEA-Edge-Code/hermes-3.git hermes-3
-# update the submodules
+# copy the files in the hermes-3 repo needed to install dependencies
+COPY ./external /root/hermes-3/external
+COPY ./spack.yaml /root/hermes-3/spack.yaml
+# set the workdir
 WORKDIR /root/hermes-3
-RUN git submodule update --init --recursive
 
 # Install hermes-3 dependencies via spack
 # Activate the hermes-3 environment, install dependencies
 RUN <<EOF 
 spack env activate . -v gcc
+# Concretize (in the case the external dir above is a local dir
+# where an `$ spack install` has already taken place)
+spack concretize -f
 # Install the dependencies
 spack install -j 4 --only dependencies
 # Uninstall the top-level packages that we expect to develop regularly
