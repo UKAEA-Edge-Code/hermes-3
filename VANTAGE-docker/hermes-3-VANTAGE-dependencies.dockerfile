@@ -20,9 +20,6 @@ WORKDIR /root/hermes-3
 # Activate the hermes-3 environment, install dependencies
 RUN <<EOF 
 spack env activate . -v gcc
-# Concretize (in the case the external dir above is a local dir
-# where an `$ spack install` has already taken place)
-spack concretize -f
 # Install the dependencies
 spack install -j 4 --only dependencies
 # Uninstall the top-level packages that we expect to develop regularly
