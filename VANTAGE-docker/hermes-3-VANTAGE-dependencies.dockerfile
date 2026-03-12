@@ -1,5 +1,11 @@
 # Build stage with Spack pre-installed and ready to be used
-FROM spack/ubuntu-noble:1.1.0
+FROM spack/ubuntu-noble@sha256:a1c7d1dcfea874f74ec827851f04fc116ca54869c30a766c92c5299967a4f33c
+# above FROM equivalent to
+# FROM spack/ubuntu-noble:1.1.0
+# the image sha256 hash is obtained from the following url
+# https://hub.docker.com/layers/spack/ubuntu-noble/1.1.0/images/sha256-a1c7d1dcfea874f74ec827851f04fc116ca54869c30a766c92c5299967a4f33c
+# we use the sha256 hash to pin to a specific version
+# in case the image associated with tag :1.1.0 is updated
 
 RUN apt update && \
  apt install -y git --no-install-recommends \
