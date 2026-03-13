@@ -37,4 +37,4 @@ jobs:
         run: source /opt/spack/share/spack/setup-env.sh &&
              spack env activate . -v gcc &&
              spack cd -b hermes-3 &&
-             ctest -j 4 --output-on-failure --timeout 300
+             ctest -j 1 --output-on-failure --timeout 300
