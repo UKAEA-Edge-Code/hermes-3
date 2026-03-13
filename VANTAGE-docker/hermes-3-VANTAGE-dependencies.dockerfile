@@ -15,7 +15,7 @@ RUN sed -i '/^[[:space:]]*branch:/ s|releases/v2025\.11|develop|g' /opt/spack/et
 # update spack repos
 RUN spack repo update
 # find the gcc compiler
-RUN spack compiler find gcc
+RUN spack compiler find
 # copy the files in the hermes-3 repo needed to install dependencies
 COPY ./external /root/hermes-3/external
 COPY ./spack.yaml /root/hermes-3/spack.yaml
