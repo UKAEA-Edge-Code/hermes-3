@@ -10,7 +10,7 @@ import urllib.request
 import xhermes
 
 gen_data = False
-verbose = False
+verbose = True
 rtol = 1e-6
 atol = 1e-8
 
