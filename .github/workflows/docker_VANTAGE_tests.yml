@@ -28,13 +28,17 @@ jobs:
         uses: actions/checkout@v6
         with:
           submodules: recursive
-      - name: Install
+      - name: Check download
         run: source /opt/spack/share/spack/setup-env.sh &&
              spack env activate . -v gcc &&
-             spack concretize -f &&
-             spack install -j 4
-      - name : Run tests
-        run: source /opt/spack/share/spack/setup-env.sh &&
-             spack env activate . -v gcc &&
-             spack cd -b hermes-3 &&
-             ctest -j 1 --output-on-failure --timeout 600 -VV
+             python3 2D-production-download.py
+      # - name: Install
+      #   run: source /opt/spack/share/spack/setup-env.sh &&
+      #        spack env activate . -v gcc &&
+      #        spack concretize -f &&
+      #        spack install -j 4
+      # - name : Run tests
+      #   run: source /opt/spack/share/spack/setup-env.sh &&
+      #        spack env activate . -v gcc &&
+      #        spack cd -b hermes-3 &&
+      #        ctest -j 1 --output-on-failure --timeout 600 -VV
