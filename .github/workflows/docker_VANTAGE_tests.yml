@@ -46,7 +46,7 @@ jobs:
         run: source /opt/spack/share/spack/setup-env.sh &&
              spack env activate . -v gcc &&
              chmod +x 2D-production-download.py &&
-             cp 2D-production-download.py $(spack location -b hermes-3)/tests/integrated/2D-production/
+             cp 2D-production-download.py $(spack location -b hermes-3)/tests/integrated/2D-production/ &&
              spack cd -b hermes-3 &&
              ./tests/integrated/2D-production/./2D-production-download.py &&
              ctest -j 1 --output-on-failure --timeout 300 -VV
