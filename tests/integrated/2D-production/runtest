@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 import urllib.request
 import xhermes
-
+print("step 0")
 gen_data = False
 verbose = True
 rtol = 1e-6
@@ -36,9 +36,10 @@ expected_filenames = [
     "BOUT.restart.9.nc",
     "grid_test2_allpump.nc",
 ]
-
+print("step 1")
 if not Path(this_dir / expected_filenames[-1]).is_file():
     ## Download files
+    print("step 1: attempt to download files")
     tmp_path = zipfile_path.with_name(zipfile_path.name + ".tmp")
 
     with urllib.request.urlopen(url, timeout=60) as response:
@@ -54,7 +55,7 @@ if not Path(this_dir / expected_filenames[-1]).is_file():
 
     # Rename temp file with the correct name
     tmp_path.replace(zipfile_path)
-
+    print("step 1: attempt to extract files")
     with zipfile.ZipFile(zipfile_path, "r") as zf:
         zip_contents = set(zf.namelist())
         try:
@@ -79,6 +80,7 @@ if not Path(this_dir / expected_filenames[-1]).is_file():
     if verbose:
         print("2D-Production test: downloaded and extracted files")
 
+print("step 2")
 ## Run test
 if not Path("hermes-3").is_file():
     shell("ln -s ../../../hermes-3 hermes-3")
@@ -88,7 +90,7 @@ runcmd = getmpirun().split(" ")[0] + " -np"
 # Allow oversubscription for OpenMPI via env var (silently ignored by MPICH,
 # which does not enforce slot limits and does not support --oversubscribe)
 os.environ["OMPI_MCA_rmaps_base_oversubscribe"] = "yes"
-
+print("step 3")
 s, out = launch_safe("./hermes-3 -d data", runcmd=runcmd, nproc=10, pipe=True)
 
 if s != 0:
@@ -98,7 +100,7 @@ if s != 0:
 
 if verbose:
     print("2D-Production test: completed simulation")
-
+print("step 4")
 # Load case
 ds = xhermes.open_hermesdataset(
     datapath=output_path,
