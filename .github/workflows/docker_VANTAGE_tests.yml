@@ -35,7 +35,8 @@ jobs:
              spack env view regenerate &&
              spack find && which python3 &&
              chmod +x 2D-production-download.py &&
-             ./2D-production-download.py
+             mkdir download-dir && cp 2D-production-download.py download-dir/ &&
+             cd download-dir && ./2D-production-download.py && ls
              # python3 2D-production-download.py &&
       - name: Install
         run: source /opt/spack/share/spack/setup-env.sh &&
@@ -49,4 +50,5 @@ jobs:
              cp 2D-production-download.py $(spack location -b hermes-3)/tests/integrated/2D-production/ &&
              spack cd -b hermes-3 &&
              ./tests/integrated/2D-production/./2D-production-download.py &&
+             ls ./tests/integrated/2D-production/ &&
              ctest -j 1 --output-on-failure --timeout 300 -VV
