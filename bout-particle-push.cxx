@@ -1015,33 +1015,26 @@ int main(int argc, char** argv) {
 
     // Calculate marker weights
 
-    // Get the total volume of the rank, total volume of domain and array of cell
-    auto [V_tot_local, V_tot_global, V_cells] =
-        calc_V_tot_local(marker_group->sycl_target, neso_mesh, norms);
 
-    
     // Add particle property: number of particles in the local cell
     // From demo app: "distribute_n_part_cell"
-    for (int cellx = 0; cellx < marker_group->domain->mesh->get_cell_count(); cellx++)
+    for (int ic = 0; ic < marker_group->domain->mesh->get_cell_count(); ic++)
     {
-      int n_part_cell = marker_group->get_npart_cell(cellx);
+      int n_part_cell = marker_group->get_npart_cell(ic);
       particle_loop(
           "Update N_CELL prop", marker_group,
           [=](auto n_cell_prop) { n_cell_prop.at(0) = n_part_cell; },
           Access::write(Sym<INT>("N_CELL")))
-          ->execute(cellx);
+          ->execute(ic);
     }
 
     const int num_cells = marker_group->domain->mesh->get_cell_count();
-    NESOASSERT((V_cells.size() == num_cells),
-             "Number elements in V_Cells doesn't match the number of cells in "
-             "domain.");
 
     // Calculate weight for each marker particle
     // based on FLUID_DENSITY and N_CELL properties contained in same particle.
     // TODO: implement normalisation. dens_norm is currently 1. 
-    for (int cellx = 0; cellx < num_cells; cellx++) {
-      REAL V_cell = V_cells[cellx];
+    for (int ic = 0; ic < num_cells; ic++) {
+      REAL V_cell = neso_mesh->dmh->get_cell_volume(ic);
       particle_loop(
           "Update weight of ions", marker_group,
           [=](auto n_cell_prop, auto ion_dens_prop, auto weight_prop) {
@@ -1052,7 +1045,7 @@ int main(int argc, char** argv) {
           Access::read(Sym<INT>("N_CELL")),
           Access::read(Sym<REAL>("FLUID_DENSITY")),
           Access::write(Sym<REAL>("WEIGHT")))
-          ->execute(cellx);
+          ->execute(ic);
     }
 
     // Define marker species and reaction rates
