@@ -935,10 +935,10 @@ int main(int argc, char** argv) {
         initial_distribution[Sym<REAL>("POSITION")][px][dimx] = positions[dimx][px];
         initial_distribution[Sym<REAL>("VELOCITY")][px][dimx] = velocities[dimx][px];
       }
-      initial_distribution[Sym<REAL>("ION_DENSITY")][px][0] = 1.0;
+      initial_distribution[Sym<REAL>("ION_DENSITY")][px][0] = background_ion_density;
       initial_distribution[Sym<REAL>("ION_SOURCE_DENSITY")][px][0] = 0.0;
       initial_distribution[Sym<REAL>("ION_SOURCE_ENERGY")][px][0] = 0.0;
-      initial_distribution[Sym<REAL>("ELECTRON_DENSITY")][px][0] = 1.0;
+      initial_distribution[Sym<REAL>("ELECTRON_DENSITY")][px][0] = background_ion_density;
       initial_distribution[Sym<REAL>("ELECTRON_SOURCE_DENSITY")][px][0] = 0.0;
       initial_distribution[Sym<REAL>("ELECTRON_SOURCE_ENERGY")][px][0] = 0.0;
       for (int dimx = 0; dimx < ndim; dimx++) {
