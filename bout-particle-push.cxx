@@ -534,7 +534,7 @@ void update_ion_density_in_place(
   ion_source_density_zeroer->transform(std::make_shared<ParticleSubGroup>(A_particle_group));
 }
 
-void calculate_density_in_place(
+void calculate_neutral_density_in_place(
     Field2D& density, std::shared_ptr<PetscInterface::DMPlexProjectEvaluateDG>& dg0,
     std::shared_ptr<ParticleGroup>& A_particle_group, std::vector<double>& h_project1) {
   Mesh* bout_mesh = density.getMesh();
@@ -569,7 +569,7 @@ void calculate_fluid_moments_in_place(
   // calculate all of the fluid moments required for the moment, from data in
   // the particle group. Set to zero any particle properties needed in preparation
   // for the next time step.
-  calculate_density_in_place(neutral_density, dg0, A_particle_group, h_project1);
+  calculate_neutral_density_in_place(neutral_density, dg0, A_particle_group, h_project1);
 
   // Update ion_density with ionisation ION_DENSITY_SOURCE
   update_ion_density_in_place(ion_density, accumulator_transform_iz, A_particle_group,
@@ -1307,9 +1307,7 @@ int main(int argc, char** argv) {
     //                                  neso_mesh);
 
     // Calculate neutral density and sources for initial condition
-    calculate_density_in_place(neutral_density, dg0, A_particle_group, h_project1);
-    source_manager.update_source("Siz"); // TODO: do all sources at once
-    source_manager.update_source("Srec");
+    calculate_neutral_density_in_place(neutral_density, dg0, A_particle_group, h_project1);
     
     // diagnose the initial condition
     std::string particle_data_filename = make_output_path(
@@ -1345,9 +1343,7 @@ int main(int argc, char** argv) {
       //                                 ion_source_density_zeroer,
       //                                 neso_mesh);
 
-      calculate_density_in_place(neutral_density, dg0, A_particle_group, h_project1);
-      source_manager.update_source("Siz"); // TODO: do all sources at once
-      source_manager.update_source("Srec");
+      calculate_neutral_density_in_place(neutral_density, dg0, A_particle_group, h_project1);
       Field2D Siz = source_manager.get_data("Siz");
       Field2D Srec = source_manager.get_data("Srec");
 
