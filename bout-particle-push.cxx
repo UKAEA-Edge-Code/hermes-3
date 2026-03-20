@@ -776,11 +776,14 @@ void check_mass_conservation(double total_mass_final, double total_mass_initial,
 }
 
 VantageSourceManager::VantageSourceManager(
-    std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh, Mesh* bout_mesh) {
+    std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh, 
+    Mesh* bout_mesh,
+    const std::map<std::string, BoutReal>& norms) {
 
   // Store DMPlex and BOUT++ mesh
   this->neso_mesh = neso_mesh;
   this->bout_mesh = bout_mesh;
+  this->norms = norms;
 }
 
 // Register new source with the manager and initialise its data
@@ -806,7 +809,8 @@ Field2D VantageSourceManager::get_data(const std::string& hermes_source_name) {
 }
 
 // Update the source from VANTAGE and reset the VANTAGE data/accumulator
-void VantageSourceManager::update_source(const std::string& hermes_source_name) {
+void VantageSourceManager::update_source(const std::string& hermes_source_name,
+                                         double dt) {
   VantageSource& source = this->sources[hermes_source_name];
 
   std::vector<CellData<double>> accumulated_1d =
@@ -821,6 +825,10 @@ void VantageSourceManager::update_source(const std::string& hermes_source_name) 
     }
   }
 
+  // Convert from weight per volume to density per unit time, then normalise
+  // Assumng that dt is in normalised units already
+  source.source_data *= norms["N_w"] / dt / norms["Nnorm"];
+
   // Fill internal guards
   bout_mesh->communicate(source.source_data);
   // Reset the accumulator object
@@ -830,9 +838,9 @@ void VantageSourceManager::update_source(const std::string& hermes_source_name) 
 }
 
 // Update all sources
-void VantageSourceManager::update_all_sources() {
+void VantageSourceManager::update_all_sources(double dt) {
   for (auto& [hermes_source_name, source] : this->sources) {
-    update_source(hermes_source_name);
+    update_source(hermes_source_name, dt);
   }
 }
 
@@ -1158,7 +1166,7 @@ int main(int argc, char** argv) {
     // Wrappers & controllers
     // ------------------------------------------------------------------------------
 
-    VantageSourceManager source_manager(neso_mesh, bout_mesh);
+    VantageSourceManager source_manager(neso_mesh, bout_mesh, norms);
 
     const REAL remove_threshold =
         Options::root()["VANTAGE_reactions"]["remove_threshold"].withDefault(1.0e-10);
@@ -1315,7 +1323,7 @@ int main(int argc, char** argv) {
 
     // Calculate neutral density and sources for initial condition
     calculate_neutral_density_in_place(neutral_density, dg0, A_particle_group, h_project1);
-    source_manager.update_all_sources();
+    source_manager.update_all_sources(dt);
     
     // diagnose the initial condition
     std::string particle_data_filename = make_output_path(
@@ -1352,12 +1360,13 @@ int main(int argc, char** argv) {
       //                                 neso_mesh);
 
       calculate_neutral_density_in_place(neutral_density, dg0, A_particle_group, h_project1);
-      source_manager.update_all_sources();
+      source_manager.update_all_sources(dt);
       Field2D Siz = source_manager.get_data("Siz");
       Field2D Srec = source_manager.get_data("Srec");
 
       // "Solve" density
-      ion_density += Siz + Srec;   // FIXME: Shouldn't this be multiplied by the timestep?
+      // Sources are in normalised m^-3 s^-1, so need to multiply by dt
+      ion_density += (Siz + Srec) * dt;
 
       // diagnose timestep stepx
       update_diagnostics(neutral_density, ion_density, dg0, A_particle_group, neso_mesh,

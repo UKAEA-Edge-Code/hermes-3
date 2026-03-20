@@ -24,11 +24,15 @@ struct VantageSource {
   Field2D source_data;
 };
 
-//
+/// @brief  Class to manage reaction channel sources from VANTAGE. 
+/// Source terms from VANTAGE are extracted from the accumulator.
+/// These are then converted to actual sources, e.g. units of m^-3 s^-1 for a
+/// density source.
 class VantageSourceManager {
 public:
   VantageSourceManager(std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh,
-                       Mesh* bout_mesh);
+                       Mesh* bout_mesh,
+                       const std::map<std::string, BoutReal>& norms);
 
   Mesh* bout_mesh;
 
@@ -41,10 +45,13 @@ public:
 
   // Update the Hermes-3 source field using the accumulated data from corresponding
   // VANTAGE source
-  void update_source(const std::string& hermes_source_name);
+  // Accumulated source is in total weight. Divide by volume to get weight/m^3,
+  // then by timestep to get weight/m^3/s, and finally multiply N_w to get 
+  // particles/m^3/s and divide by Nnorm to keep normalised units. 
+  void update_source(const std::string& hermes_source_name, double dt);
 
   // Call update_source on all sources
-  void update_all_sources();
+  void update_all_sources(double dt);
 
   // Return data for a given Hermes-3 source name
   Field2D get_data(const std::string& hermes_source_name);
@@ -52,6 +59,7 @@ public:
 private:
   std::map<std::string, VantageSource> sources;
   std::shared_ptr<PetscInterface::DMPlexInterface> neso_mesh;
+  std::map<std::string, BoutReal> norms;
 };
 
 /**
@@ -65,7 +73,7 @@ private:
 
 inline auto calc_V_tot_local(SYCLTargetSharedPtr sycl_target,
                              std::shared_ptr<PetscInterface::DMPlexInterface> mesh,
-                             std::map<std::string, double> &norms) {
+                             std::map<std::string, double>& norms) {
   auto num_cells = mesh->get_cell_count();
 
   std::vector<REAL> V_cells;
