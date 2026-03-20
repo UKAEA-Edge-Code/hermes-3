@@ -829,6 +829,13 @@ void VantageSourceManager::update_source(const std::string& hermes_source_name) 
   source.zeroer->transform(std::make_shared<ParticleSubGroup>(source.particle_group));
 }
 
+// Update all sources
+void VantageSourceManager::update_all_sources() {
+  for (auto& [hermes_source_name, source] : this->sources) {
+    update_source(hermes_source_name);
+  }
+}
+
 int main(int argc, char** argv) {
   // initialise_mpi(&argc, &argv);
   // attempt to call BOUT to
@@ -1308,6 +1315,7 @@ int main(int argc, char** argv) {
 
     // Calculate neutral density and sources for initial condition
     calculate_neutral_density_in_place(neutral_density, dg0, A_particle_group, h_project1);
+    source_manager.update_all_sources();
     
     // diagnose the initial condition
     std::string particle_data_filename = make_output_path(
@@ -1344,6 +1352,7 @@ int main(int argc, char** argv) {
       //                                 neso_mesh);
 
       calculate_neutral_density_in_place(neutral_density, dg0, A_particle_group, h_project1);
+      source_manager.update_all_sources();
       Field2D Siz = source_manager.get_data("Siz");
       Field2D Srec = source_manager.get_data("Srec");
 
