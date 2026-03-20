@@ -7,14 +7,14 @@
 using namespace NESO::Particles;
 using namespace VANTAGE::Reactions;
 
-// @brief Data struct to hold information about a reaction source.
-// @param reaction_name Name of the reaction, e.g. "ionistaion"
-// @param source_name Name of the source, e.g. Siz (ion density source due to ionisation).
-// @param accumulator CellwiseAccumulator to use to accumulate the source term for this
-// reaction.
-// @param particle_group ParticleGroup to which this source applies.
-// @param zeroer TransformationStrategy to use to zero the source term dat after
-// accumulation.
+/// @brief Data struct to hold information about a reaction source.
+/// @param reaction_name Name of the reaction, e.g. "ionistaion"
+/// @param source_name Name of the source, e.g. Siz (ion density source due to ionisation).
+/// @param accumulator CellwiseAccumulator to use to accumulate the source term for this
+/// reaction.
+/// @param particle_group ParticleGroup to which this source applies.
+/// @param zeroer TransformationStrategy to use to zero the source term dat after
+/// accumulation.
 struct VantageSource {
   std::string hermes_source_name;
   std::string vantage_source_name;
@@ -49,7 +49,8 @@ public:
   // Return data for a given Hermes-3 source name
   Field2D get_data(const std::string& hermes_source_name);
 
-      private : std::map<std::string, VantageSource> sources;
+private:
+  std::map<std::string, VantageSource> sources;
   std::shared_ptr<PetscInterface::DMPlexInterface> neso_mesh;
 };
 
