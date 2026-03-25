@@ -24,7 +24,9 @@ WORKDIR /root/hermes-3
 
 # Install hermes-3 dependencies via spack
 # Activate the hermes-3 environment, install dependencies
-RUN <<EOF 
+RUN <<EOF
+# use generic microarchitectures to avoid conflicts between runners using zen2, icelake, etc
+sed -i 's/^[[:space:]]*granularity:[[:space:]]*microarchitectures/      granularity: generic/' spack.yaml
 spack env activate . -v gcc
 # Install the dependencies
 spack install -j 4 --only dependencies

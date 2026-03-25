@@ -14,7 +14,7 @@ jobs:
     # timeout to avoid running tests which do unexpected spack installation
     timeout-minutes: 45
     container:
-      image: ghcr.io/ukaea-edge-code/hermes-3:edge
+      image: ghcr.io/ukaea-edge-code/hermes-3-vantage-deps:edge
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.github_token }}
@@ -30,6 +30,7 @@ jobs:
           submodules: recursive
       - name: Check download
         run: source /opt/spack/share/spack/setup-env.sh &&
+             sed -i 's/^[[:space:]]*granularity:[[:space:]]*microarchitectures/      granularity: generic/' spack.yaml &&
              spack env activate . -v gcc &&
              spack concretize -f &&
              spack env view regenerate &&
@@ -40,9 +41,10 @@ jobs:
              # python3 2D-production-download.py &&
       - name: Install
         run: source /opt/spack/share/spack/setup-env.sh &&
+             sed -i 's/^[[:space:]]*granularity:[[:space:]]*microarchitectures/      granularity: generic/' spack.yaml &&
              spack env activate . -v gcc &&
              spack concretize -f &&
-             spack install -j 4
+             spack install -j 4 --only-concrete
       - name : Run tests
         run: source /opt/spack/share/spack/setup-env.sh &&
              spack env activate . -v gcc &&
