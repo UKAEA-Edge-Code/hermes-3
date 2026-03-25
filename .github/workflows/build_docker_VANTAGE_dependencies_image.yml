@@ -5,7 +5,7 @@ name: Build hermes-3+vantagereactions dependencies Docker image
 on:
   push:
     branches:
-      - **
+      - '**'
   workflow_dispatch:  # Allows manual triggering
 
 env:
