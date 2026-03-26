@@ -1390,21 +1390,14 @@ Vantage::Vantage(std::string name, Options& options, Solver* solver)
     if (Options::root()["neso_particles"]["test_mass_conservation"].withDefault(true)) {
       check_mass_conservation(total_mass_final, total_mass_initial, remove_threshold);
     }
-    // Boundary interaction objects require a free call.
-
-    // NESO-Particles neso_mesh objects must have free called on them.
   }
 }
 
-Vantage::transform_impl(GuardedOptions& state) {
-}
+void Vantage::transform_impl(GuardedOptions& state) {}
 
-Vantage::finally(const Options& state) {
-}
+void Vantage::finally(const Options& state) {}
 
-Vantage::outputVars(Options& state) {
-}
-
+void Vantage::outputVars(Options& state) {}
 
 // Destructor to handle VANTAGE related cleanup
 Vantage::~Vantage() {
