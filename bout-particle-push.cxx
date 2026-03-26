@@ -844,16 +844,25 @@ void VantageSourceManager::update_all_sources(double dt) {
   }
 }
 
-int main(int argc, char** argv) {
+Vantage::Vantage(std::string name, Options& options, Solver* solver)
+    : Component({readOnly("species:d+:density", Regions::Interior),
+                 readWrite("species:d+:density")}) {
+
+  // TODO: Put proper permissions in
+
+  // int main(int argc, char** argv) {
   // initialise_mpi(&argc, &argv);
   // attempt to call BOUT to
   // get information from a BOUT
   // mesh object
   // N.B. Comment the next three lines
   // to permit compilation as is
-  BoutInitialise(argc, argv);
-  Mesh* bout_mesh = Mesh::create(&Options::root()["mesh"]);
-  PETSCCHK(PetscInitializeNoArguments());
+
+  // BoutInitialise(argc, argv);
+  // Mesh* bout_mesh = Mesh::create(&Options::root()["mesh"]);
+  // TODO: tidy up the above
+
+  Mesh* bout_mesh = bout::globals::mesh;
   auto sycl_target = std::make_shared<SYCLTarget>(0, PETSC_COMM_WORLD);
   DM dm = create_dmplex_from_Bout_mesh(bout_mesh, sycl_target);
   output << "Begin particle push \n";
@@ -1236,8 +1245,8 @@ int main(int argc, char** argv) {
     // boundary_groups[1] = {100, 200};
     boundary_groups[1] = {100};
 
-    auto b2d = std::make_shared<PetscInterface::BoundaryInteraction2D>(
-        sycl_target, neso_mesh, boundary_groups);
+    b2d = std::make_shared<PetscInterface::BoundaryInteraction2D>(sycl_target, neso_mesh,
+                                                                  boundary_groups);
     auto reflection = std::make_shared<BoundaryReflection>(ndim, 1.0e-10);
 
     auto lambda_apply_boundary_conditions = [&](auto aa) {
@@ -1302,8 +1311,9 @@ int main(int argc, char** argv) {
       }
     };
     // uncomment to write a trajectory
-    H5Part h5part(make_output_path("particle_trajectories.h5part"),
-                  A_particle_group, Sym<REAL>("POSITION"), Sym<REAL>("VELOCITY"));
+    h5part = std::make_shared<H5Part>(make_output_path("particle_trajectories.h5part"),
+                                      A_particle_group, Sym<REAL>("POSITION"),
+                                      Sym<REAL>("VELOCITY"));
 
     // allocate buffer vector for scalar projection/evaluation of NESO-Particles
     // properties
@@ -1346,7 +1356,7 @@ int main(int argc, char** argv) {
       reaction_controller.apply(A_particle_group, dt, ControllerMode::standard_mode);
       recombination_controller.apply(marker_group, dt, A_particle_group);
       // uncomment to write a trajectory
-      h5part.write();
+      h5part->write();
       // uncomment to print particle info
       // A_particle_group->print(Sym<REAL>("POSITION"), Sym<INT>("ID"),
       // Sym<REAL>("WEIGHT"), Sym<REAL>("ION_SOURCE_DENSITY")); update fluid moments
@@ -1373,7 +1383,6 @@ int main(int argc, char** argv) {
                          h_project1, bout_output_data, particle_data_filename, sim_time);
     }
     // uncomment to write a trajectory
-    h5part.close();
 
     // mass for conservation check
     total_density = neutral_density + ion_density;
@@ -1382,19 +1391,28 @@ int main(int argc, char** argv) {
       check_mass_conservation(total_mass_final, total_mass_initial, remove_threshold);
     }
     // Boundary interaction objects require a free call.
-    b2d->free();
-    // NESO-Particles neso_mesh objects must have free called on them.
-    neso_mesh->free();
-  }
-  PETSCCHK(DMDestroy(&dm));
-  PETSCCHK(PetscFinalize());
-  sycl_target->free();
 
-  if (MPI_Finalize() != MPI_SUCCESS) {
-    std::cout << "ERROR: MPI_Finalize != MPI_SUCCESS" << std::endl;
-    return -1;
+    // NESO-Particles neso_mesh objects must have free called on them.
   }
-  return 0;
+}
+
+Vantage::transform_impl(GuardedOptions& state) {
+}
+
+Vantage::finally(const Options& state) {
+}
+
+Vantage::outputVars(Options& state) {
+}
+
+
+// Destructor to handle VANTAGE related cleanup
+Vantage::~Vantage() {
+  h5part->close();          // Particle trajectory output
+  b2d->free();              // NESO-Particles boundary interaction object
+  neso_mesh->free();        // DMPlex interface
+  PETSCCHK(DMDestroy(&dm)); // DMPlex mesh
+  sycl_target->free();      // VANTAGE compute target
 }
 
 #endif

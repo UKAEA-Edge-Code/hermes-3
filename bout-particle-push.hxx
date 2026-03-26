@@ -1,4 +1,5 @@
 #pragma once
+#include "include/component.hxx"
 #include "bout/bout.hxx"
 #include <neso_particles.hpp>
 #include <neso_rng_toolkit.hpp>
@@ -6,6 +7,27 @@
 
 using namespace NESO::Particles;
 using namespace VANTAGE::Reactions;
+
+struct Vantage : public Component {
+  Vantage(std::string name, Options& options, Solver* solver);
+
+  ~Vantage(); // Destructor for VANTAGE related cleanup
+  void finally(const Options& state) override;
+  void transform_impl(GuardedOptions& state) override;
+  void outputVars(Options& state) override;
+
+private:
+  std::string name;  // Component name
+  std::shared_ptr<H5Part> h5part;
+  DM dm;
+  std::shared_ptr<PetscInterface::DMPlexInterface> neso_mesh;
+  std::shared_ptr<SYCLTarget> sycl_target;
+  std::shared_ptr<PetscInterface::BoundaryInteraction2D> b2d;
+};
+
+namespace {
+RegisterComponent<Vantage> registercomponentvantage("vantage");
+}
 
 /// @brief Data struct to hold information about a reaction source.
 /// @param reaction_name Name of the reaction, e.g. "ionistaion"

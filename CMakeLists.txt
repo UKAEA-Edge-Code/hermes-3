@@ -121,6 +121,7 @@ set(HERMES_SOURCES
     src/reaction_parser.cxx
     src/transform.cxx
     src/vorticity.cxx
+    bout-particle-push.cxx
     include/adas_reaction.hxx
     include/adas_carbon.hxx
     include/adas_neon.hxx
@@ -183,7 +184,8 @@ set(HERMES_SOURCES
     include/zero_current.hxx
     include/transform.hxx
     include/fixed_fraction_radiation.hxx
-    include/simple_pump.hxx)
+    include/simple_pump.hxx
+    bout-particle-push.hxx)
 
 # Compile Hermes sources into a library, which can be used for unit tests
 add_library(hermes-3-lib ${HERMES_SOURCES})
@@ -194,8 +196,8 @@ target_link_libraries(hermes-3-lib PUBLIC bout++::bout++)
 if(HERMES_USE_VANTAGE)
   # preprocessor flag for optional VANTAGE includes
   target_compile_definitions(hermes-3-lib PUBLIC HERMES_INCLUDE_VANTAGE)
-  # link to VANTAGE-Reactions libraries
-  target_link_libraries(hermes-3-lib PUBLIC VANTAGE-Reactions::VANTAGE-Reactions)
+  # link to VANTAGE-Reactions and NESO-RNG-Toolkit libraries
+  target_link_libraries(hermes-3-lib PUBLIC VANTAGE-Reactions::VANTAGE-Reactions NESO-RNG-Toolkit::NESO-RNG-Toolkit)
 endif()
 
 target_compile_features(hermes-3-lib PUBLIC cxx_std_17)
