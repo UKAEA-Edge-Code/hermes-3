@@ -27,6 +27,16 @@ WORKDIR /root/hermes-3
 RUN <<EOF
 # use generic microarchitectures to avoid conflicts between runners using zen2, icelake, etc
 sed -i 's/^[[:space:]]*granularity:[[:space:]]*microarchitectures/      granularity: generic/' spack.yaml
+# demand target=x86_64_v3, assume that spack.yaml has unique block
+# all:
+#   providers:
+#     mpi: [mpich, openmpi ]
+# which we mutate to
+# all:
+#   providers:
+#     require: "target=x86_64_v3"
+#     mpi: [mpich, openmpi ]
+sed -i '/^[[:space:]]*providers:/i\      require: "target=x86_64_v3"' spack.yaml
 spack env activate . -v gcc
 # Install the dependencies
 spack install -j 4 --only dependencies
