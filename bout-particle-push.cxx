@@ -259,8 +259,6 @@ DM create_dmplex_from_Bout_mesh(Mesh* bout_mesh,
   // output << "Nx " + std::to_string(Nx) + "Ny " + std::to_string(Ny) << "\n";
   // output << "Got here -1 \n";
 
-  // PETSCCHK(PetscInitializeNoArguments());
-  // auto sycl_target = std::make_shared<SYCLTarget>(0, PETSC_COMM_WORLD);
   const int mpi_size = sycl_target->comm_pair.size_parent;
   const int mpi_rank = sycl_target->comm_pair.rank_parent;
   // output << "Got here 0 \n";
@@ -303,28 +301,28 @@ DM create_dmplex_from_Bout_mesh(Mesh* bout_mesh,
   // Perform Allreduce (sum) to get knowledge of vertices to all ranks
   MPICHK(MPI_Allreduce(local_R_lower_left_vertices.data(),
                        global_R_lower_left_vertices.data(), N_nonunique_vertices,
-                       MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD));
+                       MPI_DOUBLE, MPI_SUM, BoutComm::get()));
   MPICHK(MPI_Allreduce(local_Z_lower_left_vertices.data(),
                        global_Z_lower_left_vertices.data(), N_nonunique_vertices,
-                       MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD));
+                       MPI_DOUBLE, MPI_SUM, BoutComm::get()));
   MPICHK(MPI_Allreduce(local_R_lower_right_vertices.data(),
                        global_R_lower_right_vertices.data(), N_nonunique_vertices,
-                       MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD));
+                       MPI_DOUBLE, MPI_SUM, BoutComm::get()));
   MPICHK(MPI_Allreduce(local_Z_lower_right_vertices.data(),
                        global_Z_lower_right_vertices.data(), N_nonunique_vertices,
-                       MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD));
+                       MPI_DOUBLE, MPI_SUM, BoutComm::get()));
   MPICHK(MPI_Allreduce(local_R_upper_right_vertices.data(),
                        global_R_upper_right_vertices.data(), N_nonunique_vertices,
-                       MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD));
+                       MPI_DOUBLE, MPI_SUM, BoutComm::get()));
   MPICHK(MPI_Allreduce(local_Z_upper_right_vertices.data(),
                        global_Z_upper_right_vertices.data(), N_nonunique_vertices,
-                       MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD));
+                       MPI_DOUBLE, MPI_SUM, BoutComm::get()));
   MPICHK(MPI_Allreduce(local_R_upper_left_vertices.data(),
                        global_R_upper_left_vertices.data(), N_nonunique_vertices,
-                       MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD));
+                       MPI_DOUBLE, MPI_SUM, BoutComm::get()));
   MPICHK(MPI_Allreduce(local_Z_upper_left_vertices.data(),
                        global_Z_upper_left_vertices.data(), N_nonunique_vertices,
-                       MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD));
+                       MPI_DOUBLE, MPI_SUM, BoutComm::get()));
   // if (mpi_rank == 0) {
   //     std::cout << "Result of Allreduce (sum): ";
   //     for (double val : global_R_lower_left_vertices) {
@@ -464,7 +462,7 @@ DM create_dmplex_from_Bout_mesh(Mesh* bout_mesh,
   DM dm;
   // Create the DMPlex from the cells and coordinates.
   PETSCCHK(DMPlexCreateFromCellListParallelPetsc(
-      PETSC_COMM_WORLD, 2, num_cells_owned, num_vertices_owned, PETSC_DECIDE, 4,
+      BoutComm::get(), 2, num_cells_owned, num_vertices_owned, PETSC_DECIDE, 4,
       PETSC_TRUE, cells.data(), 2, vertex_coords.data(), NULL, NULL, &dm));
 
   // Label all of the boundary faces with 100 in the "Face Sets" label by using
@@ -494,7 +492,7 @@ DM create_dmplex_from_Bout_mesh(Mesh* bout_mesh,
   // Set a name for the DMPlex object (important for HDF5)
   PetscObjectSetName((PetscObject)dm, dmplex_name.c_str());
   // Create an HDF5 viewer
-  PetscViewerHDF5Open(PETSC_COMM_WORLD, dmplex_h5_filename.c_str(), FILE_MODE_WRITE,
+  PetscViewerHDF5Open(BoutComm::get(), dmplex_h5_filename.c_str(), FILE_MODE_WRITE,
                       &viewer);
   // Set viewer format to PETSC_VIEWER_HDF5_PETSC for compatibility
   PetscViewerPushFormat(viewer, PETSC_VIEWER_HDF5_PETSC);
@@ -862,8 +860,8 @@ Vantage::Vantage(std::string name, Options& options, Solver* solver)
   // TODO: tidy up the above
 
   Mesh* bout_mesh = bout::globals::mesh;
-  auto sycl_target = std::make_shared<SYCLTarget>(0, PETSC_COMM_WORLD);
-  DM dm = create_dmplex_from_Bout_mesh(bout_mesh, sycl_target);
+  sycl_target = std::make_shared<SYCLTarget>(0, BoutComm::get());
+  dm = create_dmplex_from_Bout_mesh(bout_mesh, sycl_target);
   output << "Begin particle push \n";
   // get data from BOUT.inp to assign particle weights as a fn of x,y
   auto& opt = Options::root();
@@ -938,8 +936,7 @@ Vantage::Vantage(std::string name, Options& options, Solver* solver)
     Field2D ion_density = Field2D(background_ion_density, bout_mesh);
     Field2D neutral_density = Field2D(0.0, bout_mesh);
     // Create a mesh interface from the DM
-    auto neso_mesh =
-        std::make_shared<PetscInterface::DMPlexInterface>(dm, 0, MPI_COMM_WORLD);
+    neso_mesh = std::make_shared<PetscInterface::DMPlexInterface>(dm, 0, BoutComm::get());
     // Create a mapper for mapping particles into cells.
     auto mapper =
         std::make_shared<PetscInterface::DMPlexLocalMapper>(sycl_target, neso_mesh);
