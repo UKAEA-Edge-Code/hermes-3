@@ -225,7 +225,6 @@ DM create_dmplex_from_Bout_mesh(Mesh* bout_mesh,
   dmplex_h5_filename = make_output_path(dmplex_h5_filename);
   output << fmt::format("Using option use_cxx_ivertex = {}", use_cxx_ivertex)
          << std::endl;
-  bout_mesh->load();
   Field2D Rxy_lower_left_corners;
   Field2D Rxy_lower_right_corners;
   Field2D Rxy_upper_right_corners;

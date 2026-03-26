@@ -1,6 +1,7 @@
 #pragma once
 #include "include/component.hxx"
 #include "bout/bout.hxx"
+#include "bout/petsclib.hxx"
 #include <neso_particles.hpp>
 #include <neso_rng_toolkit.hpp>
 #include <reactions/reactions.hpp>
@@ -17,6 +18,7 @@ struct Vantage : public Component {
   void outputVars(Options& state) override;
 
 private:
+  PetscLib petsc_lib;  // Ensures PETSc is initialized for the lifetime of this component
   std::string name;  // Component name
   std::shared_ptr<H5Part> h5part;
   DM dm;
