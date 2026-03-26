@@ -267,14 +267,6 @@ endif()
 
 
 
-if(HERMES_USE_VANTAGE)
-  # Test of bout+neso
-  add_executable(bout-particle-push
-                bout-particle-push.cxx
-                ${CMAKE_CURRENT_BINARY_DIR}/include/revision.hxx)
-  target_link_libraries(bout-particle-push PUBLIC bout++::bout++ VANTAGE-Reactions::VANTAGE-Reactions NESO-RNG-Toolkit::NESO-RNG-Toolkit)
-  add_sycl_to_target(TARGET bout-particle-push SOURCES bout-particle-push.cxx)
-endif()
 
 # Tests
 option(HERMES_COPY_TESTS_TO_BUILD "Copy the tests to the build directory" ON)
