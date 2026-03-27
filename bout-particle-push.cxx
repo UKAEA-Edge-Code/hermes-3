@@ -511,32 +511,6 @@ DM create_dmplex_from_Bout_mesh(Mesh* bout_mesh,
   return dm;
 }
 
-void update_ion_density_in_place(
-    Field2D& density, std::shared_ptr<CellwiseAccumulator<double>>& accumulator_transform,
-    std::shared_ptr<ParticleGroup>& A_particle_group,
-    std::shared_ptr<TransformationStrategy>& ion_source_density_zeroer,
-    std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh) {
-  Mesh* bout_mesh = density.getMesh();
-  std::vector<CellData<double>> accumulated_1d =
-      accumulator_transform->get_cell_data("ION_SOURCE_DENSITY");
-
-  PetscInt ic = 0;
-  for (PetscInt ix = bout_mesh->xstart; ix <= bout_mesh->xend; ix++) {
-    for (PetscInt iy = bout_mesh->ystart; iy <= bout_mesh->yend; iy++) {
-      density(ix, iy) +=
-          accumulated_1d[ic]->at(0, 0) / neso_mesh->dmh->get_cell_volume(ic);
-      ic++;
-    }
-  }
-  // this fills internal guards
-  bout_mesh->communicate(density);
-
-  // Now set the property to zero in the accumulator buffer, ready for the next timestep.
-  // Note that this does not zero the data in the original particle group
-  accumulator_transform->zero_buffer("ION_SOURCE_DENSITY");
-  // set the sources to zero on the particle group read for the next timestep
-  ion_source_density_zeroer->transform(std::make_shared<ParticleSubGroup>(A_particle_group));
-}
 
 void calculate_neutral_density_in_place(
     Field2D& density, std::shared_ptr<PetscInterface::DMPlexProjectEvaluateDG>& dg0,
@@ -560,29 +534,6 @@ void calculate_neutral_density_in_place(
   // extrapolate -> Neumann
 }
 
-void calculate_fluid_moments_in_place(
-    Field2D& neutral_density, Field2D& ion_density,
-    std::shared_ptr<PetscInterface::DMPlexProjectEvaluateDG>& dg0,
-    std::shared_ptr<ParticleGroup>& A_particle_group, 
-    std::shared_ptr<ParticleGroup>& marker_group, 
-    std::vector<double>& h_project1,
-    std::shared_ptr<CellwiseAccumulator<double>>& accumulator_transform_iz,
-    std::shared_ptr<CellwiseAccumulator<double>>& accumulator_transform_rec,
-    std::shared_ptr<TransformationStrategy>& ion_source_density_zeroer,
-    std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh) {
-  // calculate all of the fluid moments required for the moment, from data in
-  // the particle group. Set to zero any particle properties needed in preparation
-  // for the next time step.
-  calculate_neutral_density_in_place(neutral_density, dg0, A_particle_group, h_project1);
-
-  // Update ion_density with ionisation ION_DENSITY_SOURCE
-  update_ion_density_in_place(ion_density, accumulator_transform_iz, A_particle_group,
-                                   ion_source_density_zeroer, neso_mesh);
-
-  // Update ion_density with recombination ION_DENSITY_SOURCE
-  update_ion_density_in_place(ion_density, accumulator_transform_rec, marker_group,
-                                   ion_source_density_zeroer, neso_mesh);
-}
 
 double calculate_total_mass(Field2D& density,
                             std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh) {
@@ -1308,15 +1259,6 @@ int main(int argc, char** argv) {
     // set weights from a Field2D from BOUT
     set_initial_particle_weights(initial_neutral_density, dg0, A_particle_group,
                                  neso_mesh, h_project1);
-    // update fluid moments
-    // calculate_fluid_moments_in_place(neutral_density, ion_density, dg0,
-    //                                  A_particle_group,
-    //                                  marker_group,
-    //                                  h_project1, 
-    //                                  accumulator_transform_iz, 
-    //                                  accumulator_transform_rec,
-    //                                  ion_source_density_zeroer,
-    //                                  neso_mesh);
 
     // Calculate neutral density and sources for initial condition
     calculate_neutral_density_in_place(neutral_density, dg0, A_particle_group, h_project1);
@@ -1344,17 +1286,6 @@ int main(int argc, char** argv) {
       recombination_controller.apply(marker_group, dt, A_particle_group);
       // uncomment to write a trajectory
       h5part.write();
-      // uncomment to print particle info
-      // A_particle_group->print(Sym<REAL>("POSITION"), Sym<INT>("ID"),
-      // Sym<REAL>("WEIGHT"), Sym<REAL>("ION_SOURCE_DENSITY")); update fluid moments
-      // calculate_fluid_moments_in_place(neutral_density, ion_density, dg0,
-      //                                 A_particle_group,
-      //                                 marker_group,
-      //                                 h_project1, 
-      //                                 accumulator_transform_iz, 
-      //                                 accumulator_transform_rec,
-      //                                 ion_source_density_zeroer,
-      //                                 neso_mesh);
 
       calculate_neutral_density_in_place(neutral_density, dg0, A_particle_group, h_project1);
       source_manager.update_all_sources(dt);
