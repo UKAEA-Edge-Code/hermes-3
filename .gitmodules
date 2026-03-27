@@ -14,15 +14,15 @@
 	ignore = dirty
 [submodule "external/xhermes"]
 	path = external/xhermes
-	url = https://github.com/boutproject/xhermes.git
+	url = git@github.com:boutproject/xhermes
 	ignore = dirty
 [submodule "external/xbout"]
 	path = external/xbout
-	url = https://github.com/boutproject/xBOUT.git
+	url = git@github.com:boutproject/xbout
 	ignore = dirty
 [submodule "external/boutdata"]
 	path = external/boutdata
-	url = https://github.com/boutproject/boutdata.git
+	url = git@github.com:boutproject/boutdata.git
 	ignore = dirty
 [submodule "external/NESO-RNG-Toolkit"]
 	path = external/NESO-RNG-Toolkit
