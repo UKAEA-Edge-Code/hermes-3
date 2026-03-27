@@ -28,18 +28,6 @@ jobs:
         uses: actions/checkout@v6
         with:
           submodules: recursive
-      # - name: Check download
-      #   run: |
-      #     source /opt/spack/share/spack/setup-env.sh &&
-      #     sed -i 's/^[[:space:]]*granularity:[[:space:]]*microarchitectures/      granularity: generic/' spack.yaml &&
-      #     spack env activate . -v gcc &&
-      #     spack concretize -f &&
-      #     spack env view regenerate &&
-      #     spack find && which python3 &&
-      #     chmod +x 2D-production-download.py &&
-      #     mkdir download-dir && cp 2D-production-download.py download-dir/ &&
-      #     cd download-dir && ./2D-production-download.py && ls
-      #     # python3 2D-production-download.py &&
       - name: Install
         run: |
           source /opt/spack/share/spack/setup-env.sh &&
@@ -52,9 +40,5 @@ jobs:
         run: |
           source /opt/spack/share/spack/setup-env.sh &&
           spack env activate . -v gcc &&
-          chmod +x 2D-production-download.py &&
-          cp 2D-production-download.py $(spack location -b hermes-3)/tests/integrated/2D-production/ &&
           spack cd -b hermes-3 &&
-          ./tests/integrated/2D-production/./2D-production-download.py &&
-          ls ./tests/integrated/2D-production/ &&
-          ctest -j 1 --output-on-failure --timeout 300 -VV
+          ctest -j 1 --output-on-failure --timeout 300
