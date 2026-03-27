@@ -221,8 +221,12 @@ DM create_dmplex_from_Bout_mesh(Mesh* bout_mesh,
       Options::root()["mesh"]["dmplex_name"].withDefault("hypnotoad_dmplex_mesh");
   std::string dmplex_h5_filename =
       Options::root()["mesh"]["dmplex_h5_filename"].withDefault(
-          "dmplex_mesh_data.h5");
+          "hypnotoad_dmplex_mesh_output.h5");
   dmplex_h5_filename = make_output_path(dmplex_h5_filename);
+
+  // DMPlex vertex distance tolerance for duplicate Hypnotoad vertices
+  const BoutReal dmplex_vertex_tolerance = 
+    Options::root()["mesh"]["dmplex_vertex_tolerance"].withDefault(1.0e-8);
   output << fmt::format("Using option use_cxx_ivertex = {}", use_cxx_ivertex)
          << std::endl;
   bout_mesh->load();
@@ -345,22 +349,22 @@ DM create_dmplex_from_Bout_mesh(Mesh* bout_mesh,
   global_Z_vertices_buffer.at(0) = global_Z_lower_left_vertices.at(0);
   global_R_vertices_buffer.at(0) = global_R_lower_left_vertices.at(0);
   int N_unique = 1; // we have one unique point in the buffer
-  const double tolerance = 1.0e-8;
+
   // loop over lower left vertices
   collect_unique_points(global_Z_vertices_buffer, global_R_vertices_buffer, N_unique,
-                        tolerance, global_Z_lower_left_vertices,
+                        dmplex_vertex_tolerance, global_Z_lower_left_vertices,
                         global_R_lower_left_vertices);
   // loop over lower right vertices
   collect_unique_points(global_Z_vertices_buffer, global_R_vertices_buffer, N_unique,
-                        tolerance, global_Z_lower_right_vertices,
+                        dmplex_vertex_tolerance, global_Z_lower_right_vertices,
                         global_R_lower_right_vertices);
   // loop over upper right vertices
   collect_unique_points(global_Z_vertices_buffer, global_R_vertices_buffer, N_unique,
-                        tolerance, global_Z_upper_right_vertices,
+                        dmplex_vertex_tolerance, global_Z_upper_right_vertices,
                         global_R_upper_right_vertices);
   // loop over upper left vertices
   collect_unique_points(global_Z_vertices_buffer, global_R_vertices_buffer, N_unique,
-                        tolerance, global_Z_upper_left_vertices,
+                        dmplex_vertex_tolerance, global_Z_upper_left_vertices,
                         global_R_upper_left_vertices);
   // now make a vector of the size N_unique and fill from the buffer
   std::vector<double> global_Z_vertices(N_unique, 0.0);
@@ -385,16 +389,16 @@ DM create_dmplex_from_Bout_mesh(Mesh* bout_mesh,
   Field2D ivertex_upper_left_corners_cxx{-1, bout_mesh};
   // now fill ivertex_corners arrays
   RZ_to_ivertex_vector(ivertex_lower_left_corners_cxx, global_Z_vertices,
-                       global_R_vertices, tolerance, bout_mesh, Rxy_lower_left_corners,
+                       global_R_vertices, dmplex_vertex_tolerance, bout_mesh, Rxy_lower_left_corners,
                        Zxy_lower_left_corners);
   RZ_to_ivertex_vector(ivertex_lower_right_corners_cxx, global_Z_vertices,
-                       global_R_vertices, tolerance, bout_mesh, Rxy_lower_right_corners,
+                       global_R_vertices, dmplex_vertex_tolerance, bout_mesh, Rxy_lower_right_corners,
                        Zxy_lower_right_corners);
   RZ_to_ivertex_vector(ivertex_upper_right_corners_cxx, global_Z_vertices,
-                       global_R_vertices, tolerance, bout_mesh, Rxy_upper_right_corners,
+                       global_R_vertices, dmplex_vertex_tolerance, bout_mesh, Rxy_upper_right_corners,
                        Zxy_upper_right_corners);
   RZ_to_ivertex_vector(ivertex_upper_left_corners_cxx, global_Z_vertices,
-                       global_R_vertices, tolerance, bout_mesh, Rxy_upper_left_corners,
+                       global_R_vertices, dmplex_vertex_tolerance, bout_mesh, Rxy_upper_left_corners,
                        Zxy_upper_left_corners);
 
   // First we setup the topology of the mesh.
@@ -1004,10 +1008,10 @@ int main(int argc, char** argv) {
         initial_distribution[Sym<REAL>("POSITION")][px][dimx] = positions[dimx][px];
         initial_distribution[Sym<REAL>("VELOCITY")][px][dimx] = velocities[dimx][px];
       }
-      initial_distribution[Sym<REAL>("ION_DENSITY")][px][0] = 1.0;
+      initial_distribution[Sym<REAL>("ION_DENSITY")][px][0] = background_ion_density;
       initial_distribution[Sym<REAL>("ION_SOURCE_DENSITY")][px][0] = 0.0;
       initial_distribution[Sym<REAL>("ION_SOURCE_ENERGY")][px][0] = 0.0;
-      initial_distribution[Sym<REAL>("ELECTRON_DENSITY")][px][0] = 1.0;
+      initial_distribution[Sym<REAL>("ELECTRON_DENSITY")][px][0] = background_ion_density;
       initial_distribution[Sym<REAL>("ELECTRON_SOURCE_DENSITY")][px][0] = 0.0;
       initial_distribution[Sym<REAL>("ELECTRON_SOURCE_ENERGY")][px][0] = 0.0;
       for (int dimx = 0; dimx < ndim; dimx++) {
@@ -1084,33 +1088,26 @@ int main(int argc, char** argv) {
 
     // Calculate marker weights
 
-    // Get the total volume of the rank, total volume of domain and array of cell
-    auto [V_tot_local, V_tot_global, V_cells] =
-        calc_V_tot_local(marker_group->sycl_target, neso_mesh, norms);
 
-    
     // Add particle property: number of particles in the local cell
     // From demo app: "distribute_n_part_cell"
-    for (int cellx = 0; cellx < marker_group->domain->mesh->get_cell_count(); cellx++)
+    for (int ic = 0; ic < marker_group->domain->mesh->get_cell_count(); ic++)
     {
-      int n_part_cell = marker_group->get_npart_cell(cellx);
+      int n_part_cell = marker_group->get_npart_cell(ic);
       particle_loop(
           "Update N_CELL prop", marker_group,
           [=](auto n_cell_prop) { n_cell_prop.at(0) = n_part_cell; },
           Access::write(Sym<INT>("N_CELL")))
-          ->execute(cellx);
+          ->execute(ic);
     }
 
     const int num_cells = marker_group->domain->mesh->get_cell_count();
-    NESOASSERT((V_cells.size() == num_cells),
-             "Number elements in V_Cells doesn't match the number of cells in "
-             "domain.");
 
     // Calculate weight for each marker particle
     // based on FLUID_DENSITY and N_CELL properties contained in same particle.
     // TODO: implement normalisation. dens_norm is currently 1. 
-    for (int cellx = 0; cellx < num_cells; cellx++) {
-      REAL V_cell = V_cells[cellx];
+    for (int ic = 0; ic < num_cells; ic++) {
+      REAL V_cell = neso_mesh->dmh->get_cell_volume(ic);
       particle_loop(
           "Update weight of ions", marker_group,
           [=](auto n_cell_prop, auto ion_dens_prop, auto weight_prop) {
@@ -1121,7 +1118,7 @@ int main(int argc, char** argv) {
           Access::read(Sym<INT>("N_CELL")),
           Access::read(Sym<REAL>("FLUID_DENSITY")),
           Access::write(Sym<REAL>("WEIGHT")))
-          ->execute(cellx);
+          ->execute(ic);
     }
 
     // Define marker species and reaction rates
