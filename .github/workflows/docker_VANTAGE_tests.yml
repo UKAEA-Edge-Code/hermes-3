@@ -12,9 +12,9 @@ jobs:
   docker_spack_install_tests:
     runs-on: ubuntu-latest
     # timeout to avoid running tests which do unexpected spack installation
-    timeout-minutes: 45
+    timeout-minutes: 35
     container:
-      image: ghcr.io/ukaea-edge-code/hermes-3:edge
+      image: ghcr.io/ukaea-edge-code/hermes-3-vantage-deps:edge
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.github_token }}
@@ -28,27 +28,17 @@ jobs:
         uses: actions/checkout@v6
         with:
           submodules: recursive
-      - name: Check download
-        run: source /opt/spack/share/spack/setup-env.sh &&
-             spack env activate . -v gcc &&
-             spack concretize -f &&
-             spack env view regenerate &&
-             spack find && which python3 &&
-             chmod +x 2D-production-download.py &&
-             mkdir download-dir && cp 2D-production-download.py download-dir/ &&
-             cd download-dir && ./2D-production-download.py && ls
-             # python3 2D-production-download.py &&
       - name: Install
-        run: source /opt/spack/share/spack/setup-env.sh &&
-             spack env activate . -v gcc &&
-             spack concretize -f &&
-             spack install -j 4
+        run: |
+          source /opt/spack/share/spack/setup-env.sh &&
+          sed -i 's/^[[:space:]]*granularity:[[:space:]]*microarchitectures/      granularity: generic/' spack.yaml &&
+          sed -i '/^[[:space:]]*providers:/i\      require: "target=x86_64_v3"' spack.yaml &&
+          spack env activate . -v gcc &&
+          spack concretize -f &&
+          spack install -j 4 --only-concrete
       - name : Run tests
-        run: source /opt/spack/share/spack/setup-env.sh &&
-             spack env activate . -v gcc &&
-             chmod +x 2D-production-download.py &&
-             cp 2D-production-download.py $(spack location -b hermes-3)/tests/integrated/2D-production/ &&
-             spack cd -b hermes-3 &&
-             ./tests/integrated/2D-production/./2D-production-download.py &&
-             ls ./tests/integrated/2D-production/ &&
-             ctest -j 1 --output-on-failure --timeout 300 -VV
+        run: |
+          source /opt/spack/share/spack/setup-env.sh &&
+          spack env activate . -v gcc &&
+          spack cd -b hermes-3 &&
+          ctest -j 1 --output-on-failure --timeout 300
