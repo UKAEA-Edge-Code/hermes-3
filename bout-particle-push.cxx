@@ -219,6 +219,9 @@ DM create_dmplex_from_Bout_mesh(Mesh* bout_mesh,
   bool use_cxx_ivertex = Options::root()["mesh"]["use_cxx_ivertex"].withDefault(false);
   std::string dmplex_name =
       Options::root()["mesh"]["dmplex_name"].withDefault("hypnotoad_dmplex_mesh");
+  std::string dmplex_h5_filename =
+      Options::root()["mesh"]["dmplex_h5_filename"].withDefault(
+          "hypnotoad_dmplex_mesh_output.h5");
   dmplex_h5_filename = make_output_path(dmplex_h5_filename);
 
   // DMPlex vertex distance tolerance for duplicate Hypnotoad vertices
