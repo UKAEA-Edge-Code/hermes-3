@@ -221,8 +221,12 @@ DM create_dmplex_from_Bout_mesh(Mesh* bout_mesh,
       Options::root()["mesh"]["dmplex_name"].withDefault("hypnotoad_dmplex_mesh");
   std::string dmplex_h5_filename =
       Options::root()["mesh"]["dmplex_h5_filename"].withDefault(
-          "dmplex_mesh_data.h5");
+          "hypnotoad_dmplex_mesh_output.h5");
   dmplex_h5_filename = make_output_path(dmplex_h5_filename);
+
+  // DMPlex vertex distance tolerance for duplicate Hypnotoad vertices
+  const BoutReal dmplex_vertex_tolerance = 
+    Options::root()["mesh"]["dmplex_vertex_tolerance"].withDefault(1.0e-8);
   output << fmt::format("Using option use_cxx_ivertex = {}", use_cxx_ivertex)
          << std::endl;
   Field2D Rxy_lower_left_corners;
@@ -342,22 +346,22 @@ DM create_dmplex_from_Bout_mesh(Mesh* bout_mesh,
   global_Z_vertices_buffer.at(0) = global_Z_lower_left_vertices.at(0);
   global_R_vertices_buffer.at(0) = global_R_lower_left_vertices.at(0);
   int N_unique = 1; // we have one unique point in the buffer
-  const double tolerance = 1.0e-8;
+
   // loop over lower left vertices
   collect_unique_points(global_Z_vertices_buffer, global_R_vertices_buffer, N_unique,
-                        tolerance, global_Z_lower_left_vertices,
+                        dmplex_vertex_tolerance, global_Z_lower_left_vertices,
                         global_R_lower_left_vertices);
   // loop over lower right vertices
   collect_unique_points(global_Z_vertices_buffer, global_R_vertices_buffer, N_unique,
-                        tolerance, global_Z_lower_right_vertices,
+                        dmplex_vertex_tolerance, global_Z_lower_right_vertices,
                         global_R_lower_right_vertices);
   // loop over upper right vertices
   collect_unique_points(global_Z_vertices_buffer, global_R_vertices_buffer, N_unique,
-                        tolerance, global_Z_upper_right_vertices,
+                        dmplex_vertex_tolerance, global_Z_upper_right_vertices,
                         global_R_upper_right_vertices);
   // loop over upper left vertices
   collect_unique_points(global_Z_vertices_buffer, global_R_vertices_buffer, N_unique,
-                        tolerance, global_Z_upper_left_vertices,
+                        dmplex_vertex_tolerance, global_Z_upper_left_vertices,
                         global_R_upper_left_vertices);
   // now make a vector of the size N_unique and fill from the buffer
   std::vector<double> global_Z_vertices(N_unique, 0.0);
@@ -382,16 +386,16 @@ DM create_dmplex_from_Bout_mesh(Mesh* bout_mesh,
   Field2D ivertex_upper_left_corners_cxx{-1, bout_mesh};
   // now fill ivertex_corners arrays
   RZ_to_ivertex_vector(ivertex_lower_left_corners_cxx, global_Z_vertices,
-                       global_R_vertices, tolerance, bout_mesh, Rxy_lower_left_corners,
+                       global_R_vertices, dmplex_vertex_tolerance, bout_mesh, Rxy_lower_left_corners,
                        Zxy_lower_left_corners);
   RZ_to_ivertex_vector(ivertex_lower_right_corners_cxx, global_Z_vertices,
-                       global_R_vertices, tolerance, bout_mesh, Rxy_lower_right_corners,
+                       global_R_vertices, dmplex_vertex_tolerance, bout_mesh, Rxy_lower_right_corners,
                        Zxy_lower_right_corners);
   RZ_to_ivertex_vector(ivertex_upper_right_corners_cxx, global_Z_vertices,
-                       global_R_vertices, tolerance, bout_mesh, Rxy_upper_right_corners,
+                       global_R_vertices, dmplex_vertex_tolerance, bout_mesh, Rxy_upper_right_corners,
                        Zxy_upper_right_corners);
   RZ_to_ivertex_vector(ivertex_upper_left_corners_cxx, global_Z_vertices,
-                       global_R_vertices, tolerance, bout_mesh, Rxy_upper_left_corners,
+                       global_R_vertices, dmplex_vertex_tolerance, bout_mesh, Rxy_upper_left_corners,
                        Zxy_upper_left_corners);
 
   // First we setup the topology of the mesh.
@@ -504,32 +508,6 @@ DM create_dmplex_from_Bout_mesh(Mesh* bout_mesh,
   return dm;
 }
 
-void update_ion_density_in_place(
-    Field2D& density, std::shared_ptr<CellwiseAccumulator<double>>& accumulator_transform,
-    std::shared_ptr<ParticleGroup>& A_particle_group,
-    std::shared_ptr<TransformationStrategy>& ion_source_density_zeroer,
-    std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh) {
-  Mesh* bout_mesh = density.getMesh();
-  std::vector<CellData<double>> accumulated_1d =
-      accumulator_transform->get_cell_data("ION_SOURCE_DENSITY");
-
-  PetscInt ic = 0;
-  for (PetscInt ix = bout_mesh->xstart; ix <= bout_mesh->xend; ix++) {
-    for (PetscInt iy = bout_mesh->ystart; iy <= bout_mesh->yend; iy++) {
-      density(ix, iy) +=
-          accumulated_1d[ic]->at(0, 0) / neso_mesh->dmh->get_cell_volume(ic);
-      ic++;
-    }
-  }
-  // this fills internal guards
-  bout_mesh->communicate(density);
-
-  // Now set the property to zero in the accumulator buffer, ready for the next timestep.
-  // Note that this does not zero the data in the original particle group
-  accumulator_transform->zero_buffer("ION_SOURCE_DENSITY");
-  // set the sources to zero on the particle group read for the next timestep
-  ion_source_density_zeroer->transform(std::make_shared<ParticleSubGroup>(A_particle_group));
-}
 
 void calculate_neutral_density_in_place(
     Field2D& density, std::shared_ptr<PetscInterface::DMPlexProjectEvaluateDG>& dg0,
@@ -553,29 +531,6 @@ void calculate_neutral_density_in_place(
   // extrapolate -> Neumann
 }
 
-void calculate_fluid_moments_in_place(
-    Field2D& neutral_density, Field2D& ion_density,
-    std::shared_ptr<PetscInterface::DMPlexProjectEvaluateDG>& dg0,
-    std::shared_ptr<ParticleGroup>& A_particle_group, 
-    std::shared_ptr<ParticleGroup>& marker_group, 
-    std::vector<double>& h_project1,
-    std::shared_ptr<CellwiseAccumulator<double>>& accumulator_transform_iz,
-    std::shared_ptr<CellwiseAccumulator<double>>& accumulator_transform_rec,
-    std::shared_ptr<TransformationStrategy>& ion_source_density_zeroer,
-    std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh) {
-  // calculate all of the fluid moments required for the moment, from data in
-  // the particle group. Set to zero any particle properties needed in preparation
-  // for the next time step.
-  calculate_neutral_density_in_place(neutral_density, dg0, A_particle_group, h_project1);
-
-  // Update ion_density with ionisation ION_DENSITY_SOURCE
-  update_ion_density_in_place(ion_density, accumulator_transform_iz, A_particle_group,
-                                   ion_source_density_zeroer, neso_mesh);
-
-  // Update ion_density with recombination ION_DENSITY_SOURCE
-  update_ion_density_in_place(ion_density, accumulator_transform_rec, marker_group,
-                                   ion_source_density_zeroer, neso_mesh);
-}
 
 double calculate_total_mass(Field2D& density,
                             std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh) {
@@ -1009,10 +964,10 @@ Vantage::Vantage(std::string name, Options& options, Solver* solver)
         initial_distribution[Sym<REAL>("POSITION")][px][dimx] = positions[dimx][px];
         initial_distribution[Sym<REAL>("VELOCITY")][px][dimx] = velocities[dimx][px];
       }
-      initial_distribution[Sym<REAL>("ION_DENSITY")][px][0] = 1.0;
+      initial_distribution[Sym<REAL>("ION_DENSITY")][px][0] = background_ion_density;
       initial_distribution[Sym<REAL>("ION_SOURCE_DENSITY")][px][0] = 0.0;
       initial_distribution[Sym<REAL>("ION_SOURCE_ENERGY")][px][0] = 0.0;
-      initial_distribution[Sym<REAL>("ELECTRON_DENSITY")][px][0] = 1.0;
+      initial_distribution[Sym<REAL>("ELECTRON_DENSITY")][px][0] = background_ion_density;
       initial_distribution[Sym<REAL>("ELECTRON_SOURCE_DENSITY")][px][0] = 0.0;
       initial_distribution[Sym<REAL>("ELECTRON_SOURCE_ENERGY")][px][0] = 0.0;
       for (int dimx = 0; dimx < ndim; dimx++) {
@@ -1089,33 +1044,26 @@ Vantage::Vantage(std::string name, Options& options, Solver* solver)
 
     // Calculate marker weights
 
-    // Get the total volume of the rank, total volume of domain and array of cell
-    auto [V_tot_local, V_tot_global, V_cells] =
-        calc_V_tot_local(marker_group->sycl_target, neso_mesh, norms);
 
-    
     // Add particle property: number of particles in the local cell
     // From demo app: "distribute_n_part_cell"
-    for (int cellx = 0; cellx < marker_group->domain->mesh->get_cell_count(); cellx++)
+    for (int ic = 0; ic < marker_group->domain->mesh->get_cell_count(); ic++)
     {
-      int n_part_cell = marker_group->get_npart_cell(cellx);
+      int n_part_cell = marker_group->get_npart_cell(ic);
       particle_loop(
           "Update N_CELL prop", marker_group,
           [=](auto n_cell_prop) { n_cell_prop.at(0) = n_part_cell; },
           Access::write(Sym<INT>("N_CELL")))
-          ->execute(cellx);
+          ->execute(ic);
     }
 
     const int num_cells = marker_group->domain->mesh->get_cell_count();
-    NESOASSERT((V_cells.size() == num_cells),
-             "Number elements in V_Cells doesn't match the number of cells in "
-             "domain.");
 
     // Calculate weight for each marker particle
     // based on FLUID_DENSITY and N_CELL properties contained in same particle.
     // TODO: implement normalisation. dens_norm is currently 1. 
-    for (int cellx = 0; cellx < num_cells; cellx++) {
-      REAL V_cell = V_cells[cellx];
+    for (int ic = 0; ic < num_cells; ic++) {
+      REAL V_cell = neso_mesh->dmh->get_cell_volume(ic);
       particle_loop(
           "Update weight of ions", marker_group,
           [=](auto n_cell_prop, auto ion_dens_prop, auto weight_prop) {
@@ -1126,7 +1074,7 @@ Vantage::Vantage(std::string name, Options& options, Solver* solver)
           Access::read(Sym<INT>("N_CELL")),
           Access::read(Sym<REAL>("FLUID_DENSITY")),
           Access::write(Sym<REAL>("WEIGHT")))
-          ->execute(cellx);
+          ->execute(ic);
     }
 
     // Define marker species and reaction rates
@@ -1317,15 +1265,6 @@ Vantage::Vantage(std::string name, Options& options, Solver* solver)
     // set weights from a Field2D from BOUT
     set_initial_particle_weights(initial_neutral_density, dg0, A_particle_group,
                                  neso_mesh, h_project1);
-    // update fluid moments
-    // calculate_fluid_moments_in_place(neutral_density, ion_density, dg0,
-    //                                  A_particle_group,
-    //                                  marker_group,
-    //                                  h_project1, 
-    //                                  accumulator_transform_iz, 
-    //                                  accumulator_transform_rec,
-    //                                  ion_source_density_zeroer,
-    //                                  neso_mesh);
 
     // Calculate neutral density and sources for initial condition
     calculate_neutral_density_in_place(neutral_density, dg0, A_particle_group, h_project1);
@@ -1353,17 +1292,6 @@ Vantage::Vantage(std::string name, Options& options, Solver* solver)
       recombination_controller.apply(marker_group, dt, A_particle_group);
       // uncomment to write a trajectory
       h5part->write();
-      // uncomment to print particle info
-      // A_particle_group->print(Sym<REAL>("POSITION"), Sym<INT>("ID"),
-      // Sym<REAL>("WEIGHT"), Sym<REAL>("ION_SOURCE_DENSITY")); update fluid moments
-      // calculate_fluid_moments_in_place(neutral_density, ion_density, dg0,
-      //                                 A_particle_group,
-      //                                 marker_group,
-      //                                 h_project1, 
-      //                                 accumulator_transform_iz, 
-      //                                 accumulator_transform_rec,
-      //                                 ion_source_density_zeroer,
-      //                                 neso_mesh);
 
       calculate_neutral_density_in_place(neutral_density, dg0, A_particle_group, h_project1);
       source_manager.update_all_sources(dt);
