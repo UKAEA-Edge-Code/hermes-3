@@ -221,16 +221,16 @@ for gridfile in grid_filenames:
     # The test just ensures that every vertex in one mesh has a matching vertex in 
     # the other mesh within the tolerance.
     
-    # Ensure all DMPLex vertices exist in Hypnotoad
+    # Ensure all Hypnotoad vertices exist in DMPlex
     for i in range(len(R_hypno)):
         nearest_distance = np.min(np.sqrt((R_dmplex - R_hypno[i])**2 + (Z_dmplex - Z_hypno[i])**2))
         
         if not nearest_distance < tolerance:
-            raise AssertionError("Found DMPlex vertex with no match in Hypnotoad")
+            raise AssertionError("Found Hypnotoad vertex with no match in DMPlex")
         
-    # Ensure all Hypnotoad vertices exist in DMPLex
+    # Ensure all DMPlex vertices exist in Hypnotoad
     for i in range(len(R_dmplex)):
         nearest_distance = np.min(np.sqrt((R_hypno - R_dmplex[i])**2 + (Z_hypno - Z_dmplex[i])**2))
         
         if not nearest_distance < tolerance:
-            raise AssertionError("Found Hypnotoad vertex with no match in DMPlex")
+            raise AssertionError("Found DMPlex vertex with no match in Hypnotoad")
