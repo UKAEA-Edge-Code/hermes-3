@@ -1,25 +1,17 @@
 #!/usr/bin/env python3
-print("step -1")
-from time import time
-t0 = time()
 from boututils.run_wrapper import shell, launch_safe, getmpirun
-print(f"step boututils: {time()- t0}")
 import numpy as np
-print(f"step numpy: {time()- t0}")
 import shutil
-print(f"step shutil: {time()- t0}")
 import zipfile
-print(f"step zipfile: {time()- t0}")
 import hashlib
-print(f"step hashlib: {time()- t0}")
 import os
-print(f"step os: {time()- t0}")
 from pathlib import Path
-print(f"step pathlib: {time()- t0}")
 import urllib.request
-print(f"step urllib.request: {time()- t0}")
 import xhermes
-print(f"step xhermes: {time()- t0}")
+from time import time
+
+t0 = time()
+
 gen_data = False
 verbose = True
 rtol = 1e-5
@@ -47,9 +39,9 @@ expected_filenames = [
     "BOUT.restart.9.nc",
     "grid_test2_allpump.nc",
 ]
-print(f"step 1: {time() - t0}")
+
+
 ## Download files
-print(f"step 1 attempt to download files: {time() - t0}")
 tmp_path = zipfile_path.with_name(zipfile_path.name + ".tmp")
 
 with urllib.request.urlopen(url, timeout=60) as response:
@@ -66,9 +58,11 @@ with urllib.request.urlopen(url, timeout=60) as response:
 t_download = time()
 if verbose:
     print(f"2D-Production test: download took {t_download - t0:.2f} seconds")
+
 # Rename temp file with the correct name
 tmp_path.replace(zipfile_path)
-print(f"step 1: attempt to extract files {time() - t0}")
+
+
 with zipfile.ZipFile(zipfile_path, "r") as zf:
     zip_contents = set(zf.namelist())
     try:
@@ -96,9 +90,7 @@ if verbose:
         f"2D-Production test: zip extraction took {t_extract - t_download:.2f} seconds"
     )
 
-print(f"step 2: {time() - t0}")
 ## Run test
-t_start = time()
 if not Path("hermes-3").is_file():
     shell("ln -s ../../../hermes-3 hermes-3")
 
@@ -107,7 +99,7 @@ runcmd = getmpirun().split(" ")[0] + " -np"
 # Allow oversubscription for OpenMPI via env var (silently ignored by MPICH,
 # which does not enforce slot limits and does not support --oversubscribe)
 os.environ["OMPI_MCA_rmaps_base_oversubscribe"] = "yes"
-print(f"step 3: {time() - t0}")
+
 s, out = launch_safe("./hermes-3 -d data", runcmd=runcmd, nproc=10, pipe=True)
 
 if s != 0:
@@ -117,7 +109,7 @@ if s != 0:
 
 t_run = time()
 if verbose:
-    print(f"2D-Production test: simulation took {t_run - t_start:.2f} seconds")
+    print(f"2D-Production test: simulation took {t_run - t_extract:.2f} seconds")
 
 # Load case
 ds = xhermes.open_hermesdataset(
