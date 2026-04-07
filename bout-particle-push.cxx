@@ -888,8 +888,8 @@ Vantage::Vantage(std::string name, Options& options, Solver* solver)
     
 
     BoutReal particle_time = 0.0;
-    Field2D ion_density = Field2D(background_ion_density, bout_mesh);
-    Field2D neutral_density = Field2D(0.0, bout_mesh);
+    ion_density = Field2D(background_ion_density, bout_mesh);
+    neutral_density = Field2D(0.0, bout_mesh);
     // Create a mesh interface from the DM
     neso_mesh = std::make_shared<PetscInterface::DMPlexInterface>(dm, 0, BoutComm::get());
     // Create a mapper for mapping particles into cells.

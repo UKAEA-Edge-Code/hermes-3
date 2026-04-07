@@ -25,6 +25,11 @@ private:
   std::shared_ptr<PetscInterface::DMPlexInterface> neso_mesh;
   std::shared_ptr<SYCLTarget> sycl_target;
   std::shared_ptr<PetscInterface::BoundaryInteraction2D> b2d;
+
+  Field2D ion_density;
+  Field2D neutral_density;
+  BoutReal particle_time;
+
 };
 
 namespace {
