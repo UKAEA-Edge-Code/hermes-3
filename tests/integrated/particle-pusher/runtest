@@ -117,7 +117,6 @@ def test_particle_push(file, mode, nsteps = 10, remove_threshold = 0.0, merge_th
   nproc = 1
   # Launch using MPI
   s, out = launch_safe(cmd, nproc=nproc, mthread=1, pipe=True)
-
   particle_positions_file_path = r"particle-push-slab-test/particle_trajectories.h5part"
   particle_positions = load_particle_data(particle_positions_file_path)
   nsteps_out = len(particle_positions)
