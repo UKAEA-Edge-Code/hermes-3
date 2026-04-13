@@ -386,12 +386,23 @@ if(HERMES_TESTS)
   # Unit tests
   option(HERMES_UNIT_TESTS "Build the unit tests" ON)
   option(SPACK_GTEST "Use spack-installed googletest for unit tests" ON)
+
+  set(HERMES_GTEST_TARGET "")
   if(HERMES_UNIT_TESTS)
-    if(NOT PACKAGE_TESTS AND NOT SPACK_GTEST)
-      # Not running BOUT++ tests
-      # Since BOUT++ includes googletest, adding it again causes errors
+    if(SPACK_GTEST)
+      find_package(GTest REQUIRED)
+    elseif(NOT TARGET GTest::gtest AND NOT TARGET gtest AND NOT PACKAGE_TESTS)
       add_subdirectory(external/googletest)
     endif()
+
+    if(TARGET GTest::gtest)
+      set(HERMES_GTEST_TARGET GTest::gtest)
+    elseif(TARGET gtest)
+      set(HERMES_GTEST_TARGET gtest)
+    else()
+      message(FATAL_ERROR "Could not find a GTest target to link against")
+    endif()
+
     file(GLOB_RECURSE TEST_SOURCES tests/unit/test_*.cxx)
 
     add_executable(hermes_unit_tests tests/unit/main.cxx ${TEST_SOURCES})
@@ -400,7 +411,8 @@ if(HERMES_TESTS)
 
     add_test(NAME hermes_unit_tests COMMAND hermes_unit_tests)
     set_tests_properties(hermes_unit_tests PROPERTIES LABELS unit)
-    target_link_libraries(hermes_unit_tests PRIVATE gtest bout++::bout++
+    target_link_libraries(hermes_unit_tests PRIVATE ${HERMES_GTEST_TARGET}
+                                                    bout++::bout++
                                                     hermes-3-lib)
     if(HERMES_USE_VANTAGE)
       add_sycl_to_target(TARGET hermes_unit_tests 
@@ -419,7 +431,7 @@ if(HERMES_TESTS)
     add_executable(hermes_mms_operator_tests tests/mms_operator/main.cxx)
     # ${TEST_SOURCES})
     target_link_libraries(hermes_mms_operator_tests
-                          PRIVATE gtest bout++::bout++ hermes-3-lib)
+                          PRIVATE ${HERMES_GTEST_TARGET} bout++::bout++ hermes-3-lib)
     add_test(
       NAME differential_operators_mms_orthogonal
       WORKING_DIRECTORY tests/mms_operator/
