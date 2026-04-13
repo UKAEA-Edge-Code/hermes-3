@@ -1290,7 +1290,6 @@ Vantage::Vantage(std::string name, Options& options, Solver* solver)
       // apply reactions
       reaction_controller.apply(A_particle_group, dt, ControllerMode::standard_mode);
       recombination_controller.apply(marker_group, dt, A_particle_group);
-      recombination_controller.apply(marker_group, dt, A_particle_group);
       // uncomment to write a trajectory
       h5part->write();
 
