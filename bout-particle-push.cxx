@@ -225,7 +225,7 @@ DM create_dmplex_from_Bout_mesh(Mesh* bout_mesh,
   dmplex_h5_filename = make_output_path(dmplex_h5_filename);
 
   // DMPlex vertex distance tolerance for duplicate Hypnotoad vertices
-  const BoutReal dmplex_vertex_tolerance = 
+  const BoutReal dmplex_vertex_tolerance =
     Options::root()["mesh"]["dmplex_vertex_tolerance"].withDefault(1.0e-8);
   output << fmt::format("Using option use_cxx_ivertex = {}", use_cxx_ivertex)
          << std::endl;
@@ -776,7 +776,8 @@ void VantageSourceManager::update_source(const std::string& hermes_source_name,
       ic++;
     }
   }
-
+  // Divite by dt so that the source is in per second
+  // TODO: Ensure this has correct units and units consistent with neutral density
   source.source_data /= dt;
 
   // Fill internal guards
@@ -818,7 +819,7 @@ Vantage::Vantage(std::string name, Options& options, Solver* solver)
   output << "Begin particle push \n";
   // get data from BOUT.inp to assign particle weights as a fn of x,y
   auto& opt = Options::root();
-  
+
 
   /*
    *
@@ -1141,6 +1142,7 @@ Vantage::Vantage(std::string name, Options& options, Solver* solver)
     auto accumulator_transform_iz = std::make_shared<CellwiseAccumulator<REAL>>(
         A_particle_group, std::vector<std::string>{"ION_SOURCE_DENSITY"});
 
+
     auto accumulator_real_transform_wrapper = std::make_shared<TransformationWrapper>(
         std::dynamic_pointer_cast<TransformationStrategy>(accumulator_transform_iz));
 
@@ -1287,6 +1289,7 @@ Vantage::Vantage(std::string name, Options& options, Solver* solver)
       lambda_apply_timestep(static_particle_sub_group(A_particle_group));
       // apply reactions
       reaction_controller.apply(A_particle_group, dt, ControllerMode::standard_mode);
+      recombination_controller.apply(marker_group, dt, A_particle_group);
       recombination_controller.apply(marker_group, dt, A_particle_group);
       // uncomment to write a trajectory
       h5part->write();
