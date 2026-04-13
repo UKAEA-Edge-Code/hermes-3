@@ -402,6 +402,11 @@ if(HERMES_TESTS)
     set_tests_properties(hermes_unit_tests PROPERTIES LABELS unit)
     target_link_libraries(hermes_unit_tests PRIVATE gtest bout++::bout++
                                                     hermes-3-lib)
+    if(HERMES_USE_VANTAGE)
+      add_sycl_to_target(TARGET hermes_unit_tests 
+                          SOURCES tests/unit/main.cxx ${TEST_SOURCES})
+    endif()
+
     # Have hermes_unit_tests look for dynamic libs in ./ before searching
     # elsewhere
     set_target_properties(hermes_unit_tests PROPERTIES BUILD_RPATH "$ORIGIN")
