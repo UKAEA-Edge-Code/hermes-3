@@ -8,7 +8,6 @@
 #include "fake_mesh_fixture.hxx"
 #include "../../bout-particle-push.hxx"
 #include "../../include/component.hxx"
-#include "fake_mesh_fixture.hxx"
 #include "test_extras.hxx" // FakeMesh
 
 /// Global mesh
@@ -20,8 +19,6 @@ extern Mesh* mesh;
 
 // The unit tests use the global mesh
 using namespace bout::globals;
-
-using VantageTest = FakeMeshFixture;
 
 class VantageTest : public FakeMeshFixture {
 public:
