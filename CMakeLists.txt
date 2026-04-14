@@ -186,6 +186,13 @@ set(HERMES_SOURCES
     include/simple_pump.hxx
     bout-particle-push.hxx)
 
+if(HERMES_USE_VANTAGE)
+# include Hermes-VANTAGE include and source files
+  list(APPEND HERMES_SOURCES
+      src/vantage_dmplex.cxx
+      include/vantage_dmplex.hxx)
+endif()
+
 # Compile Hermes sources into a library, which can be used for unit tests
 add_library(hermes-3-lib ${HERMES_SOURCES})
 
