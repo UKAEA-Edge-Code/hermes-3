@@ -12,7 +12,7 @@ import netCDF4 as nc
 verbose = False
 
 # Link to the executable
-shell("ln -s ../../../bout-particle-push bout-particle-push")
+shell("ln -s ../../../hermes-3 hermes-3")
 # make the run directory
 shell("mkdir particle-push-slab-test")
 
@@ -20,56 +20,66 @@ shell("mkdir particle-push-slab-test")
 def particle_push_input(nx=40, ny=36, dt=0.005, nsteps=1,
       iz_rate=0.0, rec_rate=0.0, remove_threshold=0.0, merge_threshold=0.0):
   input_file_string = f"""
-  # run a simulation with this file using
-  # $ OMP_NUM_THREADS=1 mpirun -np 8 ./bout-particle-push -d particle-push-slab
-  # postprocess with 
-  # $ python3 path/to/the/particle_animater.py dmplex_mesh_data.h5 particle_trajectories.h5part
-  [mesh]
-  # Uses the full cxx implementation of DMPlex
-  # calculation to interface to NESO-Particles,
-  # removing need for python preprocessing.
-  # Needed for slab example to run.
-  use_cxx_ivertex=true
 
-  # if using a slab, uncomment and
-  # modify nx, ny, below
-  nx = {nx}  # X grid size
-  ny = {ny}  # Y grid size
+    nout = 0
+    timestep = 1
 
-  dx = 1.0/({nx}-4)  # X mesh spacing
-  dy = 2*pi/{ny}  # Y mesh spacing
+    [mesh]
+    J = 1
 
-  Rxy = x
-  Rxy_corners = x - 0.5*dx
-  Rxy_lower_right_corners = x + 0.5*dx
-  Rxy_upper_left_corners = x - 0.5*dx
-  Rxy_upper_right_corners = x + 0.5*dx
-  Zxy = y
-  Zxy_corners = y - 0.5*dy
-  Zxy_lower_right_corners = y - 0.5*dy
-  Zxy_upper_left_corners = y + 0.5*dy
-  Zxy_upper_right_corners = y + 0.5*dy
+    use_cxx_ivertex=true
+    nx = 40  # X grid size
+    ny = 36  # Y grid size
 
-  # initial_neutral_density can be a function of (x, y)
-  initial_neutral_density = 1.0
+    dx = 1.0/(nx-4)  # X mesh spacing
+    dy = 2*pi/ny  # Y mesh spacing
+    dz = 1  # Unity in toroidal direction
 
-  [neso_particles]
-  npart_per_cell = 1
-  dt = {dt}
-  nsteps = {nsteps}
-  test_mass_conservation = true
-  test_cell_volumes = true
-  test_cell_centres = true
-  cell_centre_absolute_tolerance = 1e-12
-  cell_centre_relative_tolerance = 1e-12
+    Rxy_corners = x - 0.5*dx
+    Rxy_lower_right_corners = x + 0.5*dx
+    Rxy_upper_left_corners = x - 0.5*dx
+    Rxy_upper_right_corners = x + 0.5*dx
+    Zxy_corners = y - 0.5*dy
+    Zxy_lower_right_corners = y - 0.5*dy
+    Zxy_upper_left_corners = y + 0.5*dy
+    Zxy_upper_right_corners = y + 0.5*dy
+    initial_neutral_density = 1
 
-  [VANTAGE_reactions]
-  background_ion_density = 2
-  background_ion_Vy = 1
-  remove_threshold = {remove_threshold}
-  merge_threshold = {merge_threshold}
-  iz_rate = {iz_rate}
-  rec_rate = {rec_rate}
+    [solver]
+    type = pvode
+
+    [hermes]
+    components = (d+, e, vantage)
+    Nnorm = 1e19
+
+    [d+]
+    type = evolve_density
+    AA = 1
+    charge = 1
+
+    [Nd+]
+    function = 1
+
+    [e]
+    type = quasineutral
+    AA = 1/1836
+    charge = -1
+
+    [neso_particles]
+    dt = {dt}
+    nsteps = {nsteps}
+    test_mass_conservation = true
+    test_cell_volumes = true
+    test_cell_centres = true
+
+    [VANTAGE_reactions]
+    npart_per_cell = 20
+    background_ion_density = 2
+    background_ion_Vy = 1
+    remove_threshold = {remove_threshold}
+    merge_threshold = {merge_threshold}
+    iz_rate = {iz_rate}
+    rec_rate = {rec_rate}
   """
   return input_file_string
 
@@ -113,7 +123,7 @@ def test_particle_push(file, mode, nsteps = 10, remove_threshold = 0.0, merge_th
         iz_rate=iz_rate, rec_rate=rec_rate, remove_threshold=remove_threshold, merge_threshold=merge_threshold))
 
   # Command to run
-  cmd = "./bout-particle-push -d particle-push-slab-test"
+  cmd = "./hermes-3 -d particle-push-slab-test"
   nproc = 1
   # Launch using MPI
   s, out = launch_safe(cmd, nproc=nproc, mthread=1, pipe=True)
@@ -137,7 +147,7 @@ def test_particle_push(file, mode, nsteps = 10, remove_threshold = 0.0, merge_th
 
 
   # check the mass diagnostic
-  ncfile_path = r"particle-push-slab-test/BOUT.dmp.0.nc"
+  ncfile_path = r"particle-push-slab-test/BOUT.dmp.vantage.0.nc"
   
   with nc.Dataset(ncfile_path, mode='r') as ncdataset:
     total_mass = np.copy(ncdataset.variables["total_mass"][:])
