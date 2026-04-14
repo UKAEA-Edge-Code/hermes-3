@@ -35,10 +35,12 @@ def particle_push_input(nx=40, ny=36, dt=0.005, nsteps=1,
     dy = 2*pi/ny  # Y mesh spacing
     dz = 1  # Unity in toroidal direction
 
+    Rxy = x
     Rxy_corners = x - 0.5*dx
     Rxy_lower_right_corners = x + 0.5*dx
     Rxy_upper_left_corners = x - 0.5*dx
     Rxy_upper_right_corners = x + 0.5*dx
+    Zxy = y
     Zxy_corners = y - 0.5*dy
     Zxy_lower_right_corners = y - 0.5*dy
     Zxy_upper_left_corners = y + 0.5*dy
