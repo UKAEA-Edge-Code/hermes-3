@@ -16,7 +16,7 @@ import xhermes
 This test checks that the DMPLex and Hypnotoad grids have matching vertices.
 It does this by:
 - Downloading a set of Hypnotoad example grids
-- Running bout-particle-push to generate the DMPlex
+- Running hermes-3 to generate the DMPlex
 - Checking that all the vertices from the DMPlex exist in the Hypnotoad grid and vice versa
 - Repeating the above for 6 Hypnotoad example grids
 """
@@ -27,7 +27,7 @@ cwd = Path.cwd()
 case_path = cwd / "data"
 datafile_path = case_path / "BOUT.dmp.*.nc"
 inputfile_path = case_path / "BOUT.inp"
-exec_path = cwd.parents[2] / "bout-particle-push"
+exec_path = cwd.parents[2] / "hermes-3"
 dmplex_path = case_path / "hypnotoad_dmplex_mesh_output.h5"
 logfile_path = cwd / "run.log"
 
