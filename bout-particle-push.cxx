@@ -171,14 +171,20 @@ void set_initial_particle_weights(
 }
 
 void check_cell_volumes(std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh,
-                        Mesh*& bout_mesh) {
+                        Mesh*& bout_mesh, Options& alloptions) {
   Coordinates* coord = bout_mesh->getCoordinates();
   PetscInt ixy = 0;
   const REAL tolerance = 1.0e-12;
   for (PetscInt ix = bout_mesh->xstart; ix <= bout_mesh->xend; ix++) {
     for (PetscInt iy = bout_mesh->ystart; iy <= bout_mesh->yend; iy++) {
-      const REAL bout_cell_volume =
+      BoutReal bout_cell_volume =
           coord->J(ix, iy) * coord->dx(ix, iy) * coord->dy(ix, iy);
+
+          // Convert to SI: dx is m^2 T, J is m/T, dy is unitless
+          // so J * dx * dy = m^3
+          const BoutReal meters = get<BoutReal>(alloptions["units"]["meters"]);
+          bout_cell_volume *= meters*meters*meters; 
+
       const REAL neso_cell_volume = neso_mesh->dmh->get_cell_volume(ixy);
       const bool volumes_match = (abs(bout_cell_volume - neso_cell_volume) < tolerance);
       // exit if we fail to find a match
@@ -337,10 +343,10 @@ void VantageSourceManager::update_all_sources(double dt) {
   }
 }
 
-Vantage::Vantage(std::string name, Options& options, Solver* solver)
+Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
     : Component({readOnly("species:d+:density", Regions::Interior),
                  readWrite("species:d+:density")}) {
-
+     
   // TODO: Put proper permissions in
 
   // int main(int argc, char** argv) {
@@ -448,7 +454,7 @@ Vantage::Vantage(std::string name, Options& options, Solver* solver)
     // if requested, check that neso_mesh cell volumes are identical
     // to bout_mesh cell volumes, otherwise, exit.
     if (Options::root()["neso_particles"]["test_cell_volumes"].withDefault(true)) {
-      check_cell_volumes(neso_mesh, bout_mesh);
+      check_cell_volumes(neso_mesh, bout_mesh, alloptions);
     }
     if (Options::root()["neso_particles"]["test_cell_centres"].withDefault(true)){
       check_cell_centres(neso_mesh,bout_mesh,
