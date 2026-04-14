@@ -203,7 +203,6 @@ DM create_dmplex_from_Bout_mesh(Mesh* bout_mesh,
     Options::root()["mesh"]["dmplex_vertex_tolerance"].withDefault(1.0e-8);
   output << fmt::format("Using option use_cxx_ivertex = {}", use_cxx_ivertex)
          << std::endl;
-  bout_mesh->load();
   Field2D Rxy_lower_left_corners;
   Field2D Rxy_lower_right_corners;
   Field2D Rxy_upper_right_corners;
@@ -282,28 +281,28 @@ DM create_dmplex_from_Bout_mesh(Mesh* bout_mesh,
   // Perform Allreduce (sum) to get knowledge of vertices to all ranks
   MPICHK(MPI_Allreduce(local_R_lower_left_vertices.data(),
                        global_R_lower_left_vertices.data(), static_cast<int>(N_nonunique_vertices),
-                       MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD));
+                       MPI_DOUBLE, MPI_SUM, BoutComm::get()));
   MPICHK(MPI_Allreduce(local_Z_lower_left_vertices.data(),
                        global_Z_lower_left_vertices.data(), static_cast<int>(N_nonunique_vertices),
-                       MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD));
+                       MPI_DOUBLE, MPI_SUM, BoutComm::get()));
   MPICHK(MPI_Allreduce(local_R_lower_right_vertices.data(),
                        global_R_lower_right_vertices.data(), static_cast<int>(N_nonunique_vertices),
-                       MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD));
+                       MPI_DOUBLE, MPI_SUM, BoutComm::get()));
   MPICHK(MPI_Allreduce(local_Z_lower_right_vertices.data(),
                        global_Z_lower_right_vertices.data(), static_cast<int>(N_nonunique_vertices),
-                       MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD));
+                       MPI_DOUBLE, MPI_SUM, BoutComm::get()));
   MPICHK(MPI_Allreduce(local_R_upper_right_vertices.data(),
                        global_R_upper_right_vertices.data(), static_cast<int>(N_nonunique_vertices),
-                       MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD));
+                       MPI_DOUBLE, MPI_SUM, BoutComm::get()));
   MPICHK(MPI_Allreduce(local_Z_upper_right_vertices.data(),
                        global_Z_upper_right_vertices.data(), static_cast<int>(N_nonunique_vertices),
-                       MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD));
+                       MPI_DOUBLE, MPI_SUM, BoutComm::get()));
   MPICHK(MPI_Allreduce(local_R_upper_left_vertices.data(),
                        global_R_upper_left_vertices.data(), static_cast<int>(N_nonunique_vertices),
-                       MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD));
+                       MPI_DOUBLE, MPI_SUM, BoutComm::get()));
   MPICHK(MPI_Allreduce(local_Z_upper_left_vertices.data(),
                        global_Z_upper_left_vertices.data(), static_cast<int>(N_nonunique_vertices),
-                       MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD));
+                       MPI_DOUBLE, MPI_SUM, BoutComm::get()));
   // if (mpi_rank == 0) {
   //     std::cout << "Result of Allreduce (sum): ";
   //     for (double val : global_R_lower_left_vertices) {
@@ -442,7 +441,7 @@ DM create_dmplex_from_Bout_mesh(Mesh* bout_mesh,
   DM dm;
   // Create the DMPlex from the cells and coordinates.
   PETSCCHK(DMPlexCreateFromCellListParallelPetsc(
-      PETSC_COMM_WORLD, 2, num_cells_owned, num_vertices_owned, PETSC_DECIDE, 4,
+      BoutComm::get(), 2, num_cells_owned, num_vertices_owned, PETSC_DECIDE, 4,
       PETSC_TRUE, cells.data(), 2, vertex_coords.data(), NULL, NULL, &dm));
 
   // Label all of the boundary faces with 100 in the "Face Sets" label by using
@@ -472,7 +471,7 @@ DM create_dmplex_from_Bout_mesh(Mesh* bout_mesh,
   // Set a name for the DMPlex object (important for HDF5)
   PetscObjectSetName(reinterpret_cast<PetscObject>(dm), dmplex_name.c_str());
   // Create an HDF5 viewer
-  PetscViewerHDF5Open(PETSC_COMM_WORLD, dmplex_h5_filename.c_str(), FILE_MODE_WRITE,
+  PetscViewerHDF5Open(BoutComm::get(), dmplex_h5_filename.c_str(), FILE_MODE_WRITE,
                       &viewer);
   // Set viewer format to PETSC_VIEWER_HDF5_PETSC for compatibility
   PetscViewerPushFormat(viewer, PETSC_VIEWER_HDF5_PETSC);
