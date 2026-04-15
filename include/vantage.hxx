@@ -1,5 +1,5 @@
 #pragma once
-#include "include/component.hxx"
+#include "../include/component.hxx"
 #include "bout/bout.hxx"
 #include "bout/petsclib.hxx"
 #include <neso_particles.hpp>

@@ -5,7 +5,7 @@
 
 #include "gtest/gtest.h"
 
-#include "../../bout-particle-push.hxx"
+#include "../../include/vantage.hxx"
 #include "../../include/component.hxx"
 #include "fake_mesh_fixture.hxx"
 #include "test_extras.hxx" // FakeMesh

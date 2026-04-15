@@ -123,7 +123,7 @@ set(HERMES_SOURCES
     src/species_parser.cxx
     src/transform.cxx
     src/vorticity.cxx
-    bout-particle-push.cxx
+    src/vantage.cxx
     include/adas_reaction.hxx
     include/adas_carbon.hxx
     include/adas_neon.hxx
@@ -189,7 +189,7 @@ set(HERMES_SOURCES
     include/transform.hxx
     include/fixed_fraction_radiation.hxx
     include/simple_pump.hxx
-    bout-particle-push.hxx)
+    include/vantage.hxx)
 
 if(HERMES_USE_VANTAGE)
   # include Hermes-VANTAGE include and source files

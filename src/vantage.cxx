@@ -4,7 +4,6 @@
 #include "bout/output.hxx"
 #include "bout/petsclib.hxx"
 #include <bout/field_factory.hxx>
-#include "bout-particle-push.hxx"
 #include <algorithm>
 #include <cmath>
 #include <fmt/core.h>
@@ -24,7 +23,8 @@
 #include <vector>
 // for reactions integration
 #include <reactions/reactions.hpp>
-#include "include/vantage_dmplex.hxx"
+#include "../include/vantage.hxx"
+#include "../include/vantage_dmplex.hxx"
 
 #ifndef NESO_PARTICLES_PETSC
 static_assert(false, "NESO-Particles was installed without PETSc support.");
@@ -362,7 +362,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
 
   Mesh* bout_mesh = bout::globals::mesh;
   sycl_target = std::make_shared<SYCLTarget>(0, BoutComm::get());
-  // keep dmplex_h5_filename in bout-particle-push to retain access to make_output_path()
+  // keep dmplex_h5_filename in vantage.cxx to retain access to make_output_path()
   // which should presumably not need to exist within the hermes-3 library
   std::string dmplex_h5_filename =
       Options::root()["mesh"]["dmplex_h5_filename"].withDefault(
