@@ -53,7 +53,6 @@ else()
   find_package(bout++ REQUIRED)
 endif()
 
-
 find_package(MPI REQUIRED)
 
 # option for whether or not to compile with VANTAGE-Reactions and NESO-Particles
@@ -193,10 +192,8 @@ set(HERMES_SOURCES
     bout-particle-push.hxx)
 
 if(HERMES_USE_VANTAGE)
-# include Hermes-VANTAGE include and source files
-  list(APPEND HERMES_SOURCES
-      src/vantage_dmplex.cxx
-      include/vantage_dmplex.hxx)
+  # include Hermes-VANTAGE include and source files
+  list(APPEND HERMES_SOURCES src/vantage_dmplex.cxx include/vantage_dmplex.hxx)
 endif()
 
 # Compile Hermes sources into a library, which can be used for unit tests
@@ -209,7 +206,8 @@ if(HERMES_USE_VANTAGE)
   # preprocessor flag for optional VANTAGE includes
   target_compile_definitions(hermes-3-lib PUBLIC HERMES_INCLUDE_VANTAGE)
   # link to VANTAGE-Reactions and NESO-RNG-Toolkit libraries
-  target_link_libraries(hermes-3-lib PUBLIC VANTAGE-Reactions::VANTAGE-Reactions NESO-RNG-Toolkit::NESO-RNG-Toolkit)
+  target_link_libraries(hermes-3-lib PUBLIC VANTAGE-Reactions::VANTAGE-Reactions
+                                            NESO-RNG-Toolkit::NESO-RNG-Toolkit)
 endif()
 
 target_compile_features(hermes-3-lib PUBLIC cxx_std_17)
@@ -276,9 +274,6 @@ if(HERMES_COPY_EXAMPLES_TO_BUILD OR HERMES_COPY_JSON_DATABASE_TO_BUILD)
 else()
   add_custom_target(setup-examples)
 endif()
-
-
-
 
 # Tests
 option(HERMES_COPY_TESTS_TO_BUILD "Copy the tests to the build directory" ON)
@@ -403,7 +398,10 @@ if(HERMES_TESTS)
   if(HERMES_UNIT_TESTS)
     if(SPACK_GTEST)
       find_package(GTest REQUIRED)
-    elseif(NOT TARGET GTest::gtest AND NOT TARGET gtest AND NOT PACKAGE_TESTS)
+    elseif(
+      NOT TARGET GTest::gtest
+      AND NOT TARGET gtest
+      AND NOT PACKAGE_TESTS)
       add_subdirectory(external/googletest)
     endif()
 
@@ -424,11 +422,10 @@ if(HERMES_TESTS)
     add_test(NAME hermes_unit_tests COMMAND hermes_unit_tests)
     set_tests_properties(hermes_unit_tests PROPERTIES LABELS unit)
     target_link_libraries(hermes_unit_tests PRIVATE ${HERMES_GTEST_TARGET}
-                                                    bout++::bout++
-                                                    hermes-3-lib)
+                                                    bout++::bout++ hermes-3-lib)
     if(HERMES_USE_VANTAGE)
-      add_sycl_to_target(TARGET hermes_unit_tests 
-                          SOURCES tests/unit/main.cxx ${TEST_SOURCES})
+      add_sycl_to_target(TARGET hermes_unit_tests SOURCES tests/unit/main.cxx
+                         ${TEST_SOURCES})
     endif()
 
     # Have hermes_unit_tests look for dynamic libs in ./ before searching
@@ -442,8 +439,9 @@ if(HERMES_TESTS)
     # TEST_SOURCES=
     add_executable(hermes_mms_operator_tests tests/mms_operator/main.cxx)
     # ${TEST_SOURCES})
-    target_link_libraries(hermes_mms_operator_tests
-                          PRIVATE ${HERMES_GTEST_TARGET} bout++::bout++ hermes-3-lib)
+    target_link_libraries(
+      hermes_mms_operator_tests PRIVATE ${HERMES_GTEST_TARGET} bout++::bout++
+                                        hermes-3-lib)
     add_test(
       NAME differential_operators_mms_orthogonal
       WORKING_DIRECTORY tests/mms_operator/
@@ -465,14 +463,17 @@ if(HERMES_TESTS)
 
   # Integrated tests of VANTAGE-Reactions+NESO-Particles features
   if(HERMES_USE_VANTAGE)
-    add_test(NAME bout_particle_push
-           WORKING_DIRECTORY tests/integrated/particle-pusher/
-           COMMAND runtest)
+    add_test(
+      NAME bout_particle_push
+      WORKING_DIRECTORY tests/integrated/particle-pusher/
+      COMMAND runtest)
     set_tests_properties(bout_particle_push PROPERTIES LABELS integration)
-    add_test(NAME dmplex-vertex-coordinates
-           WORKING_DIRECTORY tests/integrated/dmplex-vertex-coordinates/
-           COMMAND runtest)
-    set_tests_properties(dmplex-vertex-coordinates PROPERTIES LABELS integration)
+    add_test(
+      NAME dmplex-vertex-coordinates
+      WORKING_DIRECTORY tests/integrated/dmplex-vertex-coordinates/
+      COMMAND runtest)
+    set_tests_properties(dmplex-vertex-coordinates PROPERTIES LABELS
+                                                              integration)
   endif()
 endif()
 

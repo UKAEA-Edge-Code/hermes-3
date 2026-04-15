@@ -5,9 +5,9 @@
 
 #include "gtest/gtest.h"
 
-#include "fake_mesh_fixture.hxx"
 #include "../../bout-particle-push.hxx"
 #include "../../include/component.hxx"
+#include "fake_mesh_fixture.hxx"
 #include "test_extras.hxx" // FakeMesh
 
 /// Global mesh

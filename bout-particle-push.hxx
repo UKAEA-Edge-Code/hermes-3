@@ -18,8 +18,8 @@ struct Vantage : public Component {
   void outputVars(Options& state) override;
 
 private:
-  PetscLib petsc_lib;  // Ensures PETSc is initialized for the lifetime of this component
-  std::string name;  // Component name
+  PetscLib petsc_lib; // Ensures PETSc is initialized for the lifetime of this component
+  std::string name;   // Component name
   std::shared_ptr<H5Part> h5part;
   DM dm;
   std::shared_ptr<PetscInterface::DMPlexInterface> neso_mesh;
@@ -29,7 +29,6 @@ private:
   Field2D ion_density;
   Field2D neutral_density;
   BoutReal particle_time;
-
 };
 
 namespace {
@@ -53,7 +52,7 @@ struct VantageSource {
   Field2D source_data;
 };
 
-/// @brief  Class to manage reaction channel sources from VANTAGE. 
+/// @brief  Class to manage reaction channel sources from VANTAGE.
 /// Source terms from VANTAGE are extracted from the accumulator.
 /// These are then converted to actual sources, e.g. units of m^-3 s^-1 for a
 /// density source.
@@ -75,8 +74,8 @@ public:
   // Update the Hermes-3 source field using the accumulated data from corresponding
   // VANTAGE source
   // Accumulated source is in total weight. Divide by volume to get weight/m^3,
-  // then by timestep to get weight/m^3/s, and finally multiply N_w to get 
-  // particles/m^3/s and divide by Nnorm to keep normalised units. 
+  // then by timestep to get weight/m^3/s, and finally multiply N_w to get
+  // particles/m^3/s and divide by Nnorm to keep normalised units.
   void update_source(const std::string& hermes_source_name, double dt);
 
   // Call update_source on all sources
@@ -93,17 +92,15 @@ private:
 
 /**
  * @brief Function to calculate cell volumes.
- * 
+ *
  * @param sycl_target SYCLTargetSharedPtr to use for communication.
  * @param mesh object.
- * 
+ *
  */
-
-
 
 /**
  * @brief Function to calculate particle positions and velocities from a Maxwellian.
- * 
+ *
  * @param sycl_target SYCLTargetSharedPtr to use for communication.
  * @param mesh object.
  * @param particle_spec ParticleSpec to use for the returned ParticleSet.
@@ -155,7 +152,7 @@ inline ParticleSet uniform_cellwise_maxwellian(
 
 /**
  * @brief create an RNG kernel to use for sampling velocity distributions
- * in recombination and charge exchange. 
+ * in recombination and charge exchange.
  */
 
 inline auto get_uniform_rng_kernel(SYCLTargetSharedPtr sycl_target,

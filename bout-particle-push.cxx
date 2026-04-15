@@ -180,10 +180,10 @@ void check_cell_volumes(std::shared_ptr<PetscInterface::DMPlexInterface>& neso_m
       BoutReal bout_cell_volume =
           coord->J(ix, iy) * coord->dx(ix, iy) * coord->dy(ix, iy);
 
-          // Convert to SI: dx is m^2 T, J is m/T, dy is unitless
-          // so J * dx * dy = m^3
-          const BoutReal meters = get<BoutReal>(alloptions["units"]["meters"]);
-          bout_cell_volume *= meters*meters*meters; 
+      // Convert to SI: dx is m^2 T, J is m/T, dy is unitless
+      // so J * dx * dy = m^3
+      const BoutReal meters = get<BoutReal>(alloptions["units"]["meters"]);
+      bout_cell_volume *= meters * meters * meters;
 
       const REAL neso_cell_volume = neso_mesh->dmh->get_cell_volume(ixy);
       const bool volumes_match = (abs(bout_cell_volume - neso_cell_volume) < tolerance);
@@ -276,8 +276,7 @@ void check_mass_conservation(double total_mass_final, double total_mass_initial,
 }
 
 VantageSourceManager::VantageSourceManager(
-    std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh, 
-    Mesh* bout_mesh,
+    std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh, Mesh* bout_mesh,
     const std::map<std::string, BoutReal>& norms) {
 
   // Store DMPlex and BOUT++ mesh
@@ -346,7 +345,7 @@ void VantageSourceManager::update_all_sources(double dt) {
 Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
     : Component({readOnly("species:d+:density", Regions::Interior),
                  readWrite("species:d+:density")}) {
-     
+
   // TODO: Put proper permissions in
 
   // int main(int argc, char** argv) {
@@ -368,7 +367,8 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
   std::string dmplex_h5_filename =
       Options::root()["mesh"]["dmplex_h5_filename"].withDefault(
           "hypnotoad_dmplex_mesh_output.h5");
-  dm = create_dmplex_from_Bout_mesh(bout_mesh, sycl_target, make_output_path(dmplex_h5_filename));
+  dm = create_dmplex_from_Bout_mesh(bout_mesh, sycl_target,
+                                    make_output_path(dmplex_h5_filename));
   output << "Begin particle push \n";
   // get data from BOUT.inp to assign particle weights as a fn of x,y
   auto& opt = Options::root();
@@ -437,7 +437,6 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
     const int rng_samples = Options::root()["VANTAGE_reactions"]["rng_samples"]
                                 .doc("Number of RNG samples to prepare per-particle")
                                 .withDefault(40);
-    
 
     BoutReal particle_time = 0.0;
     ion_density = Field2D(background_ion_density, bout_mesh);
@@ -545,7 +544,6 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
     // Ionisation reaction
     // ------------------------------------------------------------------------------
 
-    
     auto iz_rate_data = FixedRateData(iz_rate);
     main_species.set_id(0);
     auto ionisation_reaction = ElectronImpactIonisation<FixedRateData, FixedRateData>(
@@ -559,7 +557,6 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
     //
 
     // Options and constants
-    
 
     // Make new particle group just for the markers
     auto marker_group =
@@ -613,7 +610,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
 
     // Calculate weight for each marker particle
     // based on FLUID_DENSITY and N_CELL properties contained in same particle.
-    // TODO: implement normalisation. dens_norm is currently 1. 
+    // TODO: implement normalisation. dens_norm is currently 1.
     for (int ic = 0; ic < num_cells; ic++) {
       REAL V_cell = neso_mesh->dmh->get_cell_volume(ic);
       particle_loop(
@@ -637,14 +634,14 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
     // This sampler will calculate marker momentum from fluid plasma conditions
     // TODO: Do I need a separate rng kernel?
     auto constant_rate_cross_section = ConstantRateCrossSection(1.0);
-    
+
     auto recomb_data_calc_sampler =
       FilteredMaxwellianSampler<2, decltype(constant_rate_cross_section)>(
           1 / (recomb_species.get_mass() * Tnorm),
           constant_rate_cross_section, rng_kernel);
 
     // Container for objects allowing calculation of parameters within
-    // the recombination kernel: sampled velocity and the radiation 
+    // the recombination kernel: sampled velocity and the radiation
     // energy loss source. Must be in this order.
     auto recomb_data_calc_obj =
       DataCalculator<decltype(recomb_energy_data),
@@ -666,8 +663,6 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
       sycl_target, recomb_species.get_id(), recomb_out_states,
       recomb_data, recomb_reaction_kernel, recomb_data_calc_obj);
 
-    
-    
     // Wrappers & controllers
     // ------------------------------------------------------------------------------
 
@@ -691,10 +686,9 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
                 Sym<REAL>("WEIGHT"), merge_threshold)},
         make_transformation_strategy<MergeTransformationStrategy<ndim>>());
 
-    // Ionisation reaction transforms and controller 
+    // Ionisation reaction transforms and controller
     auto accumulator_transform_iz = std::make_shared<CellwiseAccumulator<REAL>>(
         A_particle_group, std::vector<std::string>{"ION_SOURCE_DENSITY"});
-
 
     auto accumulator_real_transform_wrapper = std::make_shared<TransformationWrapper>(
         std::dynamic_pointer_cast<TransformationStrategy>(accumulator_transform_iz));
@@ -822,7 +816,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
     // Calculate neutral density and sources for initial condition
     calculate_neutral_density_in_place(neutral_density, dg0, A_particle_group, h_project1);
     source_manager.update_all_sources(dt);
-    
+
     // diagnose the initial condition
     std::string particle_data_filename = make_output_path(
         fmt::format("{}/BOUT.dmp.vantage.{}.nc", get_restart_output_dir(), mpi_rank));
@@ -857,7 +851,8 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
 
       // diagnose timestep stepx
       update_diagnostics(neutral_density, ion_density, dg0, A_particle_group, neso_mesh,
-                         h_project1, bout_output_data, particle_data_filename, particle_time);
+                         h_project1, bout_output_data, particle_data_filename,
+                         particle_time);
     }
     // uncomment to write a trajectory
 
