@@ -15,6 +15,7 @@ spack:
   - py-boutdata
   - py-gmsh
   - py-pyvista
+  - py-pyicu
   view:
     gcc:
       root: ./views/gcc
