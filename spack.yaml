@@ -5,8 +5,7 @@
 spack:
   # add package specs to the `specs` list
   specs:
-  - hermes-3+vantagereactions ^boutpp+petsc+sundials ^petsc+hypre+mumps ^py-numpy@1.26.4 ^vantage.vantagereactions~enable_tests ^neso-rng-toolkit
-    ^neso.neso-particles~nvcxx+petsc~build_tests ^openblas ^neso.adaptivecpp ^hdf5 %gcc
+  - hermes-3+vantagereactions ^boutpp+petsc+sundials ^petsc+hypre+mumps ^py-numpy@1.26.4 ^vantage.vantagereactions~enable_tests ^neso-rng-toolkit ^neso.neso-particles~nvcxx+petsc~build_tests ^openblas ^neso.adaptivecpp ^hdf5 %gcc
   - cmake
   - py-meshio
   - py-matplotlib+animation
@@ -14,23 +13,25 @@ spack:
   - py-xbout
   - py-xhermes
   - py-boutdata
+  - py-gmsh
+  - py-pyvista
   view:
     gcc:
       root: ./views/gcc
-      select: ['%gcc', '^python' ]
+      select: ['%gcc', ^python]
       link_type: symlink
   concretizer:
     unify: when_possible
     targets:
       granularity: microarchitectures
   repos:
-    - ./external/BOUT-spack/spack_repo/bout
-    - ./external/Reactions/VANTAGE-repo
-    - ./external/Reactions/NESO-Spack
+  - ./external/BOUT-spack/spack_repo/bout
+  - ./external/Reactions/VANTAGE-repo
+  - ./external/Reactions/NESO-Spack
   packages:
     all:
       providers:
-        mpi: [mpich, openmpi ]
+        mpi: [mpich, openmpi]
     git:
       externals:
       - spec: git@system
