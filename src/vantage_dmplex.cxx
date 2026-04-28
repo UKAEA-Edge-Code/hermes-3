@@ -192,15 +192,27 @@ std::vector<PetscInt> cells_definition_from_RZ_ivertex(
   return cells;
 }
 
-DM create_dmplex_from_Bout_mesh(Mesh* bout_mesh,
+DM create_dmplex_from_Bout_mesh(Mesh* bout_mesh, Options& mesh_options,
                                 std::shared_ptr<SYCLTarget> sycl_target,
                                 std::string dmplex_h5_filename) {
-  bool use_cxx_ivertex = Options::root()["mesh"]["use_cxx_ivertex"].withDefault(false);
-  std::string dmplex_name =
-      Options::root()["mesh"]["dmplex_name"].withDefault("hypnotoad_dmplex_mesh");
+
+  bool use_cxx_ivertex = mesh_options["use_cxx_ivertex"]
+                             .doc("Use C++ based DMPlex creation routine instead of "
+                                  "loading an external DMPlex? "
+                                  "Default and recommendation is true.")
+                             .withDefault(true);
+  std::string dmplex_name = mesh_options["dmplex_name"]
+
+                                .doc("DMPlex object name.")
+                                .withDefault("hypnotoad_dmplex_mesh");
   // DMPlex vertex distance tolerance for duplicate Hypnotoad vertices
   const BoutReal dmplex_vertex_tolerance =
-    Options::root()["mesh"]["dmplex_vertex_tolerance"].withDefault(1.0e-8);
+      mesh_options["dmplex_vertex_tolerance"]
+          .doc("Tolerance for determining duplicate vertices when creating DMPlex from "
+               "BOUT++ "
+               "mesh.")
+          .withDefault(1.0e-8);
+
   output << fmt::format("Using option use_cxx_ivertex = {}", use_cxx_ivertex)
          << std::endl;
   Field2D Rxy_lower_left_corners;

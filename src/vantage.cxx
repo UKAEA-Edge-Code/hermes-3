@@ -277,13 +277,7 @@ void check_mass_conservation(double total_mass_final, double total_mass_initial,
 
 VantageSourceManager::VantageSourceManager(
     std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh, Mesh* bout_mesh,
-    const std::map<std::string, BoutReal>& norms) {
-
-  // Store DMPlex and BOUT++ mesh
-  this->neso_mesh = neso_mesh;
-  this->bout_mesh = bout_mesh;
-  this->norms = norms;
-}
+    Options& units): units(units), neso_mesh(neso_mesh), bout_mesh(bout_mesh) {}
 
 // Register new source with the manager and initialise its data
 void VantageSourceManager::add_source(
@@ -360,18 +354,26 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
   // Mesh* bout_mesh = Mesh::create(&Options::root()["mesh"]);
   // TODO: tidy up the above
 
+  Options& options = alloptions[name];  // [vantage]
+  Options& mesh_options = alloptions["mesh"];  // [mesh]
+  Options& units = alloptions["units"];
+
+  BoutReal N_w = units["N_w"]
+            .doc("Normalisation parameter: neutral particle density per unit weight")
+            .withDefault(2.0);
+  BoutReal Nnorm = get<BoutReal>(units["inv_meters_cubed"]);
+  BoutReal Tnorm = get<BoutReal>(units["eV"]);
+
   Mesh* bout_mesh = bout::globals::mesh;
   sycl_target = std::make_shared<SYCLTarget>(0, BoutComm::get());
   // keep dmplex_h5_filename in vantage.cxx to retain access to make_output_path()
   // which should presumably not need to exist within the hermes-3 library
-  std::string dmplex_h5_filename =
-      Options::root()["mesh"]["dmplex_h5_filename"].withDefault(
-          "hypnotoad_dmplex_mesh_output.h5");
-  dm = create_dmplex_from_Bout_mesh(bout_mesh, sycl_target,
+  std::string dmplex_h5_filename = mesh_options["dmplex_h5_filename"]
+                                       .doc("Filename to use for saving the DMPlex mesh")
+                                       .withDefault("hypnotoad_dmplex_mesh_output.h5");
+  dm = create_dmplex_from_Bout_mesh(bout_mesh, mesh_options, sycl_target,
                                     make_output_path(dmplex_h5_filename));
   output << "Begin particle push \n";
-  // get data from BOUT.inp to assign particle weights as a fn of x,y
-  auto& opt = Options::root();
 
 
   /*
@@ -394,47 +396,40 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
     //  TODO: Implement real normalisation consistent with Hermes-3
     //  TODO: Normalise DMPlex
 
-    // Map needed to pass all norms to functions
-    std::map<std::string, BoutReal> norms = {
-        {"rho_s0", 1.0}, // [m]
-        {"Nnorm", 1.0},  // [m^-3]
-        {"Tnorm", 1.0},  // [eV]
-        {"N_w",          // [m^-3?? ]
-         Options::root()["neso_particles"]["N_w"]
-             .doc("Normalisation parameter: neutral particle density per unit weight")
-             .withDefault(2.0)}};
-
-    // Also unpack for use in this scope.
-    const BoutReal rho_s0 = norms["rho_s0"];
-    const BoutReal Nnorm = norms["Nnorm"];
-    const BoutReal Tnorm = norms["Tnorm"];
-    const BoutReal N_w = norms["N_w"];
-
     // Initial neutral parameters
     Field2D initial_neutral_density{bout_mesh};
-    initial_neutral_density = opt["mesh"]["initial_neutral_density"].as<Field2D>();
-    const int npart_per_cell =
-        Options::root()["VANTAGE_reactions"]["npart_per_cell"].withDefault(1);
-
+    initial_neutral_density =
+        options["initial_neutral_density"]
+            .doc(
+                "Initial neutral density for VANTAGE kinetic neutrals (normalised units)")
+            .as<Field2D>();
+    const int npart_per_cell = options["npart_per_cell"]
+                                   .doc("Number of VANTAGE kinetic neutral particles per "
+                                        "cell during initialisation")
+                                   .withDefault(1);
 
     // Plasma parameters
-    const BoutReal background_ion_temperature = opt["VANTAGE_reactions"]["background_ion_temperature"].withDefault(1.0);
-    const BoutReal background_ion_density = opt["VANTAGE_reactions"]["background_ion_density"].withDefault(1.0);
-    const BoutReal background_ion_Vx = opt["VANTAGE_reactions"]["background_ion_Vx"].withDefault(0.0);
-    const BoutReal background_ion_Vy = opt["VANTAGE_reactions"]["background_ion_Vy"].withDefault(0.0);
+    const BoutReal background_ion_temperature = options["background_ion_temperature"].withDefault(1.0);
+    const BoutReal background_ion_density = options["background_ion_density"].withDefault(1.0);
+    const BoutReal background_ion_Vx = options["background_ion_Vx"].withDefault(0.0);
+    const BoutReal background_ion_Vy = options["background_ion_Vy"].withDefault(0.0);
     const std::vector<BoutReal> V_background = {background_ion_Vx, background_ion_Vy};
 
     // Reaction settings
-    const REAL iz_rate = Options::root()["VANTAGE_reactions"]["iz_rate"].withDefault(1.0);
-    const REAL rec_rate = Options::root()["VANTAGE_reactions"]["rec_rate"].withDefault(1.0);
+    const REAL iz_rate = options["iz_rate"].withDefault(1.0);
+    const REAL rec_rate = options["rec_rate"].withDefault(1.0);
     const BoutReal rec_markers_per_cell =
-        Options::root()["VANTAGE_reactions"]["rec_markers_per_cell"].withDefault(1000);
+        options["rec_markers_per_cell"].withDefault(1000);
 
     // Other settings
     const int ndim = 2;
-    const REAL dt = Options::root()["neso_particles"]["dt"].withDefault(0.01);
-    const int nsteps = Options::root()["neso_particles"]["nsteps"].withDefault(10);
-    const int rng_samples = Options::root()["VANTAGE_reactions"]["rng_samples"]
+    const REAL dt = options["dt"]
+                        .doc("Timestep to use for VANTAGE kinetic neutrals")
+                        .withDefault(0.01);
+    const int nsteps = options["nsteps"]
+                           .doc("Number of timesteps to use for VANTAGE kinetic neutrals")
+                           .withDefault(10);
+    const int rng_samples = options["rng_samples"]
                                 .doc("Number of RNG samples to prepare per-particle")
                                 .withDefault(40);
 
@@ -452,15 +447,15 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
     int num_cells_owned = neso_mesh->get_cell_count();
     // if requested, check that neso_mesh cell volumes are identical
     // to bout_mesh cell volumes, otherwise, exit.
-    if (Options::root()["neso_particles"]["test_cell_volumes"].withDefault(true)) {
+    if (mesh_options["test_dmplex_cell_volumes"].withDefault(true)) {
       check_cell_volumes(neso_mesh, bout_mesh, alloptions);
     }
-    if (Options::root()["neso_particles"]["test_cell_centres"].withDefault(true)){
-      check_cell_centres(neso_mesh,bout_mesh,
-        Options::root()["neso_particles"]["cell_centre_absolute_tolerance"].withDefault(1.0e-12),
-        Options::root()["neso_particles"]["cell_centre_relative_tolerance"].withDefault(0.0));
+    if (mesh_options["test_dmplex_cell_centres"].withDefault(true)) {
+      check_cell_centres(
+          neso_mesh, bout_mesh,
+          mesh_options["dmplex_cell_centre_absolute_tolerance"].withDefault(1.0e-12),
+          mesh_options["dmplex_cell_centre_relative_tolerance"].withDefault(0.0));
     }
-
 
     // create a Reactions particle spec
     auto particle_spec_builder = ParticleSpecBuilder(ndim);
@@ -666,12 +661,10 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
     // Wrappers & controllers
     // ------------------------------------------------------------------------------
 
-    VantageSourceManager source_manager(neso_mesh, bout_mesh, norms);
+    VantageSourceManager source_manager(neso_mesh, bout_mesh, units);
 
-    const REAL remove_threshold =
-        Options::root()["VANTAGE_reactions"]["remove_threshold"].withDefault(1.0e-10);
-    const REAL merge_threshold =
-        Options::root()["VANTAGE_reactions"]["merge_threshold"].withDefault(1.0e-2);
+    const REAL remove_threshold = options["remove_threshold"].withDefault(1.0e-10);
+    const REAL merge_threshold = options["merge_threshold"].withDefault(1.0e-2);
 
     auto remove_wrapper = std::make_shared<TransformationWrapper>(
         std::vector<std::shared_ptr<MarkingStrategy>>{
@@ -859,7 +852,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
     // mass for conservation check
     total_density = neutral_density + ion_density;
     double total_mass_final = calculate_total_mass(total_density, neso_mesh);
-    if (Options::root()["neso_particles"]["test_mass_conservation"].withDefault(true)) {
+    if (options["test_mass_conservation"].withDefault(true)) {
       check_mass_conservation(total_mass_final, total_mass_initial, remove_threshold);
     }
   }

@@ -60,7 +60,7 @@ class VantageSourceManager {
 public:
   VantageSourceManager(std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh,
                        Mesh* bout_mesh,
-                       const std::map<std::string, BoutReal>& norms);
+                       Options& units);
 
   Mesh* bout_mesh;
 
@@ -87,7 +87,7 @@ public:
 private:
   std::map<std::string, VantageSource> sources;
   std::shared_ptr<PetscInterface::DMPlexInterface> neso_mesh;
-  std::map<std::string, BoutReal> norms;
+  Options& units;
 };
 
 /**

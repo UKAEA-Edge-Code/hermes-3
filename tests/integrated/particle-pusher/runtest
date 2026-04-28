@@ -54,7 +54,9 @@ def particle_push_input(
     Zxy_lower_right_corners = y - 0.5*dy
     Zxy_upper_left_corners = y + 0.5*dy
     Zxy_upper_right_corners = y + 0.5*dy
-    initial_neutral_density = 1
+    
+    test_dmplex_cell_volumes = true
+    test_dmplex_cell_centres = true
 
     [solver]
     type = pvode
@@ -76,14 +78,11 @@ def particle_push_input(
     AA = 1/1836
     charge = -1
 
-    [neso_particles]
+    [vantage]
     dt = {dt}
     nsteps = {nsteps}
     test_mass_conservation = true
-    test_cell_volumes = true
-    test_cell_centres = true
-
-    [VANTAGE_reactions]
+    initial_neutral_density = 1
     npart_per_cell = 20
     background_ion_density = 2
     background_ion_Vy = 1
