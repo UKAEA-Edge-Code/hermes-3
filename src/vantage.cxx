@@ -38,17 +38,11 @@ inline void ASSERT_EQ(T t, U u) {
   NESOASSERT(t == u, "A check failed.");
 }
 
-std::string get_restart_output_dir() {
-  auto& root = Options::root();
-  return root["restart_files"]["path"].withDefault(
-      root["datadir"].withDefault<std::string>("data"));
-}
-
-std::string make_output_path(const std::string& filename) {
-  if (filename.find('/') != std::string::npos) {
-    return filename;
-  }
-  return fmt::format("{}/{}", get_restart_output_dir(), filename);
+// Make path for any output file
+std::string make_output_path(const std::string& filename, Options& alloptions) {
+  std::string output_dir = alloptions["restart_files"]["path"].withDefault(
+      alloptions["datadir"].withDefault<std::string>("data"));
+  return fmt::format("{}/{}", output_dir, filename);
 }
 
 void calculate_neutral_density_in_place(
@@ -372,7 +366,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
                                        .doc("Filename to use for saving the DMPlex mesh")
                                        .withDefault("hypnotoad_dmplex_mesh_output.h5");
   dm = create_dmplex_from_Bout_mesh(bout_mesh, mesh_options, sycl_target,
-                                    make_output_path(dmplex_h5_filename));
+                                    make_output_path(dmplex_h5_filename, alloptions));
   output << "Begin particle push \n";
 
 
@@ -795,7 +789,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
       }
     };
     // uncomment to write a trajectory
-    h5part = std::make_shared<H5Part>(make_output_path("particle_trajectories.h5part"),
+    h5part = std::make_shared<H5Part>(make_output_path("particle_trajectories.h5part", alloptions),
                                       A_particle_group, Sym<REAL>("POSITION"),
                                       Sym<REAL>("VELOCITY"));
 
@@ -812,7 +806,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
 
     // diagnose the initial condition
     std::string particle_data_filename = make_output_path(
-        fmt::format("{}/BOUT.dmp.vantage.{}.nc", get_restart_output_dir(), mpi_rank));
+        fmt::format("BOUT.dmp.vantage.{}.nc", mpi_rank), alloptions);
     Options bout_output_data = initialise_diagnostics(
         bout_mesh, neutral_density, ion_density, dg0, A_particle_group, neso_mesh,
         h_project1, particle_data_filename);
