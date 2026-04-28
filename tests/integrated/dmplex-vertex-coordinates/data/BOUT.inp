@@ -8,8 +8,8 @@ file = example_cdn.grd.nc
 extrapolate_y = false
 use_cxx_ivertex = true
 
-initial_neutral_density = 20
-
+test_dmplex_cell_volumes = false
+test_dmplex_cell_centres = false
 
 [solver]
 type = pvode
@@ -31,14 +31,13 @@ type = quasineutral
 AA = 1/1836
 charge = -1
 
-[neso_particles]
+[vantage]
 dt = 0.005
 nsteps = 3
-test_mass_conservation = true
-test_cell_volumes = false
-test_cell_centres = false
 
-[VANTAGE_reactions]
+test_mass_conservation = true
+initial_neutral_density = 20
+
 npart_per_cell = 20
 remove_threshold = 0.0
 merge_threshold = 0.0
