@@ -123,7 +123,6 @@ set(HERMES_SOURCES
     src/species_parser.cxx
     src/transform.cxx
     src/vorticity.cxx
-    src/vantage.cxx
     include/adas_reaction.hxx
     include/adas_carbon.hxx
     include/adas_neon.hxx
@@ -189,11 +188,15 @@ set(HERMES_SOURCES
     include/transform.hxx
     include/fixed_fraction_radiation.hxx
     include/simple_pump.hxx
-    include/vantage.hxx)
+)
 
 if(HERMES_USE_VANTAGE)
   # include Hermes-VANTAGE include and source files
-  list(APPEND HERMES_SOURCES src/vantage_dmplex.cxx include/vantage_dmplex.hxx)
+  list(APPEND HERMES_SOURCES 
+    src/vantage_dmplex.cxx 
+    include/vantage_dmplex.hxx 
+    src/vantage.cxx 
+    include/vantage.hxx)
 endif()
 
 # Compile Hermes sources into a library, which can be used for unit tests
@@ -414,6 +417,11 @@ if(HERMES_TESTS)
     endif()
 
     file(GLOB_RECURSE TEST_SOURCES tests/unit/test_*.cxx)
+
+    # Exclude VANTAGE unit test if VANTAGE not used
+    if(NOT HERMES_USE_VANTAGE)
+      list(FILTER TEST_SOURCES EXCLUDE REGEX ".*/test_vantage\\.cxx$")
+    endif()
 
     add_executable(hermes_unit_tests tests/unit/main.cxx ${TEST_SOURCES})
 
