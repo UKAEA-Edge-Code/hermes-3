@@ -1,10 +1,10 @@
+#include "bout-particle-push.hxx"
 #include "bout/bout.hxx"
 #include "bout/bout_types.hxx"
 #include "bout/field2d.hxx"
 #include "bout/output.hxx"
 #include "bout/petsclib.hxx"
 #include <bout/field_factory.hxx>
-#include "bout-particle-push.hxx"
 #include <algorithm>
 #include <cmath>
 #include <fmt/core.h>
@@ -23,8 +23,8 @@
 #include <string>
 #include <vector>
 // for reactions integration
-#include <reactions/reactions.hpp>
 #include "include/vantage_dmplex.hxx"
+#include <reactions/reactions.hpp>
 
 #ifndef NESO_PARTICLES_PETSC
 static_assert(false, "NESO-Particles was installed without PETSc support.");
@@ -72,7 +72,6 @@ void calculate_neutral_density_in_place(
   // density.applyBoundary();
   // extrapolate -> Neumann
 }
-
 
 double calculate_total_mass(Field2D& density,
                             std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh) {
@@ -192,18 +191,25 @@ void check_cell_volumes(std::shared_ptr<PetscInterface::DMPlexInterface>& neso_m
   }
 }
 
-REAL cell_length(std::vector<std::vector<REAL>> cell_vertices, INT iv1, INT iv2, INT iv3, INT iv4){
-  const REAL Rlength2 = std::pow(0.5*(cell_vertices.at(iv1).at(0) + cell_vertices.at(iv2).at(0) -
-                 cell_vertices.at(iv3).at(0) - cell_vertices.at(iv4).at(0)),2.0);
-  const REAL Zlength2 = std::pow(0.5*(cell_vertices.at(iv1).at(1) + cell_vertices.at(iv2).at(1) -
-                 cell_vertices.at(iv3).at(1) - cell_vertices.at(iv4).at(1)),2.0);
-  REAL length = std::pow(Zlength2+Rlength2,0.5);
+REAL cell_length(std::vector<std::vector<REAL>> cell_vertices, INT iv1, INT iv2, INT iv3,
+                 INT iv4) {
+  const REAL Rlength2 =
+      std::pow(0.5
+                   * (cell_vertices.at(iv1).at(0) + cell_vertices.at(iv2).at(0)
+                      - cell_vertices.at(iv3).at(0) - cell_vertices.at(iv4).at(0)),
+               2.0);
+  const REAL Zlength2 =
+      std::pow(0.5
+                   * (cell_vertices.at(iv1).at(1) + cell_vertices.at(iv2).at(1)
+                      - cell_vertices.at(iv3).at(1) - cell_vertices.at(iv4).at(1)),
+               2.0);
+  REAL length = std::pow(Zlength2 + Rlength2, 0.5);
   return length;
 }
 
-
 void check_cell_centres(std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh,
-                        Mesh*& bout_mesh, BoutReal absolute_tolerance, BoutReal relative_tolerance) {
+                        Mesh*& bout_mesh, BoutReal absolute_tolerance,
+                        BoutReal relative_tolerance) {
   Coordinates* coord = bout_mesh->getCoordinates();
   // get (R,Z) of cell centres in Hypnotoad grid
   Field2D Rxy;
@@ -221,7 +227,7 @@ void check_cell_centres(std::shared_ptr<PetscInterface::DMPlexInterface>& neso_m
 
       REAL neso_Rxy = 0.0;
       REAL neso_Zxy = 0.0;
-      for (PetscInt iv = 0; iv < 4; iv++){
+      for (PetscInt iv = 0; iv < 4; iv++) {
         neso_Rxy += cell_vertices.at(iv).at(0);
         neso_Zxy += cell_vertices.at(iv).at(1);
       }
@@ -233,23 +239,25 @@ void check_cell_centres(std::shared_ptr<PetscInterface::DMPlexInterface>& neso_m
       const REAL min_cell_length = std::min(cell_length_a, cell_length_b);
       // we compare the difference in cell centres to the absolute tolerance and
       // the relative tolerance formed by comparing to the smallest length across the cell
-      const REAL tolerance = absolute_tolerance + min_cell_length*relative_tolerance;
-      const bool centres_match = (abs(neso_Rxy - bout_Rxy) < tolerance) &&
-                                 (abs(neso_Zxy - bout_Zxy) < tolerance);
+      const REAL tolerance = absolute_tolerance + min_cell_length * relative_tolerance;
+      const bool centres_match = (abs(neso_Rxy - bout_Rxy) < tolerance)
+                                 && (abs(neso_Zxy - bout_Zxy) < tolerance);
       // exit if we fail to find a match
-      NESOASSERT(centres_match,
-                 fmt::format("Hypnotoad/BOUT++ cell centre (R, Z) ({}, {}) does not match NESO-Particles mesh "
-                             "cell centre ({}, {}) for ix = {} iy = {} \n"
-                             "The cell height and width are {} {} \n"
-                             "The displacements in R and Z are {} {} \n"
-                             "Ignore this message by "
-                             "setting [neso_particles] test_cell_centres = false\n Relax the "
-                             "tolerance used in this check by increasing\n"
-                             "[neso_particles] cell_centre_absolute_tolerance = {}\n"
-                             "[neso_particles] cell_centre_relative_tolerance = {}",
-                             bout_Rxy, bout_Zxy, neso_Rxy, neso_Zxy, ix, iy,
-                             cell_length_a, cell_length_b, abs(neso_Rxy - bout_Rxy), abs(neso_Zxy - bout_Zxy),
-                             absolute_tolerance, relative_tolerance));
+      NESOASSERT(
+          centres_match,
+          fmt::format("Hypnotoad/BOUT++ cell centre (R, Z) ({}, {}) does not match "
+                      "NESO-Particles mesh "
+                      "cell centre ({}, {}) for ix = {} iy = {} \n"
+                      "The cell height and width are {} {} \n"
+                      "The displacements in R and Z are {} {} \n"
+                      "Ignore this message by "
+                      "setting [neso_particles] test_cell_centres = false\n Relax the "
+                      "tolerance used in this check by increasing\n"
+                      "[neso_particles] cell_centre_absolute_tolerance = {}\n"
+                      "[neso_particles] cell_centre_relative_tolerance = {}",
+                      bout_Rxy, bout_Zxy, neso_Rxy, neso_Zxy, ix, iy, cell_length_a,
+                      cell_length_b, abs(neso_Rxy - bout_Rxy), abs(neso_Zxy - bout_Zxy),
+                      absolute_tolerance, relative_tolerance));
       ixy++;
     }
   }
@@ -270,8 +278,7 @@ void check_mass_conservation(double total_mass_final, double total_mass_initial,
 }
 
 VantageSourceManager::VantageSourceManager(
-    std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh,
-    Mesh* bout_mesh,
+    std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh, Mesh* bout_mesh,
     const std::map<std::string, BoutReal>& norms) {
 
   // Store DMPlex and BOUT++ mesh
@@ -354,11 +361,11 @@ int main(int argc, char** argv) {
   std::string dmplex_h5_filename =
       Options::root()["mesh"]["dmplex_h5_filename"].withDefault(
           "hypnotoad_dmplex_mesh_output.h5");
-  DM dm = create_dmplex_from_Bout_mesh(bout_mesh, sycl_target, make_output_path(dmplex_h5_filename));
+  DM dm = create_dmplex_from_Bout_mesh(bout_mesh, sycl_target,
+                                       make_output_path(dmplex_h5_filename));
   output << "Begin particle push \n";
   // get data from BOUT.inp to assign particle weights as a fn of x,y
   auto& opt = Options::root();
-
 
   /*
    *
@@ -402,17 +409,21 @@ int main(int argc, char** argv) {
     const int npart_per_cell =
         Options::root()["VANTAGE_reactions"]["npart_per_cell"].withDefault(1);
 
-
     // Plasma parameters
-    const BoutReal background_ion_temperature = opt["VANTAGE_reactions"]["background_ion_temperature"].withDefault(1.0);
-    const BoutReal background_ion_density = opt["VANTAGE_reactions"]["background_ion_density"].withDefault(1.0);
-    const BoutReal background_ion_Vx = opt["VANTAGE_reactions"]["background_ion_Vx"].withDefault(0.0);
-    const BoutReal background_ion_Vy = opt["VANTAGE_reactions"]["background_ion_Vy"].withDefault(0.0);
+    const BoutReal background_ion_temperature =
+        opt["VANTAGE_reactions"]["background_ion_temperature"].withDefault(1.0);
+    const BoutReal background_ion_density =
+        opt["VANTAGE_reactions"]["background_ion_density"].withDefault(1.0);
+    const BoutReal background_ion_Vx =
+        opt["VANTAGE_reactions"]["background_ion_Vx"].withDefault(0.0);
+    const BoutReal background_ion_Vy =
+        opt["VANTAGE_reactions"]["background_ion_Vy"].withDefault(0.0);
     const std::vector<BoutReal> V_background = {background_ion_Vx, background_ion_Vy};
 
     // Reaction settings
     const REAL iz_rate = Options::root()["VANTAGE_reactions"]["iz_rate"].withDefault(1.0);
-    const REAL rec_rate = Options::root()["VANTAGE_reactions"]["rec_rate"].withDefault(1.0);
+    const REAL rec_rate =
+        Options::root()["VANTAGE_reactions"]["rec_rate"].withDefault(1.0);
     const BoutReal rec_markers_per_cell =
         Options::root()["VANTAGE_reactions"]["rec_markers_per_cell"].withDefault(1000);
 
@@ -423,7 +434,6 @@ int main(int argc, char** argv) {
     const int rng_samples = Options::root()["VANTAGE_reactions"]["rng_samples"]
                                 .doc("Number of RNG samples to prepare per-particle")
                                 .withDefault(40);
-
 
     BoutReal sim_time = 0.0;
     Field2D ion_density = Field2D(background_ion_density, bout_mesh);
@@ -443,12 +453,14 @@ int main(int argc, char** argv) {
     if (Options::root()["neso_particles"]["test_cell_volumes"].withDefault(true)) {
       check_cell_volumes(neso_mesh, bout_mesh);
     }
-    if (Options::root()["neso_particles"]["test_cell_centres"].withDefault(true)){
-      check_cell_centres(neso_mesh,bout_mesh,
-        Options::root()["neso_particles"]["cell_centre_absolute_tolerance"].withDefault(1.0e-12),
-        Options::root()["neso_particles"]["cell_centre_relative_tolerance"].withDefault(0.0));
+    if (Options::root()["neso_particles"]["test_cell_centres"].withDefault(true)) {
+      check_cell_centres(
+          neso_mesh, bout_mesh,
+          Options::root()["neso_particles"]["cell_centre_absolute_tolerance"].withDefault(
+              1.0e-12),
+          Options::root()["neso_particles"]["cell_centre_relative_tolerance"].withDefault(
+              0.0));
     }
-
 
     // create a Reactions particle spec
     auto particle_spec_builder = ParticleSpecBuilder(ndim);
@@ -532,7 +544,6 @@ int main(int argc, char** argv) {
     // Ionisation reaction
     // ------------------------------------------------------------------------------
 
-
     auto iz_rate_data = FixedRateData(iz_rate);
     main_species.set_id(0);
     auto ionisation_reaction = ElectronImpactIonisation<FixedRateData, FixedRateData>(
@@ -546,7 +557,6 @@ int main(int argc, char** argv) {
     //
 
     // Options and constants
-
 
     // Make new particle group just for the markers
     auto marker_group =
@@ -583,11 +593,9 @@ int main(int argc, char** argv) {
 
     // Calculate marker weights
 
-
     // Add particle property: number of particles in the local cell
     // From demo app: "distribute_n_part_cell"
-    for (int ic = 0; ic < marker_group->domain->mesh->get_cell_count(); ic++)
-    {
+    for (int ic = 0; ic < marker_group->domain->mesh->get_cell_count(); ic++) {
       int n_part_cell = marker_group->get_npart_cell(ic);
       particle_loop(
           "Update N_CELL prop", marker_group,
@@ -606,39 +614,37 @@ int main(int argc, char** argv) {
       particle_loop(
           "Update weight of ions", marker_group,
           [=](auto n_cell_prop, auto ion_dens_prop, auto weight_prop) {
-            auto updated_weight = (ion_dens_prop.at(0) * Nnorm * V_cell) /
-                                  (N_w * n_cell_prop.at(0));
+            auto updated_weight =
+                (ion_dens_prop.at(0) * Nnorm * V_cell) / (N_w * n_cell_prop.at(0));
             weight_prop.at(0) = updated_weight;
           },
-          Access::read(Sym<INT>("N_CELL")),
-          Access::read(Sym<REAL>("FLUID_DENSITY")),
+          Access::read(Sym<INT>("N_CELL")), Access::read(Sym<REAL>("FLUID_DENSITY")),
           Access::write(Sym<REAL>("WEIGHT")))
           ->execute(ic);
     }
 
     // Define marker species and reaction rates
-    auto recomb_species = Species("ION", 1.0, 0.0, -1);  //TODO: better as marker_species
+    auto recomb_species = Species("ION", 1.0, 0.0, -1); // TODO: better as marker_species
     auto recomb_data = FixedRateData(rec_rate);
-    auto recomb_energy_data = FixedRateData(rec_rate); //TODO: make this separate
+    auto recomb_energy_data = FixedRateData(rec_rate); // TODO: make this separate
 
     // This sampler will calculate marker momentum from fluid plasma conditions
     // TODO: Do I need a separate rng kernel?
     auto constant_rate_cross_section = ConstantRateCrossSection(1.0);
 
     auto recomb_data_calc_sampler =
-      FilteredMaxwellianSampler<2, decltype(constant_rate_cross_section)>(
-          1 / (recomb_species.get_mass() * Tnorm),
-          constant_rate_cross_section, rng_kernel);
+        FilteredMaxwellianSampler<2, decltype(constant_rate_cross_section)>(
+            1 / (recomb_species.get_mass() * Tnorm), constant_rate_cross_section,
+            rng_kernel);
 
     // Container for objects allowing calculation of parameters within
     // the recombination kernel: sampled velocity and the radiation
     // energy loss source. Must be in this order.
     auto recomb_data_calc_obj =
-      DataCalculator<decltype(recomb_energy_data),
-                     decltype(recomb_data_calc_sampler)>(
-          recomb_energy_data, recomb_data_calc_sampler);
+        DataCalculator<decltype(recomb_energy_data), decltype(recomb_data_calc_sampler)>(
+            recomb_energy_data, recomb_data_calc_sampler);
 
-    BoutReal normalised_potential_energy = 1.0;  //TODO: units
+    BoutReal normalised_potential_energy = 1.0; // TODO: units
     auto recomb_reaction_kernel = RecombReactionKernels<2>(
         recomb_species, electron_species, normalised_potential_energy);
 
@@ -647,13 +653,11 @@ int main(int argc, char** argv) {
     std::array<int, 1> recomb_out_states = {out_state};
 
     // Create reaction object
-    auto recomb_reaction = LinearReactionBase<1, decltype(recomb_data),
-                                            decltype(recomb_reaction_kernel),
-                                            decltype(recomb_data_calc_obj)>(
-      sycl_target, recomb_species.get_id(), recomb_out_states,
-      recomb_data, recomb_reaction_kernel, recomb_data_calc_obj);
-
-
+    auto recomb_reaction =
+        LinearReactionBase<1, decltype(recomb_data), decltype(recomb_reaction_kernel),
+                           decltype(recomb_data_calc_obj)>(
+            sycl_target, recomb_species.get_id(), recomb_out_states, recomb_data,
+            recomb_reaction_kernel, recomb_data_calc_obj);
 
     // Wrappers & controllers
     // ------------------------------------------------------------------------------
@@ -685,8 +689,9 @@ int main(int argc, char** argv) {
     auto accumulator_real_transform_wrapper = std::make_shared<TransformationWrapper>(
         std::dynamic_pointer_cast<TransformationStrategy>(accumulator_transform_iz));
 
-    auto ion_source_density_zeroer = make_transformation_strategy<ParticleDatZeroer<REAL>>(
-        std::vector<std::string>{"ION_SOURCE_DENSITY"});
+    auto ion_source_density_zeroer =
+        make_transformation_strategy<ParticleDatZeroer<REAL>>(
+            std::vector<std::string>{"ION_SOURCE_DENSITY"});
 
     std::vector<std::shared_ptr<TransformationWrapper>> child_transforms =
         std::vector{merge_wrapper, remove_wrapper};
@@ -711,8 +716,8 @@ int main(int argc, char** argv) {
     std::vector<std::shared_ptr<TransformationWrapper>> parent_transforms_rec =
         std::vector{accumulator_real_transform_wrapper, merge_wrapper, remove_wrapper};
 
-    auto recombination_controller = ReactionController(
-        parent_transforms_rec, child_transforms);
+    auto recombination_controller =
+        ReactionController(parent_transforms_rec, child_transforms);
 
     recombination_controller.add_reaction(
         std::make_shared<decltype(recomb_reaction)>(recomb_reaction));
@@ -794,8 +799,8 @@ int main(int argc, char** argv) {
       }
     };
     // uncomment to write a trajectory
-    H5Part h5part(make_output_path("particle_trajectories.h5part"),
-                  A_particle_group, Sym<REAL>("POSITION"), Sym<REAL>("VELOCITY"));
+    H5Part h5part(make_output_path("particle_trajectories.h5part"), A_particle_group,
+                  Sym<REAL>("POSITION"), Sym<REAL>("VELOCITY"));
 
     // allocate buffer vector for scalar projection/evaluation of NESO-Particles
     // properties
@@ -805,7 +810,8 @@ int main(int argc, char** argv) {
                                  neso_mesh, h_project1);
 
     // Calculate neutral density and sources for initial condition
-    calculate_neutral_density_in_place(neutral_density, dg0, A_particle_group, h_project1);
+    calculate_neutral_density_in_place(neutral_density, dg0, A_particle_group,
+                                       h_project1);
     source_manager.update_all_sources(dt);
 
     // diagnose the initial condition
@@ -831,7 +837,8 @@ int main(int argc, char** argv) {
       // uncomment to write a trajectory
       h5part.write();
 
-      calculate_neutral_density_in_place(neutral_density, dg0, A_particle_group, h_project1);
+      calculate_neutral_density_in_place(neutral_density, dg0, A_particle_group,
+                                         h_project1);
       source_manager.update_all_sources(dt);
       Field2D Siz = source_manager.get_data("Siz");
       Field2D Srec = source_manager.get_data("Srec");
