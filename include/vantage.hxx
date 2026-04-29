@@ -115,21 +115,20 @@ private:
 template <size_t ndim>
 inline ParticleSet uniform_cellwise_maxwellian(
     SYCLTargetSharedPtr sycl_target, std::shared_ptr<PetscInterface::DMPlexInterface> mesh,
-    const ParticleSpec &particle_spec, const INT &npart_per_cell,
+    const ParticleSpec &particle_spec, const int npart_per_cell,
     const REAL &weight, const REAL &std_dev, const INT &species_id) {
 
   const int rank = sycl_target->comm_pair.rank_parent;
-  const int size = sycl_target->comm_pair.size_parent;
 
-  std::mt19937 rng_pos(52234234 + rank);
-  std::mt19937 rng_vel(52234231 + rank);
+  std::mt19937 rng_pos(static_cast<std::mt19937::result_type>(52234234 + rank));
+  std::mt19937 rng_vel(static_cast<std::mt19937::result_type>(52234231 + rank));
 
   std::vector<std::vector<double>> positions;
   std::vector<int> cell_ids;
   PetscInterface::uniform_within_dmplex_cells(mesh, npart_per_cell, positions, cell_ids,
                                  &rng_pos);
 
-  const int N = cell_ids.size();
+  const int N = static_cast<int>(cell_ids.size());
 
   auto velocities =
       NESO::Particles::normal_distribution(N, ndim, 0.0, std_dev, rng_vel);
@@ -137,11 +136,13 @@ inline ParticleSet uniform_cellwise_maxwellian(
   ParticleSet maxwellian(N, particle_spec);
 
   for (int px = 0; px < N; px++) {
-    for (int dimx = 0; dimx < ndim; dimx++) {
-      maxwellian[Sym<REAL>("POSITION")][px][dimx] = positions.at(dimx).at(px);
-      maxwellian[Sym<REAL>("VELOCITY")][px][dimx] = velocities.at(dimx).at(px);
+    std::size_t pxu = static_cast<std::size_t>(px);
+    for (int dimx = 0; dimx < static_cast<int>(ndim); dimx++) {
+      std::size_t dimxu = static_cast<std::size_t>(dimx);
+      maxwellian[Sym<REAL>("POSITION")][px][dimx] = positions.at(dimxu).at(pxu);
+      maxwellian[Sym<REAL>("VELOCITY")][px][dimx] = velocities.at(dimxu).at(pxu);
     }
-    maxwellian[Sym<INT>("CELL_ID")][px][0] = cell_ids.at(px);
+    maxwellian[Sym<INT>("CELL_ID")][px][0] = cell_ids.at(pxu);
     maxwellian[Sym<INT>("ID")][px][0] = px;
     maxwellian[Sym<REAL>("WEIGHT")][px][0] = weight;
     maxwellian[Sym<INT>("INTERNAL_STATE")][px][0] = species_id;
@@ -155,29 +156,29 @@ inline ParticleSet uniform_cellwise_maxwellian(
  * in recombination and charge exchange.
  */
 
-inline auto get_uniform_rng_kernel(SYCLTargetSharedPtr sycl_target,
-                                   std::size_t n_samples,
+inline auto get_uniform_rng_kernel(SYCLTargetSharedPtr sycl_target, std::size_t n_samples,
                                    std::uint64_t root_seed = 141351) {
 
   const int rank = sycl_target->comm_pair.rank_parent;
 
   std::uint64_t seed = NESO::RNGToolkit::create_seeds(
-      sycl_target->comm_pair.size_parent, rank, root_seed);
+      static_cast<std::size_t>(sycl_target->comm_pair.size_parent),
+      static_cast<std::size_t>(rank), root_seed);
 
   auto rng_normal = NESO::RNGToolkit::create_rng<REAL>(
       NESO::RNGToolkit::Distribution::Uniform<REAL>{
           NESO::RNGToolkit::Distribution::next_value(0.0), 1.0},
-      seed, sycl_target->device, sycl_target->device_index);
+      seed, sycl_target->device, static_cast<std::size_t>(sycl_target->device_index));
 
   // Create an interface between NESO-RNG-Toolkit and NESO-Particles KernelRNG
   auto rng_interface =
       make_rng_generation_function<GenericDeviceRNGGenerationFunction, REAL>(
-          [=](REAL *d_ptr, const std::size_t num_samples) -> int {
+          [=](REAL* d_ptr, const std::size_t num_samples) -> int {
             return rng_normal->get_samples(d_ptr, num_samples);
           });
 
-  auto rng_kernel =
-      host_atomic_block_kernel_rng<REAL>(rng_interface, n_samples);
+  auto rng_kernel = host_atomic_block_kernel_rng<REAL>(
+      rng_interface, static_cast<int>(n_samples));
 
   return rng_kernel;
 }
