@@ -11,6 +11,7 @@ spack:
   - py-meshio
   - py-matplotlib+animation
   - py-pip
+  - py-uv
   - py-xbout
   - py-xhermes
   - py-boutdata
