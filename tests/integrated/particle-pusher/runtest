@@ -36,7 +36,6 @@ def particle_push_input(
     [mesh]
     J = 1
 
-    use_cxx_ivertex=true
     nx = 40  # X grid size
     ny = 36  # Y grid size
 
@@ -54,7 +53,9 @@ def particle_push_input(
     Zxy_lower_right_corners = y - 0.5*dy
     Zxy_upper_left_corners = y + 0.5*dy
     Zxy_upper_right_corners = y + 0.5*dy
-    
+
+    [dmplex]
+    use_cxx_ivertex=true
     test_dmplex_cell_volumes = true
     test_dmplex_cell_centres = true
 

@@ -92,7 +92,7 @@ Options MakeOptions() {
   alloptions["units"]["seconds"] = 1.0;
   alloptions["units"]["inv_meters_cubed"] = 1e19;
 
-  alloptions["mesh"]["use_cxx_ivertex"] = true;
+  alloptions["dmplex"]["use_cxx_ivertex"] = true;
 
   alloptions["vantage"]["initial_neutral_density"] = 1;
   alloptions["vantage"]["npart_per_cell"] = 1;

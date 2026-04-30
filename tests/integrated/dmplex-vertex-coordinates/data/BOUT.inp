@@ -2,14 +2,14 @@ nout = 0
 timestep = 1
 
 [mesh]
-dmplex_vertex_tolerance = 1e-08
 file = example_cdn.grd.nc
-
 extrapolate_y = false
-use_cxx_ivertex = true
 
+[dmplex]
+use_cxx_ivertex = true
 test_dmplex_cell_volumes = false
 test_dmplex_cell_centres = false
+dmplex_vertex_tolerance = 1e-08
 
 [solver]
 type = pvode

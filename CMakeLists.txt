@@ -397,6 +397,11 @@ if(HERMES_TESTS)
   option(HERMES_UNIT_TESTS "Build the unit tests" ON)
   option(SPACK_GTEST "Use spack-installed googletest for unit tests" ON)
 
+  # "gtest" and "GTest::gtest" are not the same, and the latter is preferred as being
+  # more complete. So, instead of just linking to "gtest", we will try to find the package
+  # using CMake if SPACK_GTEST is enabled. If not, then if gtest isn't already a target, then
+  # it will get it from the submodule. The GTest target is saved as its own variable
+  # so that it can be passed to both hermes_unit_tests.
   set(HERMES_GTEST_TARGET "")
   if(HERMES_UNIT_TESTS)
     if(SPACK_GTEST)

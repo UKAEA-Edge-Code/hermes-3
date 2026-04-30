@@ -166,13 +166,14 @@ void check_cell_volumes(std::shared_ptr<PetscInterface::DMPlexInterface>& neso_m
   const REAL tolerance = 1.0e-12;
   for (PetscInt ix = bout_mesh->xstart; ix <= bout_mesh->xend; ix++) {
     for (PetscInt iy = bout_mesh->ystart; iy <= bout_mesh->yend; iy++) {
-      BoutReal bout_cell_volume =
-          coord->J(ix, iy) * coord->dx(ix, iy) * coord->dy(ix, iy);
 
       // Convert to SI: dx is m^2 T, J is m/T, dy is unitless
       // so J * dx * dy = m^3
       const BoutReal meters = get<BoutReal>(alloptions["units"]["meters"]);
-      bout_cell_volume *= meters * meters * meters;
+      const BoutReal meters_cubed = meters * meters * meters;
+
+      const BoutReal bout_cell_volume =
+          coord->J(ix, iy) * coord->dx(ix, iy) * coord->dy(ix, iy) * meters_cubed;
 
       const REAL neso_cell_volume = neso_mesh->dmh->get_cell_volume(ixy);
       const bool volumes_match = (abs(bout_cell_volume - neso_cell_volume) < tolerance);
@@ -353,7 +354,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
   // TODO: tidy up the above
 
   Options& options = alloptions[name];        // [vantage]
-  Options& mesh_options = alloptions["mesh"]; // [mesh]
+  Options& mesh_options = alloptions["dmplex"]; // [mesh]
   Options& units = alloptions["units"];
 
   BoutReal N_w =

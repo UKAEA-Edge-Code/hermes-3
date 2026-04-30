@@ -208,7 +208,7 @@ for gridfile in grid_filenames:
 
     # Vertex position error tolerance is factor of characteristic geometry size
     geometry_size = np.max(np.sqrt(R_hypno**2 + Z_hypno**2))
-    tolerance = inputfile["mesh"]["dmplex_vertex_tolerance"] * geometry_size
+    tolerance = inputfile["dmplex"]["dmplex_vertex_tolerance"] * geometry_size
 
     # Hypnotoad has duplicate vertices due to overlapping vertices between cells.
     # The vertices are not in an exactly identical position due to finite precision

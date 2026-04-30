@@ -202,15 +202,13 @@ DM create_dmplex_from_Bout_mesh(Mesh* bout_mesh, Options& mesh_options,
                                   "Default and recommendation is true.")
                              .withDefault(true);
   std::string dmplex_name = mesh_options["dmplex_name"]
-
                                 .doc("DMPlex object name.")
                                 .withDefault("hypnotoad_dmplex_mesh");
   // DMPlex vertex distance tolerance for duplicate Hypnotoad vertices
   const BoutReal dmplex_vertex_tolerance =
       mesh_options["dmplex_vertex_tolerance"]
           .doc("Tolerance for determining duplicate vertices when creating DMPlex from "
-               "BOUT++ "
-               "mesh.")
+               "BOUT++ mesh.")
           .withDefault(1.0e-8);
 
   output << fmt::format("Using option use_cxx_ivertex = {}", use_cxx_ivertex)
