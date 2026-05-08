@@ -167,22 +167,26 @@ void check_cell_volumes(std::shared_ptr<PetscInterface::DMPlexInterface>& neso_m
   for (PetscInt ix = bout_mesh->xstart; ix <= bout_mesh->xend; ix++) {
     for (PetscInt iy = bout_mesh->ystart; iy <= bout_mesh->yend; iy++) {
 
-      // Convert to SI: dx is m^2 T, J is m/T, dy is unitless
-      // so J * dx * dy = m^3
       const BoutReal meters = get<BoutReal>(alloptions["units"]["meters"]);
+      const BoutReal meters_squared = meters * meters;
       const BoutReal meters_cubed = meters * meters * meters;
 
-      const BoutReal bout_cell_volume =
+      // Convert to SI: dx is m^2 T, J is m/T, dy is unitless, skip dz
+      // so J * dx * dy = m^3, technically per radian toroidal angle due to missing dz
+      const BoutReal bout_cell_area =
           coord->J(ix, iy) * coord->dx(ix, iy) * coord->dy(ix, iy) * meters_cubed;
 
-      const REAL neso_cell_volume = neso_mesh->dmh->get_cell_volume(ixy);
-      const bool volumes_match = (abs(bout_cell_volume - neso_cell_volume) < tolerance);
+      // Straight up 2D grid, needs m^2
+      const REAL neso_cell_area = neso_mesh->dmh->get_cell_volume(ixy) * meters_squared;
+
+      const bool volumes_match = (abs(bout_cell_area - neso_cell_area) < tolerance);
+
       // exit if we fail to find a match
       NESOASSERT(volumes_match,
                  fmt::format("BOUT++ mesh volume {} does not match NESO-Particles mesh "
                              "volume {} for ix = {} iy = {} \n Ignore this message by "
                              "setting [neso_particles] test_cell_volumes = false",
-                             bout_cell_volume, neso_cell_volume, ix, iy));
+                             bout_cell_area, neso_cell_area, ix, iy));
       ixy++;
     }
   }
@@ -204,7 +208,7 @@ REAL cell_length(std::vector<std::vector<REAL>>& cell_vertices, std::size_t iv1,
   return length;
 }
 
-void check_cell_centres(std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh,
+void check_cell_centres(Options& alloptions, std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh,
                         Mesh*& bout_mesh, BoutReal absolute_tolerance,
                         BoutReal relative_tolerance) {
   // get (R,Z) of cell centres in Hypnotoad grid
@@ -212,6 +216,9 @@ void check_cell_centres(std::shared_ptr<PetscInterface::DMPlexInterface>& neso_m
   Field2D Zxy;
   bout_mesh->get(Rxy, "Rxy");
   bout_mesh->get(Zxy, "Zxy");
+
+  BoutReal meters = get<BoutReal>(alloptions["units"]["meters"]);
+
   // compare to cell centres calculated from cell corners
   std::vector<std::vector<REAL>> cell_vertices;
   PetscInt ixy = 0;
@@ -224,14 +231,15 @@ void check_cell_centres(std::shared_ptr<PetscInterface::DMPlexInterface>& neso_m
       REAL neso_Rxy = 0.0;
       REAL neso_Zxy = 0.0;
       for (std::size_t iv = 0; iv < 4; iv++) {
-        neso_Rxy += cell_vertices.at(iv).at(0);
-        neso_Zxy += cell_vertices.at(iv).at(1);
+        // DMPlex is stored in normalised units, need conversion to [m]
+        neso_Rxy += cell_vertices.at(iv).at(0) * meters;
+        neso_Zxy += cell_vertices.at(iv).at(1) * meters;
       }
       neso_Rxy /= 4.0;
       neso_Zxy /= 4.0;
       // get lengths of cell across the two dimensions
-      const REAL cell_length_a = cell_length(cell_vertices, 0, 1, 2, 3);
-      const REAL cell_length_b = cell_length(cell_vertices, 0, 3, 2, 1);
+      const REAL cell_length_a = cell_length(cell_vertices, 0, 1, 2, 3) * meters;
+      const REAL cell_length_b = cell_length(cell_vertices, 0, 3, 2, 1) * meters;
       const REAL min_cell_length = std::min(cell_length_a, cell_length_b);
       // we compare the difference in cell centres to the absolute tolerance and
       // the relative tolerance formed by comparing to the smallest length across the cell
@@ -363,6 +371,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
           .withDefault(2.0);
   BoutReal Nnorm = get<BoutReal>(units["inv_meters_cubed"]);
   BoutReal Tnorm = get<BoutReal>(units["eV"]);
+  BoutReal meters = get<BoutReal>(units["meters"]);
 
   Mesh* bout_mesh = bout::globals::mesh;
   sycl_target = std::make_shared<SYCLTarget>(0, BoutComm::get());
@@ -371,8 +380,20 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
   std::string dmplex_h5_filename = mesh_options["dmplex_h5_filename"]
                                        .doc("Filename to use for saving the DMPlex mesh")
                                        .withDefault("hypnotoad_dmplex_mesh_output.h5");
+
+  // Create and save DMPlex in SI units
   dm = create_dmplex_from_Bout_mesh(bout_mesh, mesh_options, sycl_target,
                                     make_output_path(dmplex_h5_filename, alloptions));
+
+  // Normalise DMPlex
+  // Get local coords object (i.e. per rank) and scale it - this scales entire mesh
+  Vec coords = nullptr;
+  PETSCCHK(DMGetCoordinatesLocal(dm, &coords));
+  //test 
+  if (coords != nullptr) {
+    PETSCCHK(VecScale(coords, 1/meters));
+  }
+
   output << "Begin particle push \n";
 
   /*
@@ -452,6 +473,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
     }
     if (mesh_options["test_dmplex_cell_centres"].withDefault(true)) {
       check_cell_centres(
+          alloptions,
           neso_mesh, bout_mesh,
           mesh_options["dmplex_cell_centre_absolute_tolerance"].withDefault(1.0e-12),
           mesh_options["dmplex_cell_centre_relative_tolerance"].withDefault(0.0));
