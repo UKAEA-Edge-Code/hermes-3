@@ -20,7 +20,6 @@ struct Vantage : public Component {
 private:
   PetscLib petsc_lib; // Ensures PETSc is initialized for the lifetime of this component
   std::string name;   // Component name
-  std::shared_ptr<H5Part> h5part;
   DM dm;
   std::shared_ptr<PetscInterface::DMPlexInterface> neso_mesh;
   std::shared_ptr<SYCLTarget> sycl_target;

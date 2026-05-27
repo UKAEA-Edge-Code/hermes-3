@@ -879,10 +879,6 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
         aa = lambda_find_partial_moves(aa);
       }
     };
-    // uncomment to write a trajectory
-    h5part = std::make_shared<H5Part>(
-        make_output_path("particle_trajectories.h5part", alloptions), A_particle_group,
-        Sym<REAL>("POSITION"), Sym<REAL>("VELOCITY"));
 
     // allocate buffer vector for scalar projection/evaluation of NESO-Particles
     // properties
@@ -904,6 +900,13 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
     // mass for conservation check
     Field2D total_density = neutral_density + ion_density;
     double total_mass_initial = calculate_total_mass(total_density, neso_mesh);
+
+    // Initialise h5part just before writing - earlier leads to a NESO assert error that
+    // can hide other bugs
+    auto h5part = std::make_shared<H5Part>(
+        make_output_path("particle_trajectories.h5part", alloptions), A_particle_group,
+        Sym<REAL>("POSITION"), Sym<REAL>("VELOCITY"));
+
     // begin timestepping
     for (int stepx = 0; stepx < nsteps; stepx++) {
       // nprint("step:", stepx);
@@ -932,7 +935,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
       update_diagnostics(neutral_density, ion_density, neso_mesh, bout_output_data,
                          particle_data_filename, particle_time);
     }
-    // uncomment to write a trajectory
+    h5part->close();
 
     // mass for conservation check
     total_density = neutral_density + ion_density;
@@ -951,7 +954,6 @@ void Vantage::outputVars(Options& UNUSED(state)) {}
 
 // Destructor to handle VANTAGE related cleanup
 Vantage::~Vantage() {
-  h5part->close();          // Particle trajectory output
   b2d->free();              // NESO-Particles boundary interaction object
   neso_mesh->free();        // DMPlex interface
   PETSCCHK(DMDestroy(&dm)); // DMPlex mesh
