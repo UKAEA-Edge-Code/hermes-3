@@ -24,6 +24,7 @@
 // for reactions integration
 #include "../include/vantage.hxx"
 #include "../include/vantage_dmplex.hxx"
+#include "../include/amjuel_data.hxx"
 #include <reactions/reactions.hpp>
 
 #ifndef NESO_PARTICLES_PETSC
@@ -36,6 +37,22 @@ using namespace VANTAGE::Reactions;
 template <typename T, typename U>
 inline void ASSERT_EQ(T t, U u) {
   NESOASSERT(t == u, "A check failed.");
+}
+
+// Helper function to convert AMJUEL rate from Hermes-3 to Reactions format
+// Hermes-3: vector of vectors of BoutReal
+// Reactions: array of REAL
+std::array<std::array<REAL, 9>, 9> convert_amjuel_format(
+    const std::vector<std::vector<BoutReal>> & coeffs) {
+  std::array<std::array<REAL, 9>, 9> out{};
+
+  for (std::size_t i = 0; i < 9; ++i) {
+    for (std::size_t j = 0; j < 9; ++j) {
+      out[i][j] = static_cast<REAL>(coeffs[i][j]);
+    }
+  }
+
+  return out;
 }
 
 // Make path for any output file
@@ -280,6 +297,8 @@ void check_mass_conservation(double total_mass_final, double total_mass_initial)
                          total_mass_initial, total_mass_final));
 }
 
+// VANTAGE source manager implementation
+// ------------------------------------------------------------------------------
 VantageSourceManager::VantageSourceManager(
     std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh, Mesh* bout_mesh,
     Options& units)
@@ -369,9 +388,10 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
       units["N_w"]
           .doc("Normalisation parameter: neutral particle density per unit weight")
           .withDefault(2.0);
-  BoutReal Nnorm = get<BoutReal>(units["inv_meters_cubed"]);
-  BoutReal Tnorm = get<BoutReal>(units["eV"]);
+  BoutReal inv_meters_cubed = get<BoutReal>(units["inv_meters_cubed"]);
+  BoutReal eV = get<BoutReal>(units["eV"]);
   BoutReal meters = get<BoutReal>(units["meters"]);
+  BoutReal seconds = get<BoutReal>(units["seconds"]);
 
   Mesh* bout_mesh = bout::globals::mesh;
   sycl_target = std::make_shared<SYCLTarget>(0, BoutComm::get());
@@ -421,8 +441,9 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
     initial_neutral_density =
         options["initial_neutral_density"]
             .doc(
-                "Initial neutral density for VANTAGE kinetic neutrals (normalised units)")
-            .as<Field2D>();
+                "Initial neutral density for VANTAGE kinetic neutrals [m^-3]")
+            .as<Field2D>()
+            / inv_meters_cubed;
     const int npart_per_cell = options["npart_per_cell"]
                                    .doc("Number of VANTAGE kinetic neutral particles per "
                                         "cell during initialisation")
@@ -430,9 +451,16 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
 
     // Plasma parameters
     const BoutReal background_ion_temperature =
-        options["background_ion_temperature"].withDefault(1.0);
+        options["background_ion_temperature"]
+            .doc("Background ion temp override [eV], default = 10")
+            .withDefault(10)
+        / eV;
     const BoutReal background_ion_density =
-        options["background_ion_density"].withDefault(1.0);
+        options["background_ion_density"]
+            .doc("Background density override [m^-3], default = 1.0e19")
+            .withDefault(1.0e19)
+        / inv_meters_cubed;
+
     const BoutReal background_ion_Vx = options["background_ion_Vx"].withDefault(0.0);
     const BoutReal background_ion_Vy = options["background_ion_Vy"].withDefault(0.0);
     const std::vector<BoutReal> V_background = {background_ion_Vx, background_ion_Vy};
@@ -563,14 +591,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
     auto rng_kernel =
         get_uniform_rng_kernel(sycl_target, static_cast<size_t>(rng_samples));
 
-    // Ionisation reaction
-    // ------------------------------------------------------------------------------
 
-    auto iz_rate_data = FixedRateData(iz_rate);
-    main_species.set_id(0);
-    auto ionisation_reaction = ElectronImpactIonisation<FixedRateData, FixedRateData>(
-        A_particle_group->sycl_target, iz_rate_data, iz_rate_data, main_species,
-        electron_species);
 
     // Recombination reaction
     // ------------------------------------------------------------------------------
@@ -637,7 +658,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
           "Update weight of ions", marker_group,
           [=](auto n_cell_prop, auto ion_dens_prop, auto weight_prop) {
             const BoutReal n_cell = static_cast<BoutReal>(n_cell_prop.at(0));
-            auto updated_weight = (ion_dens_prop.at(0) * Nnorm * V_cell) / (N_w * n_cell);
+            auto updated_weight = (ion_dens_prop.at(0) * inv_meters_cubed * V_cell) / (N_w * n_cell);
             weight_prop.at(0) = updated_weight;
           },
           Access::read(Sym<INT>("N_CELL")), Access::read(Sym<REAL>("FLUID_DENSITY")),
@@ -656,7 +677,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
 
     auto recomb_data_calc_sampler =
         FilteredMaxwellianSampler<2, decltype(constant_rate_cross_section)>(
-            1 / (recomb_species.get_mass() * Tnorm), constant_rate_cross_section,
+            1 / (recomb_species.get_mass() * eV), constant_rate_cross_section,
             rng_kernel);
 
     // Container for objects allowing calculation of parameters within
@@ -719,8 +740,6 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
         std::vector{accumulator_real_transform_wrapper, merge_wrapper, remove_wrapper};
 
     auto reaction_controller = ReactionController(parent_transforms_iz, child_transforms);
-    reaction_controller.add_reaction(
-        std::make_shared<decltype(ionisation_reaction)>(ionisation_reaction));
 
     source_manager.add_source("Siz", "ION_SOURCE_DENSITY", accumulator_transform_iz,
                               A_particle_group, ion_source_density_zeroer);
@@ -744,6 +763,48 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
 
     source_manager.add_source("Srec", "ION_SOURCE_DENSITY", accumulator_transform_rec,
                               marker_group, ion_source_density_zeroer);
+
+    // Ionisation reaction
+    // ------------------------------------------------------------------------------
+    main_species.set_id(0);
+    
+    // Reaction rates
+    // ---------------------------
+
+    if (iz_rate > 0.0) {
+      // User-set iz_rate
+      // energy_rate = iz_rate
+      auto iz_rate_data = FixedRateData(iz_rate);
+      auto ionisation_reaction = ElectronImpactIonisation<FixedRateData, FixedRateData>(
+          A_particle_group->sycl_target, iz_rate_data, iz_rate_data, main_species,
+          electron_species);
+
+      reaction_controller.add_reaction(
+          std::make_shared<decltype(ionisation_reaction)>(ionisation_reaction));
+
+    } else {
+      // AMJUEL derived rate and energy rate
+      const hermes::AmjuelData iz_rate_amjuel("H.4_2.1.5", alloptions);
+      const hermes::AmjuelData iz_energy_rate_amjuel("H.10_2.1.5", alloptions);
+      auto iz_rate_coeffs = convert_amjuel_format(iz_rate_amjuel.get_coeffs());
+      auto iz_energy_rate_coeffs =
+        convert_amjuel_format(iz_energy_rate_amjuel.get_coeffs());
+
+      auto iz_rate_data =
+          AMJUEL2DData<9, 9>(1.0, inv_meters_cubed, eV, seconds, iz_rate_coeffs);
+
+      auto iz_energy_rate_data =
+          AMJUEL2DData<9, 9>(1.0, inv_meters_cubed, eV, seconds, iz_energy_rate_coeffs);
+
+      auto ionisation_reaction =
+          ElectronImpactIonisation<AMJUEL2DData<9, 9>, AMJUEL2DData<9, 9>>(
+              A_particle_group->sycl_target, iz_rate_data, iz_energy_rate_data,
+              main_species, electron_species);
+
+      reaction_controller.add_reaction(
+          std::make_shared<decltype(ionisation_reaction)>(ionisation_reaction));
+    }
+
 
     // Boundary handling
     // ------------------------------------------------------------------------------
