@@ -102,39 +102,126 @@ double calculate_total_mass(Field2D& density,
 }
 
 Options
-initialise_diagnostics(Mesh* bout_mesh, Field2D& neutral_density, Field2D& ion_density,
-                       std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh,
-                       std::string particle_data_filename) {
+initialise_diagnostics(Options& alloptions,
+                      Mesh* bout_mesh, 
+                      Field2D& neutral_density, Field2D& ion_density,
+                      std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh,
+                      std::string particle_data_filename) {
   // Options object to use to write out diagnostic data of fluid quantities
+
+  auto Nnorm = get<BoutReal>(alloptions["units"]["inv_meters_cubed"]);
+  auto Tnorm = get<BoutReal>(alloptions["units"]["eV"]);
+  auto Omega_ci = 1/get<BoutReal>(alloptions["units"]["seconds"]);
+  auto rho_s0 = get<BoutReal>(alloptions["units"]["meters"]);
+  auto Bnorm = get<BoutReal>(alloptions["units"]["Tesla"]);
+  auto Cs0 = get<BoutReal>(alloptions["units"]["meters"])
+             / get<BoutReal>(alloptions["units"]["seconds"]);
+
   Options bout_output_data;
-  bout_output_data["neutral_density"] = neutral_density;
-  // Set the time attribute
-  bout_output_data["neutral_density"].attributes["time_dimension"] = "t";
-  bout_output_data["ion_density"] = ion_density;
-  bout_output_data["ion_density"].attributes["time_dimension"] = "t";
-  bout_output_data["total_neutral_mass"] =
-      calculate_total_mass(neutral_density, neso_mesh);
-  bout_output_data["total_neutral_mass"].attributes["time_dimension"] = "t";
-  bout_output_data["total_ion_mass"] = calculate_total_mass(ion_density, neso_mesh);
-  bout_output_data["total_ion_mass"].attributes["time_dimension"] = "t";
+  set_with_attrs(bout_output_data["neutral_density"], neutral_density,
+                 {{"time_dimension", "t"}});
+
+  set_with_attrs(bout_output_data["ion_density"], ion_density,
+                 {{"time_dimension", "t"}});
+
+  set_with_attrs(bout_output_data["Nn"], neutral_density,
+                 {{"time_dimension", "t"},
+                  {"units", "m^-3"},
+                  {"conversion", Nnorm},
+                  {"standard_name", "Density"},
+                  {"long_name", "Kinetic neutral density"},
+                  {"species", "kinetic neutrals"},
+                  {"source", "vantage"}});
+
+  set_with_attrs(bout_output_data["Siz"], Field2D{0.0, bout_mesh},
+                 {{"time_dimension", "t"},
+                  {"units", "m^-3 s^-1"},
+                  {"conversion", Nnorm * Omega_ci},
+                  {"standard_name", "Density source"},
+                  {"long_name", "Ionisation density source"},
+                  {"species", "kinetic neutrals"},
+                  {"source", "vantage"}});
+
+  set_with_attrs(bout_output_data["Srec"], Field2D{0.0, bout_mesh},
+                 {{"time_dimension", "t"},
+                  {"units", "m^-3 s^-1"},
+                  {"conversion", Nnorm * Omega_ci},
+                  {"standard_name", "Density source"},
+                  {"long_name", "Recombination density source"},
+                  {"species", "kinetic neutrals"},
+                  {"source", "vantage"}});
+
+  // Integrals
   Field2D total_density = ion_density + neutral_density;
-  bout_output_data["total_mass"] = calculate_total_mass(total_density, neso_mesh);
-  bout_output_data["total_mass"].attributes["time_dimension"] = "t";
-  bout_output_data["t_array"] = 0.0;
-  bout_output_data["t_array"].attributes["time_dimension"] = "t";
-  // Mesh metadata
+  set_with_attrs(bout_output_data["total_mass"],
+                 calculate_total_mass(total_density, neso_mesh),
+                 {{"time_dimension", "t"}});
+
+  set_with_attrs(bout_output_data["total_neutral_mass"],
+                 calculate_total_mass(neutral_density, neso_mesh),
+                 {{"time_dimension", "t"}});
+
+  set_with_attrs(bout_output_data["total_ion_mass"],
+                 calculate_total_mass(ion_density, neso_mesh),
+                 {{"time_dimension", "t"}});
+
+  set_with_attrs(bout_output_data["t_array"], 0.0, {{"time_dimension", "t"}});
+
+  // Add metadata from mesh, e.g. branch cuts
   bout_mesh->outputVars(bout_output_data);
+
+  // Add metadata with normalisation factors
+  set_with_attrs(bout_output_data["Tnorm"], Tnorm, {
+      {"units", "eV"},
+      {"conversion", 1}, // Already in SI units
+      {"standard_name", "temperature normalisation"},
+      {"long_name", "temperature normalisation"}
+    });
+  set_with_attrs(bout_output_data["Nnorm"], Nnorm, {
+      {"units", "m^-3"},
+      {"conversion", 1},
+      {"standard_name", "density normalisation"},
+      {"long_name", "Number density normalisation"}
+    });
+  set_with_attrs(bout_output_data["Bnorm"], Bnorm, {
+      {"units", "T"},
+      {"conversion", 1},
+      {"standard_name", "magnetic field normalisation"},
+      {"long_name", "Magnetic field normalisation"}
+    });
+  set_with_attrs(bout_output_data["Cs0"], Cs0, {
+      {"units", "m/s"},
+      {"conversion", 1},
+      {"standard_name", "velocity normalisation"},
+      {"long_name", "Sound speed normalisation"}
+    });
+  set_with_attrs(bout_output_data["Omega_ci"], Omega_ci, {
+      {"units", "s^-1"},
+      {"conversion", 1},
+      {"standard_name", "frequency normalisation"},
+      {"long_name", "Cyclotron frequency normalisation"}
+    });
+  set_with_attrs(bout_output_data["rho_s0"], rho_s0, {
+      {"units", "m"},
+      {"conversion", 1},
+      {"standard_name", "length normalisation"},
+      {"long_name", "Gyro-radius length normalisation"}
+    });
 
   bout::OptionsIO::create(particle_data_filename)->write(bout_output_data);
   return bout_output_data;
 }
 
 void update_diagnostics(Field2D& neutral_density, Field2D& ion_density,
+                        Field2D& Siz, Field2D& Srec,
                         std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh,
                         Options& bout_output_data, std::string particle_data_filename,
                         BoutReal particle_time) {
   // update density in Options object and write
   bout_output_data["neutral_density"] = neutral_density;
+  bout_output_data["Nn"] = neutral_density;
+  bout_output_data["Siz"] = Siz;
+  bout_output_data["Srec"] = Srec;
   bout_output_data["ion_density"] = ion_density;
   Field2D total_density = ion_density + neutral_density;
   bout_output_data["total_mass"] = calculate_total_mass(total_density, neso_mesh);
@@ -896,7 +983,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
     std::string particle_data_filename =
         make_output_path(fmt::format("BOUT.dmp.vantage.{}.nc", mpi_rank), alloptions);
     Options bout_output_data = initialise_diagnostics(
-        bout_mesh, neutral_density, ion_density, neso_mesh, particle_data_filename);
+        alloptions, bout_mesh, neutral_density, ion_density, neso_mesh, particle_data_filename);
     // mass for conservation check
     Field2D total_density = neutral_density + ion_density;
     double total_mass_initial = calculate_total_mass(total_density, neso_mesh);
@@ -932,8 +1019,10 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
       ion_density += (Siz + Srec) * dt;
 
       // diagnose timestep stepx
-      update_diagnostics(neutral_density, ion_density, neso_mesh, bout_output_data,
-                         particle_data_filename, particle_time);
+      update_diagnostics(neutral_density, ion_density, 
+                        Siz, Srec, 
+                        neso_mesh, bout_output_data,
+                        particle_data_filename, particle_time);
     }
     h5part->close();
 
