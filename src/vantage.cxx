@@ -548,19 +548,22 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
             .withDefault(1.0e19)
         / inv_meters_cubed;
 
+    const BoutReal background_electron_temperature = background_ion_temperature;
+    const BoutReal background_electron_density = background_ion_density;
+
     const BoutReal background_ion_Vx = options["background_ion_Vx"].withDefault(0.0);
     const BoutReal background_ion_Vy = options["background_ion_Vy"].withDefault(0.0);
     const std::vector<BoutReal> V_background = {background_ion_Vx, background_ion_Vy};
 
     // Reaction settings
-    const REAL iz_rate = options["iz_rate"].withDefault(1.0);
-    const REAL rec_rate = options["rec_rate"].withDefault(1.0);
+    const REAL iz_rate_override = options["iz_rate_override"].withDefault(-1.0);
+    const REAL rec_rate_override = options["rec_rate_override"].withDefault(0); // TODO: Replace with -1 once AMJUEL implemented
     const int rec_markers_per_cell = options["rec_markers_per_cell"].withDefault(1000);
 
     // Other settings
     const int ndim = 2;
     const REAL dt = options["dt"]
-                        .doc("Timestep to use for VANTAGE kinetic neutrals")
+                        .doc("Timestep to use for VANTAGE kinetic neutrals (normalised units)")
                         .withDefault(0.01);
     const int nsteps = options["nsteps"]
                            .doc("Number of timesteps to use for VANTAGE kinetic neutrals")
@@ -654,7 +657,8 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
       initial_distribution[Sym<REAL>("ION_DENSITY")][px][0] = background_ion_density;
       initial_distribution[Sym<REAL>("ION_SOURCE_DENSITY")][px][0] = 0.0;
       initial_distribution[Sym<REAL>("ION_SOURCE_ENERGY")][px][0] = 0.0;
-      initial_distribution[Sym<REAL>("ELECTRON_DENSITY")][px][0] = background_ion_density;
+      initial_distribution[Sym<REAL>("ELECTRON_DENSITY")][px][0] = background_electron_density;
+      initial_distribution[Sym<REAL>("ELECTRON_TEMPERATURE")][px][0] = background_electron_temperature;
       initial_distribution[Sym<REAL>("ELECTRON_SOURCE_DENSITY")][px][0] = 0.0;
       initial_distribution[Sym<REAL>("ELECTRON_SOURCE_ENERGY")][px][0] = 0.0;
       for (int dimx = 0; dimx < ndim; dimx++) {
@@ -755,8 +759,8 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
 
     // Define marker species and reaction rates
     auto recomb_species = Species("ION", 1.0, 0.0, -1); // TODO: better as marker_species
-    auto recomb_data = FixedRateData(rec_rate);
-    auto recomb_energy_data = FixedRateData(rec_rate); // TODO: make this separate
+    auto recomb_data = FixedRateData(rec_rate_override);
+    auto recomb_energy_data = FixedRateData(rec_rate_override); // TODO: make this separate
 
     // This sampler will calculate marker momentum from fluid plasma conditions
     // TODO: Do I need a separate rng kernel?
@@ -814,7 +818,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
     auto accumulator_transform_iz = std::make_shared<CellwiseAccumulator<REAL>>(
         A_particle_group, std::vector<std::string>{"ION_SOURCE_DENSITY"});
 
-    auto accumulator_real_transform_wrapper = std::make_shared<TransformationWrapper>(
+    auto iz_accumulator_real_transform_wrapper = std::make_shared<TransformationWrapper>(
         std::dynamic_pointer_cast<TransformationStrategy>(accumulator_transform_iz));
 
     auto ion_source_density_zeroer =
@@ -824,7 +828,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
     std::vector<std::shared_ptr<TransformationWrapper>> child_transforms =
         std::vector{merge_wrapper, remove_wrapper};
     std::vector<std::shared_ptr<TransformationWrapper>> parent_transforms_iz =
-        std::vector{accumulator_real_transform_wrapper, merge_wrapper, remove_wrapper};
+        std::vector{iz_accumulator_real_transform_wrapper, merge_wrapper, remove_wrapper};
 
     auto reaction_controller = ReactionController(parent_transforms_iz, child_transforms);
 
@@ -840,7 +844,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
         std::dynamic_pointer_cast<TransformationStrategy>(accumulator_transform_rec));
 
     std::vector<std::shared_ptr<TransformationWrapper>> parent_transforms_rec =
-        std::vector{accumulator_real_transform_wrapper, merge_wrapper, remove_wrapper};
+        std::vector{recomb_accumulator_transform_wrapper, merge_wrapper, remove_wrapper};
 
     auto recombination_controller =
         ReactionController(parent_transforms_rec, child_transforms);
@@ -858,10 +862,10 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
     // Reaction rates
     // ---------------------------
 
-    if (iz_rate > 0.0) {
-      // User-set iz_rate
-      // energy_rate = iz_rate
-      auto iz_rate_data = FixedRateData(iz_rate);
+    if (iz_rate_override > 0.0) {
+      // User-set iz_rate_override
+      // energy_rate = iz_rate_override
+      auto iz_rate_data = FixedRateData(iz_rate_override);
       auto ionisation_reaction = ElectronImpactIonisation<FixedRateData, FixedRateData>(
           A_particle_group->sycl_target, iz_rate_data, iz_rate_data, main_species,
           electron_species);
@@ -877,16 +881,21 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
       auto iz_energy_rate_coeffs =
         convert_amjuel_format(iz_energy_rate_amjuel.get_coeffs());
 
-      auto iz_rate_data =
-          AMJUEL2DData<9, 9>(1.0, inv_meters_cubed, eV, seconds, iz_rate_coeffs);
+      // Remap names: ionisation reaction expects "FLUID_TEMPERATURE" etc.
+      auto ionisation_rate_map = get_default_map();
+      ionisation_rate_map[default_properties.fluid_density] = "ELECTRON_DENSITY";
+      ionisation_rate_map[default_properties.fluid_temperature] = "ELECTRON_TEMPERATURE";
 
-      auto iz_energy_rate_data =
-          AMJUEL2DData<9, 9>(1.0, inv_meters_cubed, eV, seconds, iz_energy_rate_coeffs);
+      auto iz_rate_data = AMJUEL2DData<9, 9>(1.0, inv_meters_cubed, eV, seconds,
+                                             iz_rate_coeffs, ionisation_rate_map);
+
+      auto iz_energy_rate_data = AMJUEL2DData<9, 9>(
+          1.0, inv_meters_cubed, eV, seconds, iz_energy_rate_coeffs, ionisation_rate_map);
 
       auto ionisation_reaction =
           ElectronImpactIonisation<AMJUEL2DData<9, 9>, AMJUEL2DData<9, 9>>(
               A_particle_group->sycl_target, iz_rate_data, iz_energy_rate_data,
-              main_species, electron_species);
+              main_species, electron_species, ionisation_rate_map);
 
       reaction_controller.add_reaction(
           std::make_shared<decltype(ionisation_reaction)>(ionisation_reaction));
