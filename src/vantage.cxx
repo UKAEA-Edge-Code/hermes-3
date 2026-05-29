@@ -556,9 +556,16 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
     const std::vector<BoutReal> V_background = {background_ion_Vx, background_ion_Vy};
 
     // Reaction settings
-    const REAL iz_rate_override = options["iz_rate_override"].withDefault(-1.0);
-    const REAL rec_rate_override = options["rec_rate_override"].withDefault(0); // TODO: Replace with -1 once AMJUEL implemented
-    const int rec_markers_per_cell = options["rec_markers_per_cell"].withDefault(1000);
+    const REAL iz_rate_override = options["iz_rate_override"]
+                                      .doc("Ionisation rate override (normalised units). "
+                                           "Negative = use AMJUEL rate.")
+                                      .withDefault(-1.0);
+    const REAL rec_rate_override =
+                                  options["rec_rate_override"]
+                                      .doc("Recombination rate override (normalised units).")
+                                      .withDefault(0.0); // TODO: Replace with -1 once AMJUEL implemented
+    const int rec_markers_per_cell = 
+                                  options["rec_markers_per_cell"].withDefault(1000);
 
     // Other settings
     const int ndim = 2;
