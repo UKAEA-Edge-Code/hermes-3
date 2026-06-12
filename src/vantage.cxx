@@ -473,7 +473,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
 
   BoutReal N_w =
       units["N_w"]
-          .doc("Normalisation parameter: neutral particle density per unit weight")
+          .doc("Normalisation parameter: number of real particles per unit weight")
           .withDefault(2.0);
   BoutReal inv_meters_cubed = get<BoutReal>(units["inv_meters_cubed"]);
   BoutReal eV = get<BoutReal>(units["eV"]);
@@ -563,7 +563,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
     const REAL rec_rate_override =
                                   options["rec_rate_override"]
                                       .doc("Recombination rate override (normalised units).")
-                                      .withDefault(0.0); // TODO: Replace with -1 once AMJUEL implemented
+                                      .withDefault(-1.0); // TODO: Replace with -1 once AMJUEL implemented
     const int rec_markers_per_cell = 
                                   options["rec_markers_per_cell"].withDefault(1000);
 
@@ -749,7 +749,6 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
 
     // Calculate weight for each marker particle
     // based on FLUID_DENSITY and N_CELL properties contained in same particle.
-    // TODO: implement normalisation. dens_norm is currently 1.
     for (int ic = 0; ic < num_cells; ic++) {
       REAL V_cell = neso_mesh->dmh->get_cell_volume(ic);
       particle_loop(
@@ -763,42 +762,6 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
           Access::write(Sym<REAL>("WEIGHT")))
           ->execute(ic);
     }
-
-    // Define marker species and reaction rates
-    auto recomb_species = Species("ION", 1.0, 0.0, -1); // TODO: better as marker_species
-    auto recomb_data = FixedRateData(rec_rate_override);
-    auto recomb_energy_data = FixedRateData(rec_rate_override); // TODO: make this separate
-
-    // This sampler will calculate marker momentum from fluid plasma conditions
-    // TODO: Do I need a separate rng kernel?
-    auto constant_rate_cross_section = ConstantRateCrossSection(1.0);
-
-    auto recomb_data_calc_sampler =
-        FilteredMaxwellianSampler<2, decltype(constant_rate_cross_section)>(
-            1 / (recomb_species.get_mass() * eV), constant_rate_cross_section,
-            rng_kernel);
-
-    // Container for objects allowing calculation of parameters within
-    // the recombination kernel: sampled velocity and the radiation
-    // energy loss source. Must be in this order.
-    auto recomb_data_calc_obj =
-        DataCalculator<decltype(recomb_energy_data), decltype(recomb_data_calc_sampler)>(
-            recomb_energy_data, recomb_data_calc_sampler);
-
-    BoutReal normalised_potential_energy = 1.0; // TODO: units
-    auto recomb_reaction_kernel = RecombReactionKernels<2>(
-        recomb_species, electron_species, normalised_potential_energy);
-
-    // Set neutrals to be products of recombination
-    const int out_state = static_cast<int>(main_species.get_id());
-    std::array<int, 1> recomb_out_states = {out_state};
-
-    // Create reaction object
-    auto recomb_reaction =
-        LinearReactionBase<1, decltype(recomb_data), decltype(recomb_reaction_kernel),
-                           decltype(recomb_data_calc_obj)>(
-            sycl_target, static_cast<int>(recomb_species.get_id()), recomb_out_states,
-            recomb_data, recomb_reaction_kernel, recomb_data_calc_obj);
 
     // Wrappers & controllers
     // ------------------------------------------------------------------------------
@@ -856,9 +819,6 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
     auto recombination_controller =
         ReactionController(parent_transforms_rec, child_transforms);
 
-    recombination_controller.add_reaction(
-        std::make_shared<decltype(recomb_reaction)>(recomb_reaction));
-
     source_manager.add_source("Srec", "ION_SOURCE_DENSITY", accumulator_transform_rec,
                               marker_group, ion_source_density_zeroer);
 
@@ -869,7 +829,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
     // Reaction rates
     // ---------------------------
 
-    if (iz_rate_override > 0.0) {
+    if (iz_rate_override >= 0.0) {
       // User-set iz_rate_override
       // energy_rate = iz_rate_override
       auto iz_rate_data = FixedRateData(iz_rate_override);
@@ -908,6 +868,88 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
           std::make_shared<decltype(ionisation_reaction)>(ionisation_reaction));
     }
 
+    // Recombination reaction
+    // ------------------------------------------------------------------------------
+
+    auto rec_marker_species = Species("ION", 1.0, 0.0, -1);
+
+    // This sampler will calculate marker momentum from fluid plasma conditions
+    // TODO: Do I need a separate rng kernel?
+    auto constant_rate_cross_section = ConstantRateCrossSection(1.0);
+    BoutReal normalised_potential_energy = 13.6 / eV;
+    auto rec_reaction_kernel = RecombReactionKernels<2>(
+        rec_marker_species, electron_species, normalised_potential_energy);
+
+    auto rec_data_calc_sampler =
+        FilteredMaxwellianSampler<2, decltype(constant_rate_cross_section)>(
+            1 / (rec_marker_species.get_mass() * eV), constant_rate_cross_section,
+            rng_kernel);
+
+    // Set neutrals to be products of recombination
+    const int out_state = static_cast<int>(main_species.get_id());
+    std::array<int, 1> rec_out_states = {out_state};
+
+    if (rec_rate_override >= 0.0) {
+
+      auto rec_data = FixedRateData(rec_rate_override);
+      auto rec_energy_data = FixedRateData(rec_rate_override);
+
+      // Container for objects allowing calculation of parameters within
+      // the recombination kernel: sampled velocity and the radiation
+      // energy loss source. Must be in this order.
+      auto rec_data_calc_obj =
+          DataCalculator<decltype(rec_energy_data), decltype(rec_data_calc_sampler)>(
+              rec_energy_data, rec_data_calc_sampler);
+
+      // Create reaction object
+      auto rec_reaction =
+          LinearReactionBase<1, decltype(rec_data), decltype(rec_reaction_kernel),
+                             decltype(rec_data_calc_obj)>(
+              sycl_target, static_cast<int>(rec_marker_species.get_id()), rec_out_states,
+              rec_data, rec_reaction_kernel, rec_data_calc_obj);
+
+      recombination_controller.add_reaction(
+        std::make_shared<decltype(rec_reaction)>(rec_reaction));
+
+    }
+    else {
+
+      // AMJUEL derived rate and energy rate
+      const hermes::AmjuelData rec_rate_amjuel("H.4_2.1.8", alloptions);
+      const hermes::AmjuelData rec_energy_rate_amjuel("H.10_2.1.8", alloptions);
+      auto rec_rate_coeffs = convert_amjuel_format(rec_rate_amjuel.get_coeffs());
+      auto rec_energy_rate_coeffs =
+          convert_amjuel_format(rec_energy_rate_amjuel.get_coeffs());
+
+      auto rec_rate_map = get_default_map();
+      rec_rate_map[default_properties.fluid_density] = "ELECTRON_DENSITY";
+      rec_rate_map[default_properties.fluid_temperature] = "ELECTRON_TEMPERATURE";
+
+      auto rec_data = AMJUEL2DData<9, 9>(1.0, inv_meters_cubed, eV, seconds,
+                                         rec_rate_coeffs, rec_rate_map);
+
+      auto rec_energy_data = AMJUEL2DData<9, 9>(1.0, inv_meters_cubed, eV, seconds,
+                                                rec_energy_rate_coeffs, rec_rate_map);
+
+      // Container for objects allowing calculation of parameters within
+      // the recombination kernel: sampled velocity and the radiation
+      // energy loss source. Must be in this order.
+      auto rec_data_calc_obj =
+          DataCalculator<decltype(rec_energy_data), decltype(rec_data_calc_sampler)>(
+              rec_energy_data, rec_data_calc_sampler);
+
+      // Create reaction object
+      auto rec_reaction =
+          LinearReactionBase<1, decltype(rec_data), decltype(rec_reaction_kernel),
+                             decltype(rec_data_calc_obj)>(
+              sycl_target, static_cast<int>(rec_marker_species.get_id()), rec_out_states,
+              rec_data, rec_reaction_kernel, rec_data_calc_obj);
+
+      recombination_controller.add_reaction(
+        std::make_shared<decltype(rec_reaction)>(rec_reaction));
+    }
+
+    
 
     // Boundary handling
     // ------------------------------------------------------------------------------
