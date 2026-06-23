@@ -91,6 +91,7 @@ Options MakeOptions() {
   alloptions["units"]["meters"] = 1.0;
   alloptions["units"]["seconds"] = 1.0;
   alloptions["units"]["Tesla"] = 1.0;
+  alloptions["units"]["N_w"] = 1.0;
   alloptions["units"]["inv_meters_cubed"] = 1e19;
 
   alloptions["dmplex"]["use_cxx_ivertex"] = true;

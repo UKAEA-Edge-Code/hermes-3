@@ -72,9 +72,6 @@ public:
 
   // Update the Hermes-3 source field using the accumulated data from corresponding
   // VANTAGE source
-  // Accumulated source is in total weight. Divide by volume to get weight/m^3,
-  // then by timestep to get weight/m^3/s, and finally multiply N_w to get
-  // particles/m^3/s and divide by Nnorm to keep normalised units.
   void update_source(const std::string& hermes_source_name, double dt);
 
   // Call update_source on all sources

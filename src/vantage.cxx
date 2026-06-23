@@ -64,7 +64,8 @@ std::string make_output_path(const std::string& filename, Options& alloptions) {
 
 void calculate_neutral_density_in_place(
     Field2D& density, std::shared_ptr<PetscInterface::DMPlexProjectEvaluateDG>& dg0,
-    std::shared_ptr<ParticleGroup>& A_particle_group, std::vector<double>& h_project1) {
+    std::shared_ptr<ParticleGroup>& A_particle_group, std::vector<double>& h_project1,
+    BoutReal N_w) {
   Mesh* bout_mesh = density.getMesh();
   // get a density by projecting the particle property WEIGHT to the bout_mesh
   dg0->project(A_particle_group, Sym<REAL>("WEIGHT"));
@@ -73,7 +74,7 @@ void calculate_neutral_density_in_place(
   std::size_t ic = 0;
   for (PetscInt ix = bout_mesh->xstart; ix <= bout_mesh->xend; ix++) {
     for (PetscInt iy = bout_mesh->ystart; iy <= bout_mesh->yend; iy++) {
-      density(ix, iy) = h_project1.at(ic);
+      density(ix, iy) = h_project1.at(ic) * N_w;
       ic++;
     }
   }
@@ -240,19 +241,22 @@ void set_initial_particle_weights(
     std::shared_ptr<PetscInterface::DMPlexProjectEvaluateDG>& dg0,
     std::shared_ptr<ParticleGroup>& A_particle_group,
     std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh,
-    std::vector<double>& h_project1) {
+    std::vector<double>& h_project1,
+    BoutReal N_w) {
   Mesh* bout_mesh = initial_neutral_density.getMesh();
   PetscInt ixy = 0;
   for (PetscInt ix = bout_mesh->xstart; ix <= bout_mesh->xend; ix++) {
     for (PetscInt iy = bout_mesh->ystart; iy <= bout_mesh->yend; iy++) {
-      // particle_weights are copied to all particles in this cell so
+      // particle_weights are copied to all particles in this cell.
       // we multiply the initial density by the volume to get particle number,
-      // then divide by the number of marker particles per cell
+      // then divide by markers per cell to divide them between the requested markers,
+      // then divide by N_w to get the weight of each marker. 
       const REAL cell_volume = neso_mesh->dmh->get_cell_volume(static_cast<int>(ixy));
       const INT nmarkers_per_cell =
           A_particle_group->get_npart_cell(static_cast<int>(ixy));
       const REAL particle_weights = initial_neutral_density(ix, iy) * cell_volume
-                                    / static_cast<BoutReal>(nmarkers_per_cell);
+                                    / static_cast<BoutReal>(nmarkers_per_cell)
+                                    / N_w;
       h_project1.at(static_cast<std::size_t>(ixy)) = particle_weights;
       ixy++;
     }
@@ -372,10 +376,9 @@ void check_cell_centres(Options& alloptions, std::shared_ptr<PetscInterface::DMP
 }
 
 void check_mass_conservation(double total_mass_final, double total_mass_initial) {
-  double rtol = 1.0e-13;
-  double atol = 1.0e-13;
+  BoutReal rtol = 1.0e-8;
   bool mass_conserved =
-      (abs(total_mass_final - total_mass_initial) < rtol * total_mass_initial + atol);
+      (abs(total_mass_final - total_mass_initial) < rtol * total_mass_initial);
   // exit if we fail to find conservation
   NESOASSERT(mass_conserved,
              fmt::format("Initial total mass {} does not match "
@@ -416,7 +419,9 @@ Field2D VantageSourceManager::get_data(const std::string& hermes_source_name) {
 // Update the source from VANTAGE and reset the VANTAGE data/accumulator
 void VantageSourceManager::update_source(const std::string& hermes_source_name,
                                          double dt) {
+
   VantageSource& source = this->sources[hermes_source_name];
+  BoutReal N_w = get<BoutReal>(units["N_w"]);
 
   std::vector<CellData<double>> accumulated_1d =
       source.accumulator->get_cell_data(source.vantage_source_name);
@@ -425,14 +430,14 @@ void VantageSourceManager::update_source(const std::string& hermes_source_name,
   for (int ix = bout_mesh->xstart; ix <= bout_mesh->xend; ix++) {
     for (int iy = bout_mesh->ystart; iy <= bout_mesh->yend; iy++) {
       source.source_data(ix, iy) =
-          accumulated_1d[ic]->at(0, 0)
-          / neso_mesh->dmh->get_cell_volume(static_cast<int>(ic));
+          accumulated_1d[ic]->at(0, 0)                            // Total weight
+          * N_w                                                   // Total particles
+          / neso_mesh->dmh->get_cell_volume(static_cast<int>(ic)) // Total density
+          / dt;                                                   // Density source
+
       ic++;
     }
   }
-  // Divite by dt so that the source is in per second
-  // TODO: Ensure this has correct units and units consistent with neutral density
-  source.source_data /= dt;
 
   // Fill internal guards
   bout_mesh->communicate(source.source_data);
@@ -467,18 +472,24 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
   // Mesh* bout_mesh = Mesh::create(&Options::root()["mesh"]);
   // TODO: tidy up the above
 
-  Options& options = alloptions[name];        // [vantage]
+  
   Options& mesh_options = alloptions["dmplex"]; // [mesh]
-  Options& units = alloptions["units"];
+  Options& options = alloptions[name]; // [vantage]
 
-  BoutReal N_w =
-      units["N_w"]
-          .doc("Normalisation parameter: number of real particles per unit weight")
-          .withDefault(2.0);
+  Options& units = alloptions["units"];
   BoutReal inv_meters_cubed = get<BoutReal>(units["inv_meters_cubed"]);
   BoutReal eV = get<BoutReal>(units["eV"]);
   BoutReal meters = get<BoutReal>(units["meters"]);
   BoutReal seconds = get<BoutReal>(units["seconds"]);
+
+  BoutReal N_w =
+      options["N_w"]
+          .doc("Normalisation parameter: number of real particles per unit weight [SI]")
+          .withDefault<BoutReal>(inv_meters_cubed * meters * meters)
+      / (inv_meters_cubed * meters * meters);
+
+  Options::root()["units"]["N_w"] = N_w;
+  Options::root()["units"]["N_w"].setConditionallyUsed();
 
   Mesh* bout_mesh = bout::globals::mesh;
   sycl_target = std::make_shared<SYCLTarget>(0, BoutComm::get());
@@ -520,10 +531,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
   {
 
     // Normalisations
-    //  TODO: Implement real normalisation consistent with Hermes-3
-    //  TODO: Normalise DMPlex
-
-    // Initial neutral parameters
+        // Initial neutral parameters
     Field2D initial_neutral_density{bout_mesh};
     initial_neutral_density =
         options["initial_neutral_density"]
@@ -556,14 +564,15 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
     const std::vector<BoutReal> V_background = {background_ion_Vx, background_ion_Vy};
 
     // Reaction settings
-    const REAL iz_rate_override = options["iz_rate_override"]
-                                      .doc("Ionisation rate override (normalised units). "
-                                           "Negative = use AMJUEL rate.")
-                                      .withDefault(-1.0);
+    const REAL iz_rate_override =
+        options["iz_rate_override"]
+            .doc("Ionisation rate override (weight s^-1, normalised units). "
+                 "Negative = use AMJUEL rate.")
+            .withDefault(-1.0);
     const REAL rec_rate_override =
-                                  options["rec_rate_override"]
-                                      .doc("Recombination rate override (normalised units).")
-                                      .withDefault(-1.0); // TODO: Replace with -1 once AMJUEL implemented
+        options["rec_rate_override"]
+            .doc("Recombination rate override (weight s^-1, normalised units).")
+            .withDefault(-1.0);
     const int rec_markers_per_cell = 
                                   options["rec_markers_per_cell"].withDefault(1000);
 
@@ -755,7 +764,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
           "Update weight of ions", marker_group,
           [=](auto n_cell_prop, auto ion_dens_prop, auto weight_prop) {
             const BoutReal n_cell = static_cast<BoutReal>(n_cell_prop.at(0));
-            auto updated_weight = (ion_dens_prop.at(0) * inv_meters_cubed * V_cell) / (N_w * n_cell);
+            auto updated_weight = (ion_dens_prop.at(0) * V_cell) / (N_w * n_cell);
             weight_prop.at(0) = updated_weight;
           },
           Access::read(Sym<INT>("N_CELL")), Access::read(Sym<REAL>("FLUID_DENSITY")),
@@ -830,7 +839,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
     // ---------------------------
 
     if (iz_rate_override >= 0.0) {
-      // User-set iz_rate_override
+      // User-set iz_rate_override (note that FixedRateData is in weight/s)
       // energy_rate = iz_rate_override
       auto iz_rate_data = FixedRateData(iz_rate_override);
       auto ionisation_reaction = ElectronImpactIonisation<FixedRateData, FixedRateData>(
@@ -1030,11 +1039,11 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
     std::vector<REAL> h_project1(static_cast<size_t>(num_cells_owned));
     // set weights from a Field2D from BOUT
     set_initial_particle_weights(initial_neutral_density, dg0, A_particle_group,
-                                 neso_mesh, h_project1);
+                                 neso_mesh, h_project1, N_w);
 
     // Calculate neutral density and sources for initial condition
     calculate_neutral_density_in_place(neutral_density, dg0, A_particle_group,
-                                       h_project1);
+                                       h_project1, N_w);
     source_manager.update_all_sources(dt);
 
     // diagnose the initial condition
@@ -1067,7 +1076,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
       h5part->write();
 
       calculate_neutral_density_in_place(neutral_density, dg0, A_particle_group,
-                                         h_project1);
+                                         h_project1, N_w);
       source_manager.update_all_sources(dt);
       Field2D Siz = source_manager.get_data("Siz");
       Field2D Srec = source_manager.get_data("Srec");
