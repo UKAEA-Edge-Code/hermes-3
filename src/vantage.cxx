@@ -376,7 +376,7 @@ void check_cell_centres(Options& alloptions, std::shared_ptr<PetscInterface::DMP
 }
 
 void check_mass_conservation(double total_mass_final, double total_mass_initial) {
-  BoutReal rtol = 1.0e-8;
+  BoutReal rtol = 1.0e-13;
   bool mass_conserved =
       (abs(total_mass_final - total_mass_initial) < rtol * total_mass_initial);
   // exit if we fail to find conservation
@@ -482,11 +482,10 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
   BoutReal meters = get<BoutReal>(units["meters"]);
   BoutReal seconds = get<BoutReal>(units["seconds"]);
 
-  BoutReal N_w =
-      options["N_w"]
-          .doc("Normalisation parameter: number of real particles per unit weight [SI]")
-          .withDefault<BoutReal>(inv_meters_cubed * meters * meters)
-      / (inv_meters_cubed * meters * meters);
+  BoutReal N_w = options["N_w"]
+                     .doc("Normalisation parameter: number of particles (normalised) per "
+                          "unit weight . default = 1")
+                     .withDefault<BoutReal>(1);
 
   Options::root()["units"]["N_w"] = N_w;
   Options::root()["units"]["N_w"].setConditionallyUsed();
