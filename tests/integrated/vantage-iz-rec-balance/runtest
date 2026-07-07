@@ -14,7 +14,26 @@ t0 = time()
 path = "data"
 
 """
-Adapted from the ionisation-recombination balance test in the VANTAGE-Reactions demo app
+Adapted from the ionisation-recombination balance test in the VANTAGE-Reactions demo app.
+
+Simulates a slab with AMJUEL ionisation and recombination rates.
+At steady state, the ionisation and recombination density sources will equal:
+
+Ne * Nn * Kion = Ne * Ne * Krec
+
+Where Kion and Krec are the AMJUEL ionisation and recombination rates, respectively, in units
+of m^3/s. They are functions of both Te and Ne which are stored in JSON files in Hermes-3.
+
+For a constant background Te and Ne, we can calculate the steady state neutral density 
+by rearranging:
+
+Nn = (Ne * Ne * Krec) / (Ne * Kion)
+-> Nn = (Ne * Krec) / Kion
+
+In this test, we start from near-steady state neutral density and take three time steps.
+The test passes if the final neutral density is close enough to the expected value,
+and if the AMJUEL ionisation and recombination rates match expected values calculated
+from the JSON files in Python.
 """
 
 

@@ -484,8 +484,9 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
 
   BoutReal N_w = options["N_w"]
                      .doc("Normalisation parameter: number of particles (normalised) per "
-                          "unit weight . default = 1")
-                     .withDefault<BoutReal>(1);
+                          "unit weight. Default = 1.1 as a value close but different to unity"
+                          "to make sure an incorrect implementation would show up in tests.")
+                     .withDefault<BoutReal>(1.1);
 
   Options::root()["units"]["N_w"] = N_w;
   Options::root()["units"]["N_w"].setConditionallyUsed();
@@ -498,15 +499,16 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
                                        .doc("Filename to use for saving the DMPlex mesh")
                                        .withDefault("hypnotoad_dmplex_mesh_output.h5");
 
-  // Create and save DMPlex in SI units
+  // Create and save DMPlex
+  // This is in SI units.
   dm = create_dmplex_from_Bout_mesh(bout_mesh, mesh_options, sycl_target,
                                     make_output_path(dmplex_h5_filename, alloptions));
 
-  // Normalise DMPlex
+  // Normalise DMPlex after creation
   // Get local coords object (i.e. per rank) and scale it - this scales entire mesh
+  // All following interactions with the DMPlex will be in normalised units.
   Vec coords = nullptr;
   PETSCCHK(DMGetCoordinatesLocal(dm, &coords));
-  //test 
   if (coords != nullptr) {
     PETSCCHK(VecScale(coords, 1/meters));
   }
