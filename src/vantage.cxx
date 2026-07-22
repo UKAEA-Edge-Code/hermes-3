@@ -85,10 +85,10 @@ void calculate_neutral_density_in_place(
   // extrapolate -> Neumann
 }
 
-double calculate_total_mass(Field2D& density,
+BoutReal calculate_total_mass(Field2D& density,
                             std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh) {
-  double local_mass = 0.0;
-  double total_mass = 0.0;
+  BoutReal local_mass = 0.0;
+  BoutReal total_mass = 0.0;
   Mesh* bout_mesh = density.getMesh();
   PetscInt ic = 0;
   for (PetscInt ix = bout_mesh->xstart; ix <= bout_mesh->xend; ix++) {
@@ -107,7 +107,7 @@ initialise_diagnostics(Options& alloptions,
                       Mesh* bout_mesh, 
                       Field2D& neutral_density, Field2D& ion_density,
                       std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh,
-                      std::string particle_data_filename) {
+                      std::string vantage_dump_filepath) {
   // Options object to use to write out diagnostic data of fluid quantities
 
   auto Nnorm = get<BoutReal>(alloptions["units"]["inv_meters_cubed"]);
@@ -209,14 +209,14 @@ initialise_diagnostics(Options& alloptions,
       {"long_name", "Gyro-radius length normalisation"}
     });
 
-  bout::OptionsIO::create(particle_data_filename)->write(bout_output_data);
+  bout::OptionsIO::create(vantage_dump_filepath)->write(bout_output_data);
   return bout_output_data;
 }
 
 void update_diagnostics(Field2D& neutral_density, Field2D& ion_density,
                         Field2D& Siz, Field2D& Srec,
                         std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh,
-                        Options& bout_output_data, std::string particle_data_filename,
+                        Options& bout_output_data, std::string vantage_dump_filepath,
                         BoutReal particle_time) {
   // update density in Options object and write
   bout_output_data["neutral_density"] = neutral_density;
@@ -232,7 +232,7 @@ void update_diagnostics(Field2D& neutral_density, Field2D& ion_density,
   bout_output_data["t_array"] = particle_time;
   // bout_output_data["t_array"] = 0.0;
   // Append data to file
-  bout::OptionsIO::create({{"file", particle_data_filename}, {"append", true}})
+  bout::OptionsIO::create({{"file", vantage_dump_filepath}, {"append", true}})
       ->write(bout_output_data);
 }
 
@@ -375,9 +375,9 @@ void check_cell_centres(Options& alloptions, std::shared_ptr<PetscInterface::DMP
   }
 }
 
-void check_mass_conservation(double total_mass_final, double total_mass_initial) {
+void check_mass_conservation(BoutReal total_mass_final, BoutReal total_mass_initial) {
   BoutReal rtol = 1.0e-13;
-  bool mass_conserved =
+  BoutReal mass_conserved =
       (abs(total_mass_final - total_mass_initial) < rtol * total_mass_initial);
   // exit if we fail to find conservation
   NESOASSERT(mass_conserved,
@@ -482,7 +482,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
   BoutReal meters = get<BoutReal>(units["meters"]);
   BoutReal seconds = get<BoutReal>(units["seconds"]);
 
-  BoutReal N_w = options["N_w"]
+  N_w = options["N_w"]
                      .doc("Normalisation parameter: number of particles (normalised) per "
                           "unit weight. Default = 1.1 as a value close but different to unity"
                           "to make sure an incorrect implementation would show up in tests.")
@@ -491,18 +491,26 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
   Options::root()["units"]["N_w"] = N_w;
   Options::root()["units"]["N_w"].setConditionallyUsed();
 
-  Mesh* bout_mesh = bout::globals::mesh;
+  bout_mesh = bout::globals::mesh;
   sycl_target = std::make_shared<SYCLTarget>(0, BoutComm::get());
+
   // keep dmplex_h5_filename in vantage.cxx to retain access to make_output_path()
   // which should presumably not need to exist within the hermes-3 library
   std::string dmplex_h5_filename = mesh_options["dmplex_h5_filename"]
                                        .doc("Filename to use for saving the DMPlex mesh")
                                        .withDefault("hypnotoad_dmplex_mesh_output.h5");
 
+  // Create paths
+  dmplex_filepath = make_output_path(dmplex_h5_filename, alloptions);
+  mpi_rank = sycl_target->comm_pair.rank_parent;
+  vantage_dump_filepath =
+        make_output_path(fmt::format("BOUT.dmp.vantage.{}.nc", mpi_rank), alloptions);
+  particle_data_filepath = make_output_path("particle_trajectories.h5part", alloptions);
+  
   // Create and save DMPlex
   // This is in SI units.
-  dm = create_dmplex_from_Bout_mesh(bout_mesh, mesh_options, sycl_target,
-                                    make_output_path(dmplex_h5_filename, alloptions));
+  
+  dm = create_dmplex_from_Bout_mesh(bout_mesh, mesh_options, sycl_target, dmplex_filepath);
 
   // Normalise DMPlex after creation
   // Get local coords object (i.e. per rank) and scale it - this scales entire mesh
@@ -529,11 +537,14 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
    *
    *
    */
-  {
+  { 
+
+    test_mass_conservation = options["test_mass_conservation"]
+                               .doc("Check that mass is conserved at runtime. Default = true")
+                               .withDefault(true);
 
     // Normalisations
-        // Initial neutral parameters
-    Field2D initial_neutral_density{bout_mesh};
+    // Initial neutral parameters
     initial_neutral_density =
         options["initial_neutral_density"]
             .doc(
@@ -579,17 +590,16 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
 
     // Other settings
     const int ndim = 2;
-    const REAL dt = options["dt"]
+    dt = options["dt"]
                         .doc("Timestep to use for VANTAGE kinetic neutrals (normalised units)")
                         .withDefault(0.01);
-    const int nsteps = options["nsteps"]
+    nsteps = options["nsteps"]
                            .doc("Number of timesteps to use for VANTAGE kinetic neutrals")
                            .withDefault(10);
     const int rng_samples = options["rng_samples"]
                                 .doc("Number of RNG samples to prepare per-particle")
                                 .withDefault(40);
 
-    BoutReal particle_time = 0.0;
     ion_density = Field2D(background_ion_density, bout_mesh);
     neutral_density = Field2D(0.0, bout_mesh);
     // Create a mesh interface from the DM
@@ -600,7 +610,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
     // Create a domain from the neso_mesh and the mapper.
     auto domain = std::make_shared<Domain>(neso_mesh, mapper);
     // Get the number of cells in the mesh owned on this process
-    int num_cells_owned = neso_mesh->get_cell_count();
+    num_cells_owned = neso_mesh->get_cell_count();
     // if requested, check that neso_mesh cell volumes are identical
     // to bout_mesh cell volumes, otherwise, exit.
     if (mesh_options["test_dmplex_cell_volumes"].withDefault(true)) {
@@ -638,11 +648,11 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
     ParticleSpec particle_spec = particle_spec_builder.get_particle_spec();
 
     // Create a Particle group with our specied particle properties.
-    auto A_particle_group =
+    A_particle_group =
         std::make_shared<ParticleGroup>(domain, particle_spec, sycl_target);
 
     // Create some particle data
-    const int mpi_rank = sycl_target->comm_pair.rank_parent;
+    
     std::mt19937 rng_pos(static_cast<std::mt19937::result_type>(52234234 + mpi_rank));
     std::mt19937 rng_vel(static_cast<std::mt19937::result_type>(52234231 + mpi_rank));
     std::vector<std::vector<double>> positions;
@@ -689,7 +699,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
     // Add the new particles to the particle group
     A_particle_group->add_particles_local(initial_distribution);
     // make pointer to projection object
-    auto dg0 = std::make_shared<PetscInterface::DMPlexProjectEvaluateDG>(
+    dg0 = std::make_shared<PetscInterface::DMPlexProjectEvaluateDG>(
         neso_mesh, sycl_target, "DG", 0);
 
     // RNG kernel
@@ -710,7 +720,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
     // Options and constants
 
     // Make new particle group just for the markers
-    auto marker_group =
+    marker_group =
         std::make_shared<ParticleGroup>(domain, particle_spec, sycl_target);
 
     // Give particle group initial kinetic values (positions and velocities)
@@ -776,7 +786,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
     // Wrappers & controllers
     // ------------------------------------------------------------------------------
 
-    VantageSourceManager source_manager(neso_mesh, bout_mesh, units);
+    this->source_manager = std::make_unique<VantageSourceManager>(neso_mesh, bout_mesh, units);
 
     const REAL remove_threshold = options["remove_threshold"].withDefault(1.0e-10);
     const REAL merge_threshold = options["merge_threshold"].withDefault(1.0e-2);
@@ -810,9 +820,9 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
     std::vector<std::shared_ptr<TransformationWrapper>> parent_transforms_iz =
         std::vector{iz_accumulator_real_transform_wrapper, remove_wrapper, merge_wrapper};
 
-    auto reaction_controller = ReactionController(parent_transforms_iz, child_transforms);
+    this->reaction_controller = std::make_unique<ReactionController>(parent_transforms_iz, child_transforms);
 
-    source_manager.add_source("Siz", "ION_SOURCE_DENSITY", accumulator_transform_iz,
+    this->source_manager->add_source("Siz", "ION_SOURCE_DENSITY", accumulator_transform_iz,
                               A_particle_group, ion_source_density_zeroer);
 
     // Recombination transforms and controller
@@ -826,10 +836,10 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
     std::vector<std::shared_ptr<TransformationWrapper>> parent_transforms_rec =
         std::vector{recomb_accumulator_transform_wrapper, remove_wrapper, merge_wrapper};
 
-    auto recombination_controller =
-        ReactionController(parent_transforms_rec, child_transforms);
+    this->recombination_controller =
+        std::make_unique<ReactionController>(parent_transforms_rec, child_transforms);
 
-    source_manager.add_source("Srec", "ION_SOURCE_DENSITY", accumulator_transform_rec,
+    this->source_manager->add_source("Srec", "ION_SOURCE_DENSITY", accumulator_transform_rec,
                               marker_group, ion_source_density_zeroer);
 
     // Ionisation reaction
@@ -847,7 +857,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
           A_particle_group->sycl_target, iz_rate_data, iz_rate_data, main_species,
           electron_species);
 
-      reaction_controller.add_reaction(
+      this->reaction_controller->add_reaction(
           std::make_shared<decltype(ionisation_reaction)>(ionisation_reaction));
 
     } else {
@@ -874,7 +884,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
               A_particle_group->sycl_target, iz_rate_data, iz_energy_rate_data,
               main_species, electron_species, ionisation_rate_map);
 
-      reaction_controller.add_reaction(
+      this->reaction_controller->add_reaction(
           std::make_shared<decltype(ionisation_reaction)>(ionisation_reaction));
     }
 
@@ -918,7 +928,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
               sycl_target, static_cast<int>(rec_marker_species.get_id()), rec_out_states,
               rec_data, rec_reaction_kernel, rec_data_calc_obj);
 
-      recombination_controller.add_reaction(
+      this->recombination_controller->add_reaction(
         std::make_shared<decltype(rec_reaction)>(rec_reaction));
 
     }
@@ -955,7 +965,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
               sycl_target, static_cast<int>(rec_marker_species.get_id()), rec_out_states,
               rec_data, rec_reaction_kernel, rec_data_calc_obj);
 
-      recombination_controller.add_reaction(
+      this->recombination_controller->add_reaction(
         std::make_shared<decltype(rec_reaction)>(rec_reaction));
     }
 
@@ -971,139 +981,147 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
 
     b2d = std::make_shared<PetscInterface::BoundaryInteraction2D>(sycl_target, neso_mesh,
                                                                   boundary_groups);
-    auto reflection = std::make_shared<BoundaryReflection>(ndim, 1.0e-10);
+    reflection = std::make_shared<BoundaryReflection>(ndim, 1.0e-10);
 
-    auto lambda_apply_boundary_conditions = [&](auto aa) {
+    
+    };
+
+    // Initialisation
+    // ------------------------------------------------------------------------------
+    // allocate buffer vector for scalar projection/evaluation of NESO-Particles
+    // properties. Resize from default construction. 
+    h_project1.resize(static_cast<size_t>(num_cells_owned));
+    // set weights from a Field2D from BOUT
+    set_initial_particle_weights(initial_neutral_density, dg0, A_particle_group, neso_mesh,
+                                h_project1, N_w);
+
+    // Calculate neutral density and sources for initial condition
+    calculate_neutral_density_in_place(neutral_density, dg0, A_particle_group, h_project1,
+                                      N_w);
+    this->source_manager->update_all_sources(dt);
+
+    // diagnose the initial condition
+    bout_output_data =
+        initialise_diagnostics(alloptions, bout_mesh, neutral_density, ion_density,
+                              neso_mesh, vantage_dump_filepath);
+    // mass for conservation check
+    total_density = neutral_density + ion_density;
+    total_mass_initial = calculate_total_mass(total_density, neso_mesh);
+
+    // Initialise particle time
+    particle_time = 0.0;
+
+    }
+
+
+void Vantage::apply_boundary_conditions(ParticleSubGroupSharedPtr aa) {
       auto sub_groups = b2d->post_integration(aa);
       for (auto& gx : sub_groups) {
         reflection->execute(gx.second, Sym<REAL>("POSITION"), Sym<REAL>("VELOCITY"),
                             Sym<REAL>("TSP"), b2d->previous_position_sym);
       }
-    };
-
-    // Advection & rest of code
-    // ------------------------------------------------------------------------------
-
-    auto lambda_apply_timestep_reset = [&](auto aa) {
-      particle_loop(
-          aa,
-          [=](auto TSP) {
-            TSP.at(0) = 0.0;
-            TSP.at(1) = 0.0;
-          },
-          Access::write(Sym<REAL>("TSP")))
-          ->execute();
-    };
-    auto lambda_apply_advection_step =
-        [=](ParticleSubGroupSharedPtr iteration_set) -> void {
-      particle_loop(
-          "euler_advection", iteration_set,
-          [=](auto VELOCITY, auto POSITION, auto TSP) {
-            const REAL dt_left = dt - TSP.at(0);
-            if (dt_left > 0.0) {
-              POSITION.at(0) += dt_left * VELOCITY.at(0);
-              POSITION.at(1) += dt_left * VELOCITY.at(1);
-              TSP.at(0) = dt;
-              TSP.at(1) = dt_left;
-            }
-          },
-          Access::read(Sym<REAL>("VELOCITY")), Access::write(Sym<REAL>("POSITION")),
-          Access::write(Sym<REAL>("TSP")))
-          ->execute();
-    };
-    auto lambda_pre_advection = [&](auto aa) { b2d->pre_integration(aa); };
-    auto lambda_find_partial_moves = [&](auto aa) {
-      return static_particle_sub_group(
-          aa, [=](auto TSP) { return TSP.at(0) < dt; }, Access::read(Sym<REAL>("TSP")));
-    };
-    auto lambda_partial_moves_remaining = [&](auto aa) -> bool {
-      const int size = static_cast<int>(get_npart_global(aa));
-      ;
-      return size > 0;
-    };
-    auto lambda_apply_timestep = [&](auto aa) {
-      lambda_apply_timestep_reset(aa);
-      lambda_pre_advection(aa);
-      lambda_apply_advection_step(aa);
-      lambda_apply_boundary_conditions(aa);
-      aa = lambda_find_partial_moves(aa);
-      while (lambda_partial_moves_remaining(aa)) {
-        lambda_pre_advection(aa);
-        lambda_apply_advection_step(aa);
-        lambda_apply_boundary_conditions(aa);
-        aa = lambda_find_partial_moves(aa);
-      }
-    };
-
-    // allocate buffer vector for scalar projection/evaluation of NESO-Particles
-    // properties
-    std::vector<REAL> h_project1(static_cast<size_t>(num_cells_owned));
-    // set weights from a Field2D from BOUT
-    set_initial_particle_weights(initial_neutral_density, dg0, A_particle_group,
-                                 neso_mesh, h_project1, N_w);
-
-    // Calculate neutral density and sources for initial condition
-    calculate_neutral_density_in_place(neutral_density, dg0, A_particle_group,
-                                       h_project1, N_w);
-    source_manager.update_all_sources(dt);
-
-    // diagnose the initial condition
-    std::string particle_data_filename =
-        make_output_path(fmt::format("BOUT.dmp.vantage.{}.nc", mpi_rank), alloptions);
-    Options bout_output_data = initialise_diagnostics(
-        alloptions, bout_mesh, neutral_density, ion_density, neso_mesh, particle_data_filename);
-    // mass for conservation check
-    Field2D total_density = neutral_density + ion_density;
-    double total_mass_initial = calculate_total_mass(total_density, neso_mesh);
-
-    // Initialise h5part just before writing - earlier leads to a NESO assert error that
-    // can hide other bugs
-    auto h5part = std::make_shared<H5Part>(
-        make_output_path("particle_trajectories.h5part", alloptions), A_particle_group,
-        Sym<REAL>("POSITION"), Sym<REAL>("VELOCITY"));
-
-    // begin timestepping
-    for (int stepx = 0; stepx < nsteps; stepx++) {
-      // nprint("step:", stepx);
-      output << "step:" << std::to_string(stepx) << std::endl;
-      particle_time += dt;
-      A_particle_group->hybrid_move();
-      A_particle_group->cell_move();
-      lambda_apply_timestep(static_particle_sub_group(A_particle_group));
-      // apply reactions
-      reaction_controller.apply(A_particle_group, dt, ControllerMode::standard_mode);
-      recombination_controller.apply(marker_group, dt, A_particle_group);
-      // uncomment to write a trajectory
-      h5part->write();
-
-      calculate_neutral_density_in_place(neutral_density, dg0, A_particle_group,
-                                         h_project1, N_w);
-      source_manager.update_all_sources(dt);
-      Field2D Siz = source_manager.get_data("Siz");
-      Field2D Srec = source_manager.get_data("Srec");
-
-      // "Solve" density
-      // Sources are in normalised m^-3 s^-1, so need to multiply by dt
-      ion_density += (Siz + Srec) * dt;
-
-      // diagnose timestep stepx
-      update_diagnostics(neutral_density, ion_density, 
-                        Siz, Srec, 
-                        neso_mesh, bout_output_data,
-                        particle_data_filename, particle_time);
-    }
-    h5part->close();
-
-    // mass for conservation check
-    total_density = neutral_density + ion_density;
-    double total_mass_final = calculate_total_mass(total_density, neso_mesh);
-    if (options["test_mass_conservation"].withDefault(true)) {
-      check_mass_conservation(total_mass_final, total_mass_initial);
-    }
-  }
 }
 
-void Vantage::transform_impl(GuardedOptions& UNUSED(state)) {}
+void Vantage::transform_impl(GuardedOptions& UNUSED(state)) {
+  // Advection & rest of code
+  // ------------------------------------------------------------------------------
+
+  auto lambda_apply_timestep_reset = [&](auto aa) {
+    particle_loop(
+        aa,
+        [=](auto TSP) {
+          TSP.at(0) = 0.0;
+          TSP.at(1) = 0.0;
+        },
+        Access::write(Sym<REAL>("TSP")))
+        ->execute();
+  };
+  auto lambda_apply_advection_step =
+      [=](ParticleSubGroupSharedPtr iteration_set) -> void {
+    particle_loop(
+        "euler_advection", iteration_set,
+        [=](auto VELOCITY, auto POSITION, auto TSP) {
+          const REAL dt_left = dt - TSP.at(0);
+          if (dt_left > 0.0) {
+            POSITION.at(0) += dt_left * VELOCITY.at(0);
+            POSITION.at(1) += dt_left * VELOCITY.at(1);
+            TSP.at(0) = dt;
+            TSP.at(1) = dt_left;
+          }
+        },
+        Access::read(Sym<REAL>("VELOCITY")), Access::write(Sym<REAL>("POSITION")),
+        Access::write(Sym<REAL>("TSP")))
+        ->execute();
+  };
+  auto lambda_pre_advection = [&](auto aa) { b2d->pre_integration(aa); };
+  auto lambda_find_partial_moves = [&](auto aa) {
+    return static_particle_sub_group(
+        aa, [=](auto TSP) { return TSP.at(0) < dt; }, Access::read(Sym<REAL>("TSP")));
+  };
+  auto lambda_partial_moves_remaining = [&](auto aa) -> bool {
+    const int size = static_cast<int>(get_npart_global(aa));
+    ;
+    return size > 0;
+  };
+  auto lambda_apply_timestep = [&](auto aa) {
+    lambda_apply_timestep_reset(aa);
+    lambda_pre_advection(aa);
+    lambda_apply_advection_step(aa);
+    this->apply_boundary_conditions(aa);
+    aa = lambda_find_partial_moves(aa);
+    while (lambda_partial_moves_remaining(aa)) {
+      lambda_pre_advection(aa);
+      lambda_apply_advection_step(aa);
+      this->apply_boundary_conditions(aa);
+      aa = lambda_find_partial_moves(aa);
+    }
+  };
+
+  
+
+  // Initialise h5part just before writing - earlier leads to a NESO assert error that
+  // can hide other bugs
+  auto h5part = std::make_shared<H5Part>(
+      particle_data_filepath, A_particle_group,
+      Sym<REAL>("POSITION"), Sym<REAL>("VELOCITY"));
+
+  // begin timestepping
+  for (int stepx = 0; stepx < nsteps; stepx++) {
+    // nprint("step:", stepx);
+    output << "step:" << std::to_string(stepx) << std::endl;
+    particle_time += dt;
+    A_particle_group->hybrid_move();
+    A_particle_group->cell_move();
+    lambda_apply_timestep(static_particle_sub_group(A_particle_group));
+    // apply reactions
+    reaction_controller->apply(A_particle_group, dt, ControllerMode::standard_mode);
+    recombination_controller->apply(marker_group, dt, A_particle_group);
+    // uncomment to write a trajectory
+    h5part->write();
+
+    calculate_neutral_density_in_place(neutral_density, dg0, A_particle_group, h_project1,
+                                       N_w);
+    this->source_manager->update_all_sources(dt);
+    Field2D Siz = this->source_manager->get_data("Siz");
+    Field2D Srec = this->source_manager->get_data("Srec");
+
+    // "Solve" density
+    // Sources are in normalised m^-3 s^-1, so need to multiply by dt
+    ion_density += (Siz + Srec) * dt;
+
+    // diagnose timestep stepx
+    update_diagnostics(neutral_density, ion_density, Siz, Srec, neso_mesh,
+                       bout_output_data, vantage_dump_filepath, particle_time);
+  }
+  h5part->close();
+
+  // mass for conservation check
+  total_density = neutral_density + ion_density;
+  BoutReal total_mass_final = calculate_total_mass(total_density, neso_mesh);
+  if (test_mass_conservation) {
+    check_mass_conservation(total_mass_final, total_mass_initial);
+  }
+}
 
 void Vantage::finally(const Options& UNUSED(state)) {}
 

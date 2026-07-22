@@ -9,31 +9,6 @@
 using namespace NESO::Particles;
 using namespace VANTAGE::Reactions;
 
-struct Vantage : public Component {
-  Vantage(std::string name, Options& options, Solver* solver);
-
-  ~Vantage(); // Destructor for VANTAGE related cleanup
-  void finally(const Options& state) override;
-  void transform_impl(GuardedOptions& state) override;
-  void outputVars(Options& state) override;
-
-private:
-  PetscLib petsc_lib; // Ensures PETSc is initialized for the lifetime of this component
-  std::string name;   // Component name
-  DM dm;
-  std::shared_ptr<PetscInterface::DMPlexInterface> neso_mesh;
-  std::shared_ptr<SYCLTarget> sycl_target;
-  std::shared_ptr<PetscInterface::BoundaryInteraction2D> b2d;
-
-  Field2D ion_density;
-  Field2D neutral_density;
-  BoutReal particle_time;
-};
-
-namespace {
-RegisterComponent<Vantage> registercomponentvantage("vantage");
-}
-
 /// @brief Data struct to hold information about a reaction source.
 /// @param reaction_name Name of the reaction, e.g. "ionistaion"
 /// @param source_name Name of the source, e.g. Siz (ion density source due to
@@ -85,6 +60,64 @@ private:
   std::shared_ptr<PetscInterface::DMPlexInterface> neso_mesh;
   Options& units;
 };
+
+struct Vantage : public Component {
+  Vantage(std::string name, Options& options, Solver* solver);
+
+  ~Vantage(); // Destructor for VANTAGE related cleanup
+  void finally(const Options& state) override;
+  void transform_impl(GuardedOptions& state) override;
+  void outputVars(Options& state) override;
+
+private:
+
+  bool test_mass_conservation;
+  BoutReal particle_time;
+  BoutReal N_w;
+  REAL dt;
+  int nsteps;
+  int num_cells_owned;                // Number of VANTAGE cells owned per rank
+
+  Options bout_output_data; // Options object to hold output data for VANTAGE diagnostics
+  int mpi_rank;    // Current rank ID
+  Mesh* bout_mesh; // Pointer to the BOUT++ mesh object
+  Field2D ion_density, neutral_density, total_density;
+  Field2D initial_neutral_density;    // Initial VANTAGE kinetic neutral density
+  BoutReal total_mass_initial, total_mass;
+  std::string dmplex_filepath, vantage_dump_filepath, particle_data_filepath; // Path for output files
+  
+  
+
+  PetscLib petsc_lib; // Ensures PETSc is initialized for the lifetime of this component
+  
+  DM dm;
+  std::shared_ptr<PetscInterface::DMPlexInterface> neso_mesh;
+  std::shared_ptr<SYCLTarget> sycl_target;
+  std::shared_ptr<PetscInterface::BoundaryInteraction2D> b2d;  // Boundary interaction object
+  std::shared_ptr<PetscInterface::DMPlexProjectEvaluateDG> dg0; // DMPlex projection object
+  std::vector<REAL> h_project1; // Buffer for scalar projection/evaluation of NESO-Particles properties
+  std::shared_ptr<ParticleGroup> A_particle_group; // Particle group for main neutrals
+  std::shared_ptr<ParticleGroup> marker_group;     // Particle group for rec markers
+
+  // Needed for Vantage::apply_boundary_conditions
+  std::shared_ptr<BoundaryReflection>reflection; // Boundary reflection object
+  void apply_boundary_conditions(ParticleSubGroupSharedPtr aa);
+
+
+  // These classes don't have a default constructor so need to be initialised as a unique_ptr
+  std::unique_ptr<VantageSourceManager> source_manager; // Manager for VANTAGE reaction sources
+  std::unique_ptr<ReactionController> reaction_controller;
+  std::unique_ptr<ReactionController> recombination_controller;
+
+};
+
+namespace {
+RegisterComponent<Vantage> registercomponentvantage("vantage");
+}
+
+
+
+
 
 /**
  * @brief Function to calculate cell volumes.
