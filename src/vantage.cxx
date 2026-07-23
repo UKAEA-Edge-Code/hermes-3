@@ -208,7 +208,7 @@ initialise_diagnostics(Options& alloptions, Mesh* bout_mesh, Field2D& neutral_de
 void update_diagnostics(Field2D& neutral_density, Field2D& ion_density, Field2D& Siz,
                         Field2D& Srec,
                         std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh,
-                        Options& bout_output_data, std::string vantage_dump_filepath,
+                        Options& bout_output_data, bout::OptionsIO& vantage_dump_writer,
                         BoutReal particle_time) {
   // update density in Options object and write
   bout_output_data["neutral_density"] = neutral_density;
@@ -224,8 +224,9 @@ void update_diagnostics(Field2D& neutral_density, Field2D& ion_density, Field2D&
   bout_output_data["t_array"] = particle_time;
   // bout_output_data["t_array"] = 0.0;
   // Append data to file
-  bout::OptionsIO::create({{"file", vantage_dump_filepath}, {"append", true}})
-      ->write(bout_output_data);
+  vantage_dump_writer.write(bout_output_data);
+  vantage_dump_writer
+      .flush(); // Ensure buffer is written to disk to avoid crash data loss
 }
 
 void set_initial_particle_weights(
@@ -512,7 +513,6 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
     PETSCCHK(VecScale(coords, 1 / meters));
   }
 
-  output << "Begin particle push \n";
 
   /*
    *
@@ -991,6 +991,9 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
   bout_output_data =
       initialise_diagnostics(alloptions, bout_mesh, neutral_density, ion_density,
                              neso_mesh, vantage_dump_filepath);
+
+  vantage_dump_writer = bout::OptionsIO::create({{"file", vantage_dump_filepath}, {"append", true}});
+
   // mass for conservation check
   total_density = neutral_density + ion_density;
   total_mass_initial = calculate_total_mass(total_density, neso_mesh);
@@ -1086,9 +1089,10 @@ int Vantage::advance_vantage(BoutReal UNUSED(time)) {
   }
 
   // begin timestepping
+  output << "\nBegin VANTAGE iterations \n";
   for (int stepx = 0; stepx < nsteps; stepx++) {
-    // nprint("step:", stepx);
-    output << "step:" << std::to_string(stepx) << std::endl;
+
+    output << "Particle time: " << std::to_string(particle_time) << std::endl;
     particle_time += dt;
     A_particle_group->hybrid_move();
     A_particle_group->cell_move();
@@ -1111,7 +1115,7 @@ int Vantage::advance_vantage(BoutReal UNUSED(time)) {
 
     // diagnose timestep stepx
     update_diagnostics(neutral_density, ion_density, Siz, Srec, neso_mesh,
-                       bout_output_data, vantage_dump_filepath, particle_time);
+                       bout_output_data, *vantage_dump_writer, particle_time);
   }
   h5part->close();
 

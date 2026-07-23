@@ -98,8 +98,11 @@ private:
   int num_cells_owned; // Number of VANTAGE cells owned per rank
 
   Options bout_output_data; // Options object to hold output data for VANTAGE diagnostics
-  int mpi_rank;             // Current rank ID
-  Mesh* bout_mesh;          // Pointer to the BOUT++ mesh object
+  std::unique_ptr<bout::OptionsIO>
+      vantage_dump_writer; // OptionsIO object to write VANTAGE diagnostics
+
+  int mpi_rank;    // Current rank ID
+  Mesh* bout_mesh; // Pointer to the BOUT++ mesh object
   Field2D ion_density, neutral_density, total_density;
   Field2D initial_neutral_density; // Initial VANTAGE kinetic neutral density
   BoutReal total_mass_initial, total_mass;
@@ -114,7 +117,7 @@ private:
   std::shared_ptr<PetscInterface::BoundaryInteraction2D>
       b2d; // Boundary interaction object
   std::shared_ptr<PetscInterface::DMPlexProjectEvaluateDG>
-      dg0; // DMPlex projection object
+      dg0;                        // DMPlex projection object
   std::shared_ptr<H5Part> h5part; // HDF5 particle output object
   std::vector<REAL>
       h_project1; // Buffer for scalar projection/evaluation of NESO-Particles properties
