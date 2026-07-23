@@ -115,6 +115,7 @@ private:
       b2d; // Boundary interaction object
   std::shared_ptr<PetscInterface::DMPlexProjectEvaluateDG>
       dg0; // DMPlex projection object
+  std::shared_ptr<H5Part> h5part; // HDF5 particle output object
   std::vector<REAL>
       h_project1; // Buffer for scalar projection/evaluation of NESO-Particles properties
   std::shared_ptr<ParticleGroup> A_particle_group; // Particle group for main neutrals

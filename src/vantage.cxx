@@ -1079,9 +1079,11 @@ int Vantage::advance_vantage(BoutReal UNUSED(time)) {
   };
 
   // Initialise h5part just before writing - earlier leads to a NESO assert error that
-  // can hide other bugs
-  auto h5part = std::make_shared<H5Part>(particle_data_filepath, A_particle_group,
-                                         Sym<REAL>("POSITION"), Sym<REAL>("VELOCITY"));
+  // can hide other bugs if it crashes with the file open.
+  if (!h5part) {
+    h5part = std::make_shared<H5Part>(particle_data_filepath, A_particle_group,
+                                      Sym<REAL>("POSITION"), Sym<REAL>("VELOCITY"));
+  }
 
   // begin timestepping
   for (int stepx = 0; stepx < nsteps; stepx++) {
