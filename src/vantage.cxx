@@ -513,7 +513,6 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
     PETSCCHK(VecScale(coords, 1 / meters));
   }
 
-
   /*
    *
    *
@@ -754,6 +753,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
     }
 
     const INT num_cells = marker_group->domain->mesh->get_cell_count();
+    const BoutReal N_w_local = this->N_w;
 
     // Calculate weight for each marker particle
     // based on FLUID_DENSITY and N_CELL properties contained in same particle.
@@ -761,9 +761,9 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
       REAL V_cell = neso_mesh->dmh->get_cell_volume(ic);
       particle_loop(
           "Update weight of ions", marker_group,
-          [=](auto n_cell_prop, auto ion_dens_prop, auto weight_prop) {
+          [N_w_local, V_cell](auto n_cell_prop, auto ion_dens_prop, auto weight_prop) {
             const BoutReal n_cell = static_cast<BoutReal>(n_cell_prop.at(0));
-            auto updated_weight = (ion_dens_prop.at(0) * V_cell) / (N_w * n_cell);
+            auto updated_weight = (ion_dens_prop.at(0) * V_cell) / (N_w_local * n_cell);
             weight_prop.at(0) = updated_weight;
           },
           Access::read(Sym<INT>("N_CELL")), Access::read(Sym<REAL>("FLUID_DENSITY")),
@@ -992,7 +992,8 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
       initialise_diagnostics(alloptions, bout_mesh, neutral_density, ion_density,
                              neso_mesh, vantage_dump_filepath);
 
-  vantage_dump_writer = bout::OptionsIO::create({{"file", vantage_dump_filepath}, {"append", true}});
+  vantage_dump_writer =
+      bout::OptionsIO::create({{"file", vantage_dump_filepath}, {"append", true}});
 
   // mass for conservation check
   total_density = neutral_density + ion_density;
@@ -1040,16 +1041,19 @@ int Vantage::advance_vantage(BoutReal UNUSED(time)) {
         Access::write(Sym<REAL>("TSP")))
         ->execute();
   };
+
+  const BoutReal dt_local = this->dt;
+
   auto lambda_apply_advection_step =
       [=](ParticleSubGroupSharedPtr iteration_set) -> void {
     particle_loop(
         "euler_advection", iteration_set,
-        [=](auto VELOCITY, auto POSITION, auto TSP) {
-          const REAL dt_left = dt - TSP.at(0);
+        [dt_local](auto VELOCITY, auto POSITION, auto TSP) {
+          const REAL dt_left = dt_local - TSP.at(0);
           if (dt_left > 0.0) {
             POSITION.at(0) += dt_left * VELOCITY.at(0);
             POSITION.at(1) += dt_left * VELOCITY.at(1);
-            TSP.at(0) = dt;
+            TSP.at(0) = dt_local;
             TSP.at(1) = dt_left;
           }
         },
@@ -1060,7 +1064,8 @@ int Vantage::advance_vantage(BoutReal UNUSED(time)) {
   auto lambda_pre_advection = [&](auto aa) { b2d->pre_integration(aa); };
   auto lambda_find_partial_moves = [&](auto aa) {
     return static_particle_sub_group(
-        aa, [=](auto TSP) { return TSP.at(0) < dt; }, Access::read(Sym<REAL>("TSP")));
+        aa, [dt_local](auto TSP) { return TSP.at(0) < dt_local; },
+        Access::read(Sym<REAL>("TSP")));
   };
   auto lambda_partial_moves_remaining = [&](auto aa) -> bool {
     const int size = static_cast<int>(get_npart_global(aa));
