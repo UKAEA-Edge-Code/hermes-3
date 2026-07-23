@@ -6,7 +6,6 @@ from boututils.run_wrapper import shell, launch_safe
 
 import h5py
 import numpy as np
-from petsc4py import PETSc
 import netCDF4 as nc
 
 verbose = False
@@ -30,7 +29,7 @@ def particle_push_input(
 ):
     input_file_string = f"""
 
-    nout = 0
+    nout = 1
     timestep = 1
 
     [mesh]
@@ -73,6 +72,7 @@ def particle_push_input(
 
     [Nd+]
     function = 1
+    bndry_all = neumann
 
     [e]
     type = quasineutral
