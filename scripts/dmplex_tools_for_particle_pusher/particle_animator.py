@@ -5,6 +5,7 @@ from matplotlib import pyplot as plt
 from matplotlib.animation import FuncAnimation
 from petsc4py import PETSc
 import argparse
+import xhermes
 
 parser = argparse.ArgumentParser(
     description="Animate particles moving on a DMPlex mesh."
@@ -19,12 +20,26 @@ parser.add_argument(
     type=str,
     help="The path to the HDF5 file representing the particle data",
 )
+parser.add_argument(
+    "BOUT_file_path",
+    type=str,
+    help="The path to the BOUT.dmp.0.nc file associated with the particle data",
+)
+parser.add_argument(
+    "--equal-aspect",
+    action="store_true",
+    help="Use equal aspect ratio R, Z axes",
+)
 
 args = parser.parse_args()
 print(
     f"Animating particle paths from {args.particle_trajectory_h5_file_path} on DMPlex edges from {args.dmplex_h5_file_path}"
 )
 
+
+def get_length_normalisation(BOUT_file_path):
+    ds = xhermes.open(BOUT_file_path)
+    return ds.attrs["metadata"]["rho_s0"]
 
 def load_dmplex(file_path):
     dm = PETSc.DMPlex().create()
@@ -53,6 +68,8 @@ def get_mesh_edges(dm):
             edges.append((x0, x1))
     return edges
 
+# normalisation for particle data
+meters = get_length_normalisation(args.BOUT_file_path)
 
 dm = load_dmplex(args.dmplex_h5_file_path)
 # dm = load_dmplex('dmplex/expected_nonorthogonal.grd.nc.mesh.h5')
@@ -78,7 +95,7 @@ def load_particle_data(file_path):
             pdata = np.zeros((nparticles, 2))
             pdata[:, 0] = P_0
             pdata[:, 1] = P_1
-            particle_positions.append(pdata)
+            particle_positions.append(np.multiply(pdata,meters))
         except KeyError as error:
             print(f"No particles at time step {it}: {error}")
             # assign empty particle data
@@ -107,6 +124,9 @@ scat = ax.scatter(
 ax.set_title("Particle Positions")
 ax.set_xlabel("R")
 ax.set_ylabel("Z")
+if args.equal_aspect:
+    ax.set_aspect("equal",adjustable="box")
+ax.set_xlim(0.0,None)
 
 
 def update(frame):
@@ -118,6 +138,6 @@ def update(frame):
 
 ani = FuncAnimation(fig, update, frames=nstep, interval=50, blit=True)
 output_path = args.particle_trajectory_h5_file_path + ".animation.gif"
-ani.save(output_path)
+ani.save(output_path, dpi=400)
 print(f"Saving animation of particle paths to {output_path}")
 # plt.show()
