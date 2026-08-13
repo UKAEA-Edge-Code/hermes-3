@@ -194,14 +194,11 @@ std::vector<PetscInt> cells_definition_from_RZ_ivertex(
 
 DM create_dmplex_from_Bout_mesh(Mesh* bout_mesh, Options& mesh_options,
                                 std::shared_ptr<SYCLTarget> sycl_target,
-                                std::string dmplex_h5_filename) {
+                                std::string dmplex_h5_filename,
+                                bool use_external_msh) {
   // This DM will contain the DMPlex after we call the creation routine.
   DM dm;
 
-  bool use_external_msh = mesh_options["use_external_msh"]
-                             .doc("Use an externally generated .msh file for the kinetic mesh. "
-                                  "Not default and recommendation is false.")
-                             .withDefault(false);
   std::string dmplex_name = mesh_options["dmplex_name"]
                                   .doc("DMPlex object name.")
                                   .withDefault("hypnotoad_dmplex_mesh");

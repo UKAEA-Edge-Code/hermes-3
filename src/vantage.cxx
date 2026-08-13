@@ -498,11 +498,15 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
   std::string dmplex_h5_filename = mesh_options["dmplex_h5_filename"]
                                        .doc("Filename to use for saving the DMPlex mesh")
                                        .withDefault("hypnotoad_dmplex_mesh_output.h5");
-
+  bool use_external_msh = mesh_options["use_external_msh"]
+                             .doc("Use an externally generated .msh file for the kinetic mesh. "
+                                  "Not default and recommendation is false.")
+                             .withDefault(false);
   // Create and save DMPlex
   // This is in SI units.
   dm = create_dmplex_from_Bout_mesh(bout_mesh, mesh_options, sycl_target,
-                                    make_output_path(dmplex_h5_filename, alloptions));
+                                    make_output_path(dmplex_h5_filename, alloptions),
+                                    use_external_msh);
 
   // Normalise DMPlex after creation
   // Get local coords object (i.e. per rank) and scale it - this scales entire mesh

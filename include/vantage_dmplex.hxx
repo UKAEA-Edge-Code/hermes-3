@@ -52,7 +52,8 @@ std::vector<PetscInt> cells_definition_from_RZ_ivertex(
 
 DM create_dmplex_from_Bout_mesh(Mesh* bout_mesh, Options& mesh_options,
                                 std::shared_ptr<SYCLTarget> sycl_target,
-                                std::string dmplex_h5_filename);
+                                std::string dmplex_h5_filename,
+                                bool use_external_msh);
 
 #endif 
 
