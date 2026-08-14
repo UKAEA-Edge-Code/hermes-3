@@ -225,7 +225,7 @@ DM create_dmplex_from_Bout_mesh(Mesh* bout_mesh, Options& mesh_options,
                              .doc("Path to an externally generated .msh file for the kinetic mesh. ")
                              .withDefault("kinetic.msh");
     PETSCCHK(DMPlexCreateGmshFromFile(MPI_COMM_WORLD, msh_file.c_str(),
-                                      (PetscBool)1, &dm));
+                                      static_cast<PetscBool>(1), &dm));
     PetscSF sf_kinetic_mesh; // Petsc variable that records map of vertices from original vector to distributed vector indices
     std::vector<PetscInt> kinetic_mesh_map; // variable for recording the map in terms of a vector of integers
     PetscInterface::generic_distribute(&dm, MPI_COMM_WORLD, 1, &sf_kinetic_mesh);
