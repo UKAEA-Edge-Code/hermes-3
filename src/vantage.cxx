@@ -104,7 +104,7 @@ double calculate_total_mass(Field2D& density,
 
 Options
 initialise_diagnostics(Options& alloptions,
-                      Mesh* bout_mesh, 
+                      Mesh* bout_mesh,
                       Field2D& neutral_density, Field2D& ion_density,
                       std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh,
                       std::string particle_data_filename) {
@@ -250,7 +250,7 @@ void set_initial_particle_weights(
       // particle_weights are copied to all particles in this cell.
       // we multiply the initial density by the volume to get particle number,
       // then divide by markers per cell to divide them between the requested markers,
-      // then divide by N_w to get the weight of each marker. 
+      // then divide by N_w to get the weight of each marker.
       const REAL cell_volume = neso_mesh->dmh->get_cell_volume(static_cast<int>(ixy));
       const INT nmarkers_per_cell =
           A_particle_group->get_npart_cell(static_cast<int>(ixy));
@@ -472,7 +472,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
   // Mesh* bout_mesh = Mesh::create(&Options::root()["mesh"]);
   // TODO: tidy up the above
 
-  
+
   Options& mesh_options = alloptions["dmplex"]; // [mesh]
   Options& options = alloptions[name]; // [vantage]
 
@@ -495,6 +495,9 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
   sycl_target = std::make_shared<SYCLTarget>(0, BoutComm::get());
   // keep dmplex_h5_filename in vantage.cxx to retain access to make_output_path()
   // which should presumably not need to exist within the hermes-3 library
+  std::string dmplex_name = mesh_options["dmplex_name"]
+                                  .doc("DMPlex object name.")
+                                  .withDefault("hypnotoad_dmplex_mesh");
   std::string dmplex_h5_filename = mesh_options["dmplex_h5_filename"]
                                        .doc("Filename to use for saving the DMPlex mesh")
                                        .withDefault("hypnotoad_dmplex_mesh_output.h5");
@@ -503,12 +506,27 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
                                   "Not default and recommendation is false.")
                              .withDefault(false);
   // Create and save DMPlex
-  // This is in SI units.
-  dm = create_dmplex_from_Bout_mesh(bout_mesh, mesh_options, sycl_target,
-                                    make_output_path(dmplex_h5_filename, alloptions),
-                                    use_external_msh);
+  // DM dm; // pointer to DMPlex, initialised below
+  // This DM is created in SI units without boundary labels
+  if (use_external_msh) {
+    std::string msh_file = mesh_options["msh_file"]
+                             .doc("Path to an externally generated .msh file for the kinetic mesh. ")
+                             .withDefault("kinetic.msh");
+    // create a DMPlex in serial
+    create_dmplex_from_GMSH_msh(&dm, msh_file);
+    PetscSF sf_kinetic_mesh; // Petsc variable that records map of vertices from original vector to distributed vector indices
+    std::vector<PetscInt> kinetic_mesh_map; // variable for recording the map in terms of a vector of integers
+    PetscInterface::generic_distribute(&dm, BoutComm::get(), 1, &sf_kinetic_mesh);
+    kinetic_mesh_map = PetscInterface::get_global_distributed_points_map(dm, sf_kinetic_mesh);
+  } else {
+    create_dmplex_from_Bout_mesh(&dm, bout_mesh, mesh_options, sycl_target);
+  }
+  // label DMPlex boundaries
+  PetscInterface::label_all_dmplex_boundaries(dm, PetscInterface::face_sets_label, 100);
+  // diagnose the DMPlex by writing to file
+  write_dmplex_to_file(dm, dmplex_name, make_output_path(dmplex_h5_filename, alloptions));
 
-  // Normalise DMPlex after creation
+  // Normalise DMPlex after creation to go from SI to normalised units
   // Get local coords object (i.e. per rank) and scale it - this scales entire mesh
   // All following interactions with the DMPlex will be in normalised units.
   Vec coords = nullptr;
@@ -578,7 +596,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
         options["rec_rate_override"]
             .doc("Recombination rate override (weight s^-1, normalised units).")
             .withDefault(-1.0);
-    const int rec_markers_per_cell = 
+    const int rec_markers_per_cell =
                                   options["rec_markers_per_cell"].withDefault(1000);
 
     // Other settings
@@ -706,10 +724,10 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
         coupler_map(cell_count_inner);
       mesh_coupler_dg0 = std::make_shared<PetscInterface::DMPlexMeshCouplerDG0>(
         dm, coupler_map);
-    } else {
-      project_eval_dg0 = std::make_shared<PetscInterface::DMPlexProjectEvaluateDG>(
-        neso_mesh, sycl_target, "DG", 0);
     }
+    // always create project_eval_dg0 for now, as only this variable is used below
+    project_eval_dg0 = std::make_shared<PetscInterface::DMPlexProjectEvaluateDG>(
+      neso_mesh, sycl_target, "DG", 0);
     // RNG kernel
     // Used for sampling from velocity distribution for REC/CX
     // ------------------------------------------------------------------------------
@@ -853,7 +871,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
     // Ionisation reaction
     // ------------------------------------------------------------------------------
     main_species.set_id(0);
-    
+
     // Reaction rates
     // ---------------------------
 
@@ -977,7 +995,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
         std::make_shared<decltype(rec_reaction)>(rec_reaction));
     }
 
-    
+
 
     // Boundary handling
     // ------------------------------------------------------------------------------
@@ -1105,8 +1123,8 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
       ion_density += (Siz + Srec) * dt;
 
       // diagnose timestep stepx
-      update_diagnostics(neutral_density, ion_density, 
-                        Siz, Srec, 
+      update_diagnostics(neutral_density, ion_density,
+                        Siz, Srec,
                         neso_mesh, bout_output_data,
                         particle_data_filename, particle_time);
     }

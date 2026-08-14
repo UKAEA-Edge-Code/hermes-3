@@ -192,7 +192,7 @@ std::vector<PetscInt> cells_definition_from_RZ_ivertex(
   return cells;
 }
 
-void write_dmplex_to_file(DM &dm, std::string dmplex_name, std::string dmplex_h5_filename){
+void write_dmplex_to_file(DM dm, std::string dmplex_name, std::string dmplex_h5_filename){
   // save a HDF5 file containing the DM for diagnostics
   PetscViewer viewer;
   // Set a name for the DMPlex object (important for HDF5)
@@ -209,285 +209,269 @@ void write_dmplex_to_file(DM &dm, std::string dmplex_name, std::string dmplex_h5
   output << "Finished DMPlex diagnostic \n";
 }
 
-DM create_dmplex_from_Bout_mesh(Mesh* bout_mesh, Options& mesh_options,
-                                std::shared_ptr<SYCLTarget> sycl_target,
-                                std::string dmplex_h5_filename,
-                                bool use_external_msh) {
-  // This DM will contain the DMPlex after we call the creation routine.
-  DM dm;
+void create_dmplex_from_GMSH_msh(DM* dm, std::string msh_file){
+  PETSCCHK(DMPlexCreateGmshFromFile(BoutComm::get(), msh_file.c_str(),
+                                    static_cast<PetscBool>(1), dm));
+}
 
-  std::string dmplex_name = mesh_options["dmplex_name"]
-                                  .doc("DMPlex object name.")
-                                  .withDefault("hypnotoad_dmplex_mesh");
+void create_dmplex_from_Bout_mesh(DM* dm, Mesh* bout_mesh, Options& mesh_options,
+                                std::shared_ptr<SYCLTarget> sycl_target) {
 
-  if (use_external_msh){
-    std::string msh_file = mesh_options["msh_file"]
-                             .doc("Path to an externally generated .msh file for the kinetic mesh. ")
-                             .withDefault("kinetic.msh");
-    PETSCCHK(DMPlexCreateGmshFromFile(MPI_COMM_WORLD, msh_file.c_str(),
-                                      static_cast<PetscBool>(1), &dm));
-    PetscSF sf_kinetic_mesh; // Petsc variable that records map of vertices from original vector to distributed vector indices
-    std::vector<PetscInt> kinetic_mesh_map; // variable for recording the map in terms of a vector of integers
-    PetscInterface::generic_distribute(&dm, MPI_COMM_WORLD, 1, &sf_kinetic_mesh);
-    kinetic_mesh_map = PetscInterface::get_global_distributed_points_map(dm, sf_kinetic_mesh);
-  } else {
+  bool use_cxx_ivertex = mesh_options["use_cxx_ivertex"]
+                            .doc("Use C++ based DMPlex creation routine instead of "
+                                  "loading an external DMPlex? "
+                                  "Default and recommendation is true.")
+                            .withDefault(true);
+  // DMPlex vertex distance tolerance for duplicate Hypnotoad vertices
+  const BoutReal dmplex_vertex_tolerance =
+      mesh_options["dmplex_vertex_tolerance"]
+          .doc("Tolerance for determining duplicate vertices when creating DMPlex from "
+              "BOUT++ mesh.")
+          .withDefault(1.0e-8);
 
-    bool use_cxx_ivertex = mesh_options["use_cxx_ivertex"]
-                              .doc("Use C++ based DMPlex creation routine instead of "
-                                    "loading an external DMPlex? "
-                                    "Default and recommendation is true.")
-                              .withDefault(true);
-    // DMPlex vertex distance tolerance for duplicate Hypnotoad vertices
-    const BoutReal dmplex_vertex_tolerance =
-        mesh_options["dmplex_vertex_tolerance"]
-            .doc("Tolerance for determining duplicate vertices when creating DMPlex from "
-                "BOUT++ mesh.")
-            .withDefault(1.0e-8);
-
-    output << fmt::format("Using option use_cxx_ivertex = {}", use_cxx_ivertex)
-          << std::endl;
-    Field2D Rxy_lower_left_corners;
-    Field2D Rxy_lower_right_corners;
-    Field2D Rxy_upper_right_corners;
-    Field2D Rxy_upper_left_corners;
-    Field2D Zxy_lower_left_corners;
-    Field2D Zxy_lower_right_corners;
-    Field2D Zxy_upper_right_corners;
-    Field2D Zxy_upper_left_corners;
-    // mesh->get(ivertex, "ivertex_lower_left_corners");
-    bout_mesh->get(Rxy_lower_left_corners, "Rxy_corners");
-    bout_mesh->get(Rxy_lower_right_corners, "Rxy_lower_right_corners");
-    bout_mesh->get(Rxy_upper_right_corners, "Rxy_upper_right_corners");
-    bout_mesh->get(Rxy_upper_left_corners, "Rxy_upper_left_corners");
-    bout_mesh->get(Zxy_lower_left_corners, "Zxy_corners");
-    bout_mesh->get(Zxy_lower_right_corners, "Zxy_lower_right_corners");
-    bout_mesh->get(Zxy_upper_right_corners, "Zxy_upper_right_corners");
-    bout_mesh->get(Zxy_upper_left_corners, "Zxy_upper_left_corners");
-    Field2D ivertex_lower_left_corners;
-    Field2D ivertex_lower_right_corners;
-    Field2D ivertex_upper_right_corners;
-    Field2D ivertex_upper_left_corners;
-    if (!use_cxx_ivertex) {
-      bout_mesh->get(ivertex_lower_left_corners, "ivertex_lower_left_corners");
-      bout_mesh->get(ivertex_lower_right_corners, "ivertex_lower_right_corners");
-      bout_mesh->get(ivertex_upper_right_corners, "ivertex_upper_right_corners");
-      bout_mesh->get(ivertex_upper_left_corners, "ivertex_upper_left_corners");
-    }
-    // local number of x cells, excluding guards
-    int Nx = bout_mesh->xend - bout_mesh->xstart + 1;
-    // local number of y cells, excluding guards
-    int Ny = bout_mesh->yend - bout_mesh->ystart + 1;
-    // output << "Nx " + std::to_string(Nx) + "Ny " + std::to_string(Ny) << "\n";
-    // output << "Got here -1 \n";
-
-    // PETSCCHK(PetscInitializeNoArguments());
-    // auto sycl_target = std::make_shared<SYCLTarget>(0, PETSC_COMM_WORLD);
-    const int mpi_size = sycl_target->comm_pair.size_parent;
-    const int mpi_rank = sycl_target->comm_pair.rank_parent;
-    // output << "Got here 0 \n";
-    // global number of physical nonunique vertices stored in hypnotoad datasets
-    const size_t N_nonunique_vertices = static_cast<size_t>(mpi_size * Nx * Ny);
-    // arrays to fill with local data
-    std::vector<double> local_Z_lower_left_vertices(N_nonunique_vertices, 0.0);
-    std::vector<double> local_R_lower_left_vertices(N_nonunique_vertices, 0.0);
-    std::vector<double> local_Z_lower_right_vertices(N_nonunique_vertices, 0.0);
-    std::vector<double> local_R_lower_right_vertices(N_nonunique_vertices, 0.0);
-    std::vector<double> local_Z_upper_right_vertices(N_nonunique_vertices, 0.0);
-    std::vector<double> local_R_upper_right_vertices(N_nonunique_vertices, 0.0);
-    std::vector<double> local_Z_upper_left_vertices(N_nonunique_vertices, 0.0);
-    std::vector<double> local_R_upper_left_vertices(N_nonunique_vertices, 0.0);
-    // arrays to receive the summed data across ranks
-    std::vector<double> global_Z_lower_left_vertices(N_nonunique_vertices, 0.0);
-    std::vector<double> global_R_lower_left_vertices(N_nonunique_vertices, 0.0);
-    std::vector<double> global_Z_lower_right_vertices(N_nonunique_vertices, 0.0);
-    std::vector<double> global_R_lower_right_vertices(N_nonunique_vertices, 0.0);
-    std::vector<double> global_Z_upper_right_vertices(N_nonunique_vertices, 0.0);
-    std::vector<double> global_R_upper_right_vertices(N_nonunique_vertices, 0.0);
-    std::vector<double> global_Z_upper_left_vertices(N_nonunique_vertices, 0.0);
-    std::vector<double> global_R_upper_left_vertices(N_nonunique_vertices, 0.0);
-    // fill these vectors with vertex values from the local rank
-    // at indices determined by the local rank
-    size_t icxy = static_cast<size_t>(Nx * Ny * mpi_rank);
-    for (int ix = bout_mesh->xstart; ix <= bout_mesh->xend; ix++) {
-      for (int iy = bout_mesh->ystart; iy <= bout_mesh->yend; iy++) {
-        local_R_lower_left_vertices.at(icxy) = Rxy_lower_left_corners(ix, iy);
-        local_Z_lower_left_vertices.at(icxy) = Zxy_lower_left_corners(ix, iy);
-        local_R_lower_right_vertices.at(icxy) = Rxy_lower_right_corners(ix, iy);
-        local_Z_lower_right_vertices.at(icxy) = Zxy_lower_right_corners(ix, iy);
-        local_R_upper_right_vertices.at(icxy) = Rxy_upper_right_corners(ix, iy);
-        local_Z_upper_right_vertices.at(icxy) = Zxy_upper_right_corners(ix, iy);
-        local_R_upper_left_vertices.at(icxy) = Rxy_upper_left_corners(ix, iy);
-        local_Z_upper_left_vertices.at(icxy) = Zxy_upper_left_corners(ix, iy);
-        icxy++;
-      }
-    }
-    // Perform Allreduce (sum) to get knowledge of vertices to all ranks
-    MPICHK(MPI_Allreduce(
-        local_R_lower_left_vertices.data(), global_R_lower_left_vertices.data(),
-        static_cast<int>(N_nonunique_vertices), MPI_DOUBLE, MPI_SUM, BoutComm::get()));
-    MPICHK(MPI_Allreduce(
-        local_Z_lower_left_vertices.data(), global_Z_lower_left_vertices.data(),
-        static_cast<int>(N_nonunique_vertices), MPI_DOUBLE, MPI_SUM, BoutComm::get()));
-    MPICHK(MPI_Allreduce(
-        local_R_lower_right_vertices.data(), global_R_lower_right_vertices.data(),
-        static_cast<int>(N_nonunique_vertices), MPI_DOUBLE, MPI_SUM, BoutComm::get()));
-    MPICHK(MPI_Allreduce(
-        local_Z_lower_right_vertices.data(), global_Z_lower_right_vertices.data(),
-        static_cast<int>(N_nonunique_vertices), MPI_DOUBLE, MPI_SUM, BoutComm::get()));
-    MPICHK(MPI_Allreduce(
-        local_R_upper_right_vertices.data(), global_R_upper_right_vertices.data(),
-        static_cast<int>(N_nonunique_vertices), MPI_DOUBLE, MPI_SUM, BoutComm::get()));
-    MPICHK(MPI_Allreduce(
-        local_Z_upper_right_vertices.data(), global_Z_upper_right_vertices.data(),
-        static_cast<int>(N_nonunique_vertices), MPI_DOUBLE, MPI_SUM, BoutComm::get()));
-    MPICHK(MPI_Allreduce(
-        local_R_upper_left_vertices.data(), global_R_upper_left_vertices.data(),
-        static_cast<int>(N_nonunique_vertices), MPI_DOUBLE, MPI_SUM, BoutComm::get()));
-    MPICHK(MPI_Allreduce(
-        local_Z_upper_left_vertices.data(), global_Z_upper_left_vertices.data(),
-        static_cast<int>(N_nonunique_vertices), MPI_DOUBLE, MPI_SUM, BoutComm::get()));
-    // if (mpi_rank == 0) {
-    //     std::cout << "Result of Allreduce (sum): ";
-    //     for (double val : global_R_lower_left_vertices) {
-    //         std::cout << val << " ";
-    //     }
-    //     std::cout << std::endl;
-    //     std::cout << "N_nonunique_vertices=" << N_nonunique_vertices << std::endl;
-    // }
-    // Now dynamically determine a list of unique vertex points
-    // constant to give us a vector that can definitely contain all points in the global
-    // lists
-    const size_t N_global_nonunique_vertices = static_cast<size_t>(4 * mpi_size * Nx * Ny);
-    std::vector<double> global_Z_vertices_buffer(N_global_nonunique_vertices, 0.0);
-    std::vector<double> global_R_vertices_buffer(N_global_nonunique_vertices, 0.0);
-    // fill the buffer vectors, checking each time if the point is unique
-    // first point, outside loop
-    global_Z_vertices_buffer.at(0) = global_Z_lower_left_vertices.at(0);
-    global_R_vertices_buffer.at(0) = global_R_lower_left_vertices.at(0);
-    size_t N_unique = 1; // we have one unique point in the buffer
-    // loop over lower left vertices
-    collect_unique_points(global_Z_vertices_buffer, global_R_vertices_buffer, N_unique,
-                          dmplex_vertex_tolerance, global_Z_lower_left_vertices,
-                          global_R_lower_left_vertices);
-    // loop over lower right vertices
-    collect_unique_points(global_Z_vertices_buffer, global_R_vertices_buffer, N_unique,
-                          dmplex_vertex_tolerance, global_Z_lower_right_vertices,
-                          global_R_lower_right_vertices);
-    // loop over upper right vertices
-    collect_unique_points(global_Z_vertices_buffer, global_R_vertices_buffer, N_unique,
-                          dmplex_vertex_tolerance, global_Z_upper_right_vertices,
-                          global_R_upper_right_vertices);
-    // loop over upper left vertices
-    collect_unique_points(global_Z_vertices_buffer, global_R_vertices_buffer, N_unique,
-                          dmplex_vertex_tolerance, global_Z_upper_left_vertices,
-                          global_R_upper_left_vertices);
-    // now make a vector of the size N_unique and fill from the buffer
-    std::vector<double> global_Z_vertices(N_unique, 0.0);
-    std::vector<double> global_R_vertices(N_unique, 0.0);
-    for (size_t iv = 0; iv < N_unique; iv++) {
-      global_Z_vertices.at(iv) = global_Z_vertices_buffer.at(iv);
-      global_R_vertices.at(iv) = global_R_vertices_buffer.at(iv);
-    }
-    if (mpi_rank == 0) {
-      std::cout << "Result of vertex collection: ";
-      // for (int iv=0; iv<N_unique; iv++) {
-      //     std::cout << "(" << global_R_vertices.at(iv) << ", " <<
-      //     global_Z_vertices.at(iv) << ") ";
-      // }
-      // std::cout << std::endl;
-      std::cout << "N_unique=" << N_unique << std::endl;
-    }
-    // ivertex arrays made in cxx, initialise with -1 index
-    Field2D ivertex_lower_left_corners_cxx{-1, bout_mesh};
-    Field2D ivertex_lower_right_corners_cxx{-1, bout_mesh};
-    Field2D ivertex_upper_right_corners_cxx{-1, bout_mesh};
-    Field2D ivertex_upper_left_corners_cxx{-1, bout_mesh};
-    // now fill ivertex_corners arrays
-    RZ_to_ivertex_vector(ivertex_lower_left_corners_cxx, global_Z_vertices,
-                        global_R_vertices, dmplex_vertex_tolerance, bout_mesh, Rxy_lower_left_corners,
-                        Zxy_lower_left_corners);
-    RZ_to_ivertex_vector(ivertex_lower_right_corners_cxx, global_Z_vertices,
-                        global_R_vertices, dmplex_vertex_tolerance, bout_mesh, Rxy_lower_right_corners,
-                        Zxy_lower_right_corners);
-    RZ_to_ivertex_vector(ivertex_upper_right_corners_cxx, global_Z_vertices,
-                        global_R_vertices, dmplex_vertex_tolerance, bout_mesh, Rxy_upper_right_corners,
-                        Zxy_upper_right_corners);
-    RZ_to_ivertex_vector(ivertex_upper_left_corners_cxx, global_Z_vertices,
-                        global_R_vertices, dmplex_vertex_tolerance, bout_mesh, Rxy_upper_left_corners,
-                        Zxy_upper_left_corners);
-
-    // First we setup the topology of the mesh.
-    PetscInt num_cells_owned = Nx * Ny;
-    // std::vector<double> cells(4*num_cells_owned);
-    std::vector<PetscInt> cells;
-    if (use_cxx_ivertex) {
-      cells_definition_from_RZ_ivertex(
-          cells, bout_mesh, Rxy_lower_left_corners, Rxy_lower_right_corners,
-          Rxy_upper_right_corners, Rxy_upper_left_corners, Zxy_lower_left_corners,
-          Zxy_lower_right_corners, Zxy_upper_right_corners, Zxy_upper_left_corners,
-          ivertex_lower_left_corners_cxx, ivertex_lower_right_corners_cxx,
-          ivertex_upper_right_corners_cxx, ivertex_upper_left_corners_cxx);
-    } else {
-      cells = cells_definition_from_RZ_ivertex(
-          cells, bout_mesh, Rxy_lower_left_corners, Rxy_lower_right_corners,
-          Rxy_upper_right_corners, Rxy_upper_left_corners, Zxy_lower_left_corners,
-          Zxy_lower_right_corners, Zxy_upper_right_corners, Zxy_upper_left_corners,
-          ivertex_lower_left_corners, ivertex_lower_right_corners,
-          ivertex_upper_right_corners, ivertex_upper_left_corners);
-    }
-    // create nvertices, global_vertex_list_R, global_vertex_list_z variables
-    size_t nvertices;
-    std::vector<double> global_vertex_list_R;
-    std::vector<double> global_vertex_list_Z;
-    if (use_cxx_ivertex) {
-      nvertices = N_unique;
-      global_vertex_list_R = global_R_vertices;
-      global_vertex_list_Z = global_Z_vertices;
-    } else {
-      load_vertex_information_from_netcdf(nvertices, global_vertex_list_R,
-                                          global_vertex_list_Z);
-    }
-    // number of vertices to keep per process for passing to
-    // DMPlexCreateFromCellListParallelPetsc
-    int nvertex_per_process = static_cast<int>(std::floor(static_cast<int>(nvertices) / mpi_size));
-    int nvertex_remainder = static_cast<int>(nvertices) - mpi_size * nvertex_per_process;
-    int nvertex_this_process = nvertex_per_process;
-    // include the remaining vertices on the last rank
-    if (mpi_rank == mpi_size - 1) {
-      nvertex_this_process += nvertex_remainder;
-    }
-    // starting vertex index
-  //   int ivertex_minimum = mpi_rank * nvertex_per_process;
-  //   int ivertex_maximum = mpi_rank * nvertex_per_process + nvertex_this_process - 1;
-    /*
-    * Each rank owns a contiguous block of global indices. We label our indices
-    * lexicographically (row-wise). Sorting out the global vertex indexing is
-    * probably one of the more tedious parts.
-    */
-    PetscInt num_vertices_owned = nvertex_this_process;
-
-    /*
-    * Create the coordinates for the block of vertices we pass to petsc. For an
-    * existing mesh in memory this step will probably involve some MPI
-    * communication to gather the blocks of coordinates on the ranks which pass
-    * them to PETSc.
-    */
-    std::vector<PetscScalar> vertex_coords(static_cast<size_t>(num_vertices_owned * 2));
-    // shift due to differing rank
-    size_t ishift;
-    for (size_t iv = 0; iv < static_cast<size_t>(nvertex_this_process); iv++) {
-      ishift = static_cast<size_t>(mpi_rank * nvertex_per_process);
-      vertex_coords.at(iv * 2 + 0) = global_vertex_list_R[iv + ishift];
-      vertex_coords.at(iv * 2 + 1) = global_vertex_list_Z[iv + ishift];
-    }
-    // Create the DMPlex from the cells and coordinates.
-    PETSCCHK(DMPlexCreateFromCellListParallelPetsc(
-        BoutComm::get(), 2, num_cells_owned, num_vertices_owned, PETSC_DECIDE, 4,
-        PETSC_TRUE, cells.data(), 2, vertex_coords.data(), NULL, NULL, &dm));
+  output << fmt::format("Using option use_cxx_ivertex = {}", use_cxx_ivertex)
+        << std::endl;
+  Field2D Rxy_lower_left_corners;
+  Field2D Rxy_lower_right_corners;
+  Field2D Rxy_upper_right_corners;
+  Field2D Rxy_upper_left_corners;
+  Field2D Zxy_lower_left_corners;
+  Field2D Zxy_lower_right_corners;
+  Field2D Zxy_upper_right_corners;
+  Field2D Zxy_upper_left_corners;
+  // mesh->get(ivertex, "ivertex_lower_left_corners");
+  bout_mesh->get(Rxy_lower_left_corners, "Rxy_corners");
+  bout_mesh->get(Rxy_lower_right_corners, "Rxy_lower_right_corners");
+  bout_mesh->get(Rxy_upper_right_corners, "Rxy_upper_right_corners");
+  bout_mesh->get(Rxy_upper_left_corners, "Rxy_upper_left_corners");
+  bout_mesh->get(Zxy_lower_left_corners, "Zxy_corners");
+  bout_mesh->get(Zxy_lower_right_corners, "Zxy_lower_right_corners");
+  bout_mesh->get(Zxy_upper_right_corners, "Zxy_upper_right_corners");
+  bout_mesh->get(Zxy_upper_left_corners, "Zxy_upper_left_corners");
+  Field2D ivertex_lower_left_corners;
+  Field2D ivertex_lower_right_corners;
+  Field2D ivertex_upper_right_corners;
+  Field2D ivertex_upper_left_corners;
+  if (!use_cxx_ivertex) {
+    bout_mesh->get(ivertex_lower_left_corners, "ivertex_lower_left_corners");
+    bout_mesh->get(ivertex_lower_right_corners, "ivertex_lower_right_corners");
+    bout_mesh->get(ivertex_upper_right_corners, "ivertex_upper_right_corners");
+    bout_mesh->get(ivertex_upper_left_corners, "ivertex_upper_left_corners");
   }
+  // local number of x cells, excluding guards
+  int Nx = bout_mesh->xend - bout_mesh->xstart + 1;
+  // local number of y cells, excluding guards
+  int Ny = bout_mesh->yend - bout_mesh->ystart + 1;
+  // output << "Nx " + std::to_string(Nx) + "Ny " + std::to_string(Ny) << "\n";
+  // output << "Got here -1 \n";
+
+  // PETSCCHK(PetscInitializeNoArguments());
+  // auto sycl_target = std::make_shared<SYCLTarget>(0, PETSC_COMM_WORLD);
+  const int mpi_size = sycl_target->comm_pair.size_parent;
+  const int mpi_rank = sycl_target->comm_pair.rank_parent;
+  // output << "Got here 0 \n";
+  // global number of physical nonunique vertices stored in hypnotoad datasets
+  const size_t N_nonunique_vertices = static_cast<size_t>(mpi_size * Nx * Ny);
+  // arrays to fill with local data
+  std::vector<double> local_Z_lower_left_vertices(N_nonunique_vertices, 0.0);
+  std::vector<double> local_R_lower_left_vertices(N_nonunique_vertices, 0.0);
+  std::vector<double> local_Z_lower_right_vertices(N_nonunique_vertices, 0.0);
+  std::vector<double> local_R_lower_right_vertices(N_nonunique_vertices, 0.0);
+  std::vector<double> local_Z_upper_right_vertices(N_nonunique_vertices, 0.0);
+  std::vector<double> local_R_upper_right_vertices(N_nonunique_vertices, 0.0);
+  std::vector<double> local_Z_upper_left_vertices(N_nonunique_vertices, 0.0);
+  std::vector<double> local_R_upper_left_vertices(N_nonunique_vertices, 0.0);
+  // arrays to receive the summed data across ranks
+  std::vector<double> global_Z_lower_left_vertices(N_nonunique_vertices, 0.0);
+  std::vector<double> global_R_lower_left_vertices(N_nonunique_vertices, 0.0);
+  std::vector<double> global_Z_lower_right_vertices(N_nonunique_vertices, 0.0);
+  std::vector<double> global_R_lower_right_vertices(N_nonunique_vertices, 0.0);
+  std::vector<double> global_Z_upper_right_vertices(N_nonunique_vertices, 0.0);
+  std::vector<double> global_R_upper_right_vertices(N_nonunique_vertices, 0.0);
+  std::vector<double> global_Z_upper_left_vertices(N_nonunique_vertices, 0.0);
+  std::vector<double> global_R_upper_left_vertices(N_nonunique_vertices, 0.0);
+  // fill these vectors with vertex values from the local rank
+  // at indices determined by the local rank
+  size_t icxy = static_cast<size_t>(Nx * Ny * mpi_rank);
+  for (int ix = bout_mesh->xstart; ix <= bout_mesh->xend; ix++) {
+    for (int iy = bout_mesh->ystart; iy <= bout_mesh->yend; iy++) {
+      local_R_lower_left_vertices.at(icxy) = Rxy_lower_left_corners(ix, iy);
+      local_Z_lower_left_vertices.at(icxy) = Zxy_lower_left_corners(ix, iy);
+      local_R_lower_right_vertices.at(icxy) = Rxy_lower_right_corners(ix, iy);
+      local_Z_lower_right_vertices.at(icxy) = Zxy_lower_right_corners(ix, iy);
+      local_R_upper_right_vertices.at(icxy) = Rxy_upper_right_corners(ix, iy);
+      local_Z_upper_right_vertices.at(icxy) = Zxy_upper_right_corners(ix, iy);
+      local_R_upper_left_vertices.at(icxy) = Rxy_upper_left_corners(ix, iy);
+      local_Z_upper_left_vertices.at(icxy) = Zxy_upper_left_corners(ix, iy);
+      icxy++;
+    }
+  }
+  // Perform Allreduce (sum) to get knowledge of vertices to all ranks
+  MPICHK(MPI_Allreduce(
+      local_R_lower_left_vertices.data(), global_R_lower_left_vertices.data(),
+      static_cast<int>(N_nonunique_vertices), MPI_DOUBLE, MPI_SUM, BoutComm::get()));
+  MPICHK(MPI_Allreduce(
+      local_Z_lower_left_vertices.data(), global_Z_lower_left_vertices.data(),
+      static_cast<int>(N_nonunique_vertices), MPI_DOUBLE, MPI_SUM, BoutComm::get()));
+  MPICHK(MPI_Allreduce(
+      local_R_lower_right_vertices.data(), global_R_lower_right_vertices.data(),
+      static_cast<int>(N_nonunique_vertices), MPI_DOUBLE, MPI_SUM, BoutComm::get()));
+  MPICHK(MPI_Allreduce(
+      local_Z_lower_right_vertices.data(), global_Z_lower_right_vertices.data(),
+      static_cast<int>(N_nonunique_vertices), MPI_DOUBLE, MPI_SUM, BoutComm::get()));
+  MPICHK(MPI_Allreduce(
+      local_R_upper_right_vertices.data(), global_R_upper_right_vertices.data(),
+      static_cast<int>(N_nonunique_vertices), MPI_DOUBLE, MPI_SUM, BoutComm::get()));
+  MPICHK(MPI_Allreduce(
+      local_Z_upper_right_vertices.data(), global_Z_upper_right_vertices.data(),
+      static_cast<int>(N_nonunique_vertices), MPI_DOUBLE, MPI_SUM, BoutComm::get()));
+  MPICHK(MPI_Allreduce(
+      local_R_upper_left_vertices.data(), global_R_upper_left_vertices.data(),
+      static_cast<int>(N_nonunique_vertices), MPI_DOUBLE, MPI_SUM, BoutComm::get()));
+  MPICHK(MPI_Allreduce(
+      local_Z_upper_left_vertices.data(), global_Z_upper_left_vertices.data(),
+      static_cast<int>(N_nonunique_vertices), MPI_DOUBLE, MPI_SUM, BoutComm::get()));
+  // if (mpi_rank == 0) {
+  //     std::cout << "Result of Allreduce (sum): ";
+  //     for (double val : global_R_lower_left_vertices) {
+  //         std::cout << val << " ";
+  //     }
+  //     std::cout << std::endl;
+  //     std::cout << "N_nonunique_vertices=" << N_nonunique_vertices << std::endl;
+  // }
+  // Now dynamically determine a list of unique vertex points
+  // constant to give us a vector that can definitely contain all points in the global
+  // lists
+  const size_t N_global_nonunique_vertices = static_cast<size_t>(4 * mpi_size * Nx * Ny);
+  std::vector<double> global_Z_vertices_buffer(N_global_nonunique_vertices, 0.0);
+  std::vector<double> global_R_vertices_buffer(N_global_nonunique_vertices, 0.0);
+  // fill the buffer vectors, checking each time if the point is unique
+  // first point, outside loop
+  global_Z_vertices_buffer.at(0) = global_Z_lower_left_vertices.at(0);
+  global_R_vertices_buffer.at(0) = global_R_lower_left_vertices.at(0);
+  size_t N_unique = 1; // we have one unique point in the buffer
+  // loop over lower left vertices
+  collect_unique_points(global_Z_vertices_buffer, global_R_vertices_buffer, N_unique,
+                        dmplex_vertex_tolerance, global_Z_lower_left_vertices,
+                        global_R_lower_left_vertices);
+  // loop over lower right vertices
+  collect_unique_points(global_Z_vertices_buffer, global_R_vertices_buffer, N_unique,
+                        dmplex_vertex_tolerance, global_Z_lower_right_vertices,
+                        global_R_lower_right_vertices);
+  // loop over upper right vertices
+  collect_unique_points(global_Z_vertices_buffer, global_R_vertices_buffer, N_unique,
+                        dmplex_vertex_tolerance, global_Z_upper_right_vertices,
+                        global_R_upper_right_vertices);
+  // loop over upper left vertices
+  collect_unique_points(global_Z_vertices_buffer, global_R_vertices_buffer, N_unique,
+                        dmplex_vertex_tolerance, global_Z_upper_left_vertices,
+                        global_R_upper_left_vertices);
+  // now make a vector of the size N_unique and fill from the buffer
+  std::vector<double> global_Z_vertices(N_unique, 0.0);
+  std::vector<double> global_R_vertices(N_unique, 0.0);
+  for (size_t iv = 0; iv < N_unique; iv++) {
+    global_Z_vertices.at(iv) = global_Z_vertices_buffer.at(iv);
+    global_R_vertices.at(iv) = global_R_vertices_buffer.at(iv);
+  }
+  if (mpi_rank == 0) {
+    std::cout << "Result of vertex collection: ";
+    // for (int iv=0; iv<N_unique; iv++) {
+    //     std::cout << "(" << global_R_vertices.at(iv) << ", " <<
+    //     global_Z_vertices.at(iv) << ") ";
+    // }
+    // std::cout << std::endl;
+    std::cout << "N_unique=" << N_unique << std::endl;
+  }
+  // ivertex arrays made in cxx, initialise with -1 index
+  Field2D ivertex_lower_left_corners_cxx{-1, bout_mesh};
+  Field2D ivertex_lower_right_corners_cxx{-1, bout_mesh};
+  Field2D ivertex_upper_right_corners_cxx{-1, bout_mesh};
+  Field2D ivertex_upper_left_corners_cxx{-1, bout_mesh};
+  // now fill ivertex_corners arrays
+  RZ_to_ivertex_vector(ivertex_lower_left_corners_cxx, global_Z_vertices,
+                      global_R_vertices, dmplex_vertex_tolerance, bout_mesh, Rxy_lower_left_corners,
+                      Zxy_lower_left_corners);
+  RZ_to_ivertex_vector(ivertex_lower_right_corners_cxx, global_Z_vertices,
+                      global_R_vertices, dmplex_vertex_tolerance, bout_mesh, Rxy_lower_right_corners,
+                      Zxy_lower_right_corners);
+  RZ_to_ivertex_vector(ivertex_upper_right_corners_cxx, global_Z_vertices,
+                      global_R_vertices, dmplex_vertex_tolerance, bout_mesh, Rxy_upper_right_corners,
+                      Zxy_upper_right_corners);
+  RZ_to_ivertex_vector(ivertex_upper_left_corners_cxx, global_Z_vertices,
+                      global_R_vertices, dmplex_vertex_tolerance, bout_mesh, Rxy_upper_left_corners,
+                      Zxy_upper_left_corners);
+
+  // First we setup the topology of the mesh.
+  PetscInt num_cells_owned = Nx * Ny;
+  // std::vector<double> cells(4*num_cells_owned);
+  std::vector<PetscInt> cells;
+  if (use_cxx_ivertex) {
+    cells_definition_from_RZ_ivertex(
+        cells, bout_mesh, Rxy_lower_left_corners, Rxy_lower_right_corners,
+        Rxy_upper_right_corners, Rxy_upper_left_corners, Zxy_lower_left_corners,
+        Zxy_lower_right_corners, Zxy_upper_right_corners, Zxy_upper_left_corners,
+        ivertex_lower_left_corners_cxx, ivertex_lower_right_corners_cxx,
+        ivertex_upper_right_corners_cxx, ivertex_upper_left_corners_cxx);
+  } else {
+    cells = cells_definition_from_RZ_ivertex(
+        cells, bout_mesh, Rxy_lower_left_corners, Rxy_lower_right_corners,
+        Rxy_upper_right_corners, Rxy_upper_left_corners, Zxy_lower_left_corners,
+        Zxy_lower_right_corners, Zxy_upper_right_corners, Zxy_upper_left_corners,
+        ivertex_lower_left_corners, ivertex_lower_right_corners,
+        ivertex_upper_right_corners, ivertex_upper_left_corners);
+  }
+  // create nvertices, global_vertex_list_R, global_vertex_list_z variables
+  size_t nvertices;
+  std::vector<double> global_vertex_list_R;
+  std::vector<double> global_vertex_list_Z;
+  if (use_cxx_ivertex) {
+    nvertices = N_unique;
+    global_vertex_list_R = global_R_vertices;
+    global_vertex_list_Z = global_Z_vertices;
+  } else {
+    load_vertex_information_from_netcdf(nvertices, global_vertex_list_R,
+                                        global_vertex_list_Z);
+  }
+  // number of vertices to keep per process for passing to
+  // DMPlexCreateFromCellListParallelPetsc
+  int nvertex_per_process = static_cast<int>(std::floor(static_cast<int>(nvertices) / mpi_size));
+  int nvertex_remainder = static_cast<int>(nvertices) - mpi_size * nvertex_per_process;
+  int nvertex_this_process = nvertex_per_process;
+  // include the remaining vertices on the last rank
+  if (mpi_rank == mpi_size - 1) {
+    nvertex_this_process += nvertex_remainder;
+  }
+  // starting vertex index
+//   int ivertex_minimum = mpi_rank * nvertex_per_process;
+//   int ivertex_maximum = mpi_rank * nvertex_per_process + nvertex_this_process - 1;
+  /*
+  * Each rank owns a contiguous block of global indices. We label our indices
+  * lexicographically (row-wise). Sorting out the global vertex indexing is
+  * probably one of the more tedious parts.
+  */
+  PetscInt num_vertices_owned = nvertex_this_process;
+
+  /*
+  * Create the coordinates for the block of vertices we pass to petsc. For an
+  * existing mesh in memory this step will probably involve some MPI
+  * communication to gather the blocks of coordinates on the ranks which pass
+  * them to PETSc.
+  */
+  std::vector<PetscScalar> vertex_coords(static_cast<size_t>(num_vertices_owned * 2));
+  // shift due to differing rank
+  size_t ishift;
+  for (size_t iv = 0; iv < static_cast<size_t>(nvertex_this_process); iv++) {
+    ishift = static_cast<size_t>(mpi_rank * nvertex_per_process);
+    vertex_coords.at(iv * 2 + 0) = global_vertex_list_R[iv + ishift];
+    vertex_coords.at(iv * 2 + 1) = global_vertex_list_Z[iv + ishift];
+  }
+  // Create the DMPlex from the cells and coordinates.
+  PETSCCHK(DMPlexCreateFromCellListParallelPetsc(
+      BoutComm::get(), 2, num_cells_owned, num_vertices_owned, PETSC_DECIDE, 4,
+      PETSC_TRUE, cells.data(), 2, vertex_coords.data(), NULL, NULL, dm));
   // Label all of the boundary faces with 100 in the "Face Sets" label by using
   // the helper function label_all_dmplex_boundaries.
-  PetscInterface::label_all_dmplex_boundaries(dm, PetscInterface::face_sets_label, 100);
+  // PetscInterface::label_all_dmplex_boundaries(dm, PetscInterface::face_sets_label, 100);
 
   // // Label subsections of the boundary by specifing pairs of vertices and using
   // // the label_dmplex_edges helper function.
@@ -506,8 +490,6 @@ DM create_dmplex_from_Bout_mesh(Mesh* bout_mesh, Options& mesh_options,
 
   // PetscInterface::label_dmplex_edges(dm, PetscInterface::face_sets_label,
   //                                    vertex_starts, vertex_ends, edge_labels);
-  write_dmplex_to_file(dm, dmplex_name, dmplex_h5_filename);
-  return dm;
 }
 
 #endif
