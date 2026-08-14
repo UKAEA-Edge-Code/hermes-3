@@ -192,6 +192,23 @@ std::vector<PetscInt> cells_definition_from_RZ_ivertex(
   return cells;
 }
 
+void write_dmplex_to_file(DM &dm, std::string dmplex_name, std::string dmplex_h5_filename){
+  // save a HDF5 file containing the DM for diagnostics
+  PetscViewer viewer;
+  // Set a name for the DMPlex object (important for HDF5)
+  PetscObjectSetName(reinterpret_cast<PetscObject>(dm), dmplex_name.c_str());
+  // Create an HDF5 viewer
+  PetscViewerHDF5Open(BoutComm::get(), dmplex_h5_filename.c_str(), FILE_MODE_WRITE,
+                      &viewer);
+  // Set viewer format to PETSC_VIEWER_HDF5_PETSC for compatibility
+  PetscViewerPushFormat(viewer, PETSC_VIEWER_HDF5_PETSC);
+  // Save the DMPlex to the HDF5 file
+  DMView(dm, viewer);
+  // Clean up
+  PetscViewerDestroy(&viewer);
+  output << "Finished DMPlex diagnostic \n";
+}
+
 DM create_dmplex_from_Bout_mesh(Mesh* bout_mesh, Options& mesh_options,
                                 std::shared_ptr<SYCLTarget> sycl_target,
                                 std::string dmplex_h5_filename,
@@ -489,21 +506,7 @@ DM create_dmplex_from_Bout_mesh(Mesh* bout_mesh, Options& mesh_options,
 
   // PetscInterface::label_dmplex_edges(dm, PetscInterface::face_sets_label,
   //                                    vertex_starts, vertex_ends, edge_labels);
-
-  // save a HDF5 file containing the DM for diagnostics
-  PetscViewer viewer;
-  // Set a name for the DMPlex object (important for HDF5)
-  PetscObjectSetName(reinterpret_cast<PetscObject>(dm), dmplex_name.c_str());
-  // Create an HDF5 viewer
-  PetscViewerHDF5Open(BoutComm::get(), dmplex_h5_filename.c_str(), FILE_MODE_WRITE,
-                      &viewer);
-  // Set viewer format to PETSC_VIEWER_HDF5_PETSC for compatibility
-  PetscViewerPushFormat(viewer, PETSC_VIEWER_HDF5_PETSC);
-  // Save the DMPlex to the HDF5 file
-  DMView(dm, viewer);
-  // Clean up
-  PetscViewerDestroy(&viewer);
-  output << "Finished DMPlex creation and diagnostic \n";
+  write_dmplex_to_file(dm, dmplex_name, dmplex_h5_filename);
   return dm;
 }
 
