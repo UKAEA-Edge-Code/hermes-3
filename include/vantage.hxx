@@ -24,6 +24,8 @@ private:
   std::shared_ptr<PetscInterface::DMPlexInterface> neso_mesh;
   std::shared_ptr<SYCLTarget> sycl_target;
   std::shared_ptr<PetscInterface::BoundaryInteraction2D> b2d;
+  std::shared_ptr<PetscInterface::DMPlexProjectEvaluateDG> project_eval_dg0;
+  std::shared_ptr<PetscInterface::DMPlexMeshCouplerDG0> mesh_coupler_dg0;
 
   Field2D ion_density;
   Field2D neutral_density;

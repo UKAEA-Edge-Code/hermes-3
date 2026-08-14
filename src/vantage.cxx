@@ -693,9 +693,23 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
     // Add the new particles to the particle group
     A_particle_group->add_particles_local(initial_distribution);
     // make pointer to projection object
-    auto dg0 = std::make_shared<PetscInterface::DMPlexProjectEvaluateDG>(
+    if (use_external_msh) {
+      // draft code below, not expected to execute correctly
+      // create the dg0 variable using a constructor that
+      // respects the kinetic mesh external definition
+      // local number of x cells, excluding guards
+      const int Nx = bout_mesh->xend - bout_mesh->xstart + 1;
+      // local number of y cells, excluding guards
+      const int Ny = bout_mesh->yend - bout_mesh->ystart + 1;
+      const int cell_count_inner = Nx*Ny;
+      std::vector<std::vector<PetscInterface::DMPlexMeshCouplerDG0MapEntry>>
+        coupler_map(cell_count_inner);
+      mesh_coupler_dg0 = std::make_shared<PetscInterface::DMPlexMeshCouplerDG0>(
+        dm, coupler_map);
+    } else {
+      project_eval_dg0 = std::make_shared<PetscInterface::DMPlexProjectEvaluateDG>(
         neso_mesh, sycl_target, "DG", 0);
-
+    }
     // RNG kernel
     // Used for sampling from velocity distribution for REC/CX
     // ------------------------------------------------------------------------------
@@ -1043,11 +1057,11 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
     // properties
     std::vector<REAL> h_project1(static_cast<size_t>(num_cells_owned));
     // set weights from a Field2D from BOUT
-    set_initial_particle_weights(initial_neutral_density, dg0, A_particle_group,
+    set_initial_particle_weights(initial_neutral_density, project_eval_dg0, A_particle_group,
                                  neso_mesh, h_project1, N_w);
 
     // Calculate neutral density and sources for initial condition
-    calculate_neutral_density_in_place(neutral_density, dg0, A_particle_group,
+    calculate_neutral_density_in_place(neutral_density, project_eval_dg0, A_particle_group,
                                        h_project1, N_w);
     source_manager.update_all_sources(dt);
 
@@ -1080,7 +1094,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
       // uncomment to write a trajectory
       h5part->write();
 
-      calculate_neutral_density_in_place(neutral_density, dg0, A_particle_group,
+      calculate_neutral_density_in_place(neutral_density, project_eval_dg0, A_particle_group,
                                          h_project1, N_w);
       source_manager.update_all_sources(dt);
       Field2D Siz = source_manager.get_data("Siz");
