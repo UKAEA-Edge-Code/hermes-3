@@ -26,6 +26,7 @@ private:
   std::shared_ptr<PetscInterface::BoundaryInteraction2D> b2d;
   std::shared_ptr<PetscInterface::DMPlexProjectEvaluateDG> project_eval_dg0;
   std::shared_ptr<PetscInterface::DMPlexMeshCouplerDG0> mesh_coupler_dg0;
+  std::vector<PetscInt> kinetic_mesh_map; // variable for recording the map from serial to parallelised DMPlex cells in terms of a vector of integers
 
   Field2D ion_density;
   Field2D neutral_density;

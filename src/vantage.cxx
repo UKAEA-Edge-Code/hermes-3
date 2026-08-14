@@ -515,7 +515,6 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
     // create a DMPlex in serial
     create_dmplex_from_GMSH_msh(&dm, msh_file);
     PetscSF sf_kinetic_mesh; // Petsc variable that records map of vertices from original vector to distributed vector indices
-    std::vector<PetscInt> kinetic_mesh_map; // variable for recording the map in terms of a vector of integers
     PetscInterface::generic_distribute(&dm, BoutComm::get(), 1, &sf_kinetic_mesh);
     kinetic_mesh_map = PetscInterface::get_global_distributed_points_map(dm, sf_kinetic_mesh);
   } else {
@@ -722,6 +721,23 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
       const int cell_count_inner = Nx*Ny;
       std::vector<std::vector<PetscInterface::DMPlexMeshCouplerDG0MapEntry>>
         coupler_map(cell_count_inner);
+      Field2D map_RZ_to_itriangle_0;
+      Field2D map_RZ_to_itriangle_1;
+      bout_mesh->get(map_RZ_to_itriangle_0, "map_RZ_to_itriangle_0");
+      bout_mesh->get(map_RZ_to_itriangle_1, "map_RZ_to_itriangle_1");
+      int icell = 0;
+      for (int ix = bout_mesh->xstart; ix <= bout_mesh->xend; ix++) {
+        for (int iy = bout_mesh->ystart; iy <= bout_mesh->yend; iy++) {
+          // n.b. forward and backward weights may be incorrect
+          // lower triangle
+          coupler_map.at(icell).push_back(
+            {kinetic_mesh_map.at(map_RZ_to_itriangle_0(ix,iy)), 1.0, 0.5});
+          // upper triangle
+          coupler_map.at(icell).push_back(
+            {kinetic_mesh_map.at(map_RZ_to_itriangle_1(ix,iy)), 1.0, 0.5});
+          icell += 1;
+        }
+      }
       mesh_coupler_dg0 = std::make_shared<PetscInterface::DMPlexMeshCouplerDG0>(
         dm, coupler_map);
     }
