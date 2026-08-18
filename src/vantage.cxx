@@ -170,6 +170,68 @@ initialise_diagnostics(Options& alloptions,
 
   // Add metadata from mesh, e.g. branch cuts
   bout_mesh->outputVars(bout_output_data);
+  // Add Rxy, Zxy coordinate data
+  Field2D Rxy;
+  Field2D Rxy_corners;
+  Field2D Rxy_lower_right_corners;
+  Field2D Rxy_upper_right_corners;
+  Field2D Rxy_upper_left_corners;
+  Field2D Zxy;
+  Field2D Zxy_corners;
+  Field2D Zxy_lower_right_corners;
+  Field2D Zxy_upper_right_corners;
+  Field2D Zxy_upper_left_corners;
+  // mesh->get(ivertex, "ivertex_lower_left_corners");
+  bout_mesh->get(Rxy, "Rxy");
+  bout_mesh->get(Rxy_corners, "Rxy_corners");
+  bout_mesh->get(Rxy_lower_right_corners, "Rxy_lower_right_corners");
+  bout_mesh->get(Rxy_upper_right_corners, "Rxy_upper_right_corners");
+  bout_mesh->get(Rxy_upper_left_corners, "Rxy_upper_left_corners");
+  bout_mesh->get(Zxy, "Zxy");
+  bout_mesh->get(Zxy_corners, "Zxy_corners");
+  bout_mesh->get(Zxy_lower_right_corners, "Zxy_lower_right_corners");
+  bout_mesh->get(Zxy_upper_right_corners, "Zxy_upper_right_corners");
+  bout_mesh->get(Zxy_upper_left_corners, "Zxy_upper_left_corners");
+  set_with_attrs(bout_output_data["Rxy"], Rxy, {
+      {"units", "m"},
+      {"conversion", 1}, // Already in SI units
+    });
+  set_with_attrs(bout_output_data["Rxy_corners"], Rxy_corners, {
+      {"units", "m"},
+      {"conversion", 1}, // Already in SI units
+    });
+  set_with_attrs(bout_output_data["Rxy_lower_right_corners"], Rxy_lower_right_corners, {
+      {"units", "m"},
+      {"conversion", 1}, // Already in SI units
+    });
+  set_with_attrs(bout_output_data["Rxy_upper_right_corners"], Rxy_upper_right_corners, {
+      {"units", "m"},
+      {"conversion", 1}, // Already in SI units
+    });
+  set_with_attrs(bout_output_data["Rxy_upper_left_corners"], Rxy_upper_left_corners, {
+      {"units", "m"},
+      {"conversion", 1}, // Already in SI units
+    });
+  set_with_attrs(bout_output_data["Zxy"], Zxy, {
+      {"units", "m"},
+      {"conversion", 1}, // Already in SI units
+    });
+  set_with_attrs(bout_output_data["Zxy_corners"], Zxy_corners, {
+      {"units", "m"},
+      {"conversion", 1}, // Already in SI units
+    });
+  set_with_attrs(bout_output_data["Zxy_lower_right_corners"], Zxy_lower_right_corners, {
+      {"units", "m"},
+      {"conversion", 1}, // Already in SI units
+    });
+  set_with_attrs(bout_output_data["Zxy_upper_right_corners"], Zxy_upper_right_corners, {
+      {"units", "m"},
+      {"conversion", 1}, // Already in SI units
+    });
+  set_with_attrs(bout_output_data["Zxy_upper_left_corners"], Zxy_upper_left_corners, {
+      {"units", "m"},
+      {"conversion", 1}, // Already in SI units
+    });
 
   // Add metadata with normalisation factors
   set_with_attrs(bout_output_data["Tnorm"], Tnorm, {
