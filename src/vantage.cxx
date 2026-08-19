@@ -992,8 +992,16 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
       initialise_diagnostics(alloptions, bout_mesh, neutral_density, ion_density,
                              neso_mesh, vantage_dump_filepath);
 
+  // Object for VANTAGE dump files
   vantage_dump_writer =
       bout::OptionsIO::create({{"file", vantage_dump_filepath}, {"append", true}});
+
+  // Object for particle_trajectories.h5part file.
+  // Close it straight away to ensure that it's closed in event of a crash.
+  // h5part->write re-opens it when needed.
+  h5part = std::make_shared<H5Part>(particle_data_filepath, A_particle_group,
+                                    Sym<REAL>("POSITION"), Sym<REAL>("VELOCITY"));
+  h5part->close();
 
   // mass for conservation check
   total_density = neutral_density + ion_density;
@@ -1003,8 +1011,12 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
   particle_time = 0.0;
 
   // Register VANTAGE timestep scheduler.
+  // https://bout-dev.readthedocs.io/en/latest/user_docs/time_integration.html#monitoring-the-simulation-output
   // By default, it runs before the dump is written. (FRONT mode)
-  solver->addMonitor(&this->monitor, Solver::FRONT);
+  // If statement prevents segfault in the unit test where there is no solver.
+  if (solver != nullptr) {
+    solver->addMonitor(&this->monitor, Solver::FRONT);
+  }
 }
 
 void Vantage::apply_boundary_conditions(ParticleSubGroupSharedPtr aa) {
@@ -1086,13 +1098,6 @@ int Vantage::advance_vantage(BoutReal UNUSED(time)) {
     }
   };
 
-  // Initialise h5part just before writing - earlier leads to a NESO assert error that
-  // can hide other bugs if it crashes with the file open.
-  if (!h5part) {
-    h5part = std::make_shared<H5Part>(particle_data_filepath, A_particle_group,
-                                      Sym<REAL>("POSITION"), Sym<REAL>("VELOCITY"));
-  }
-
   // begin timestepping
   output << "\nBegin VANTAGE iterations \n";
   for (int stepx = 0; stepx < nsteps; stepx++) {
@@ -1105,8 +1110,6 @@ int Vantage::advance_vantage(BoutReal UNUSED(time)) {
     // apply reactions
     reaction_controller->apply(A_particle_group, dt, ControllerMode::standard_mode);
     recombination_controller->apply(marker_group, dt, A_particle_group);
-    // uncomment to write a trajectory
-    h5part->write();
 
     calculate_neutral_density_in_place(neutral_density, dg0, A_particle_group, h_project1,
                                        N_w);
@@ -1118,10 +1121,16 @@ int Vantage::advance_vantage(BoutReal UNUSED(time)) {
     // Sources are in normalised m^-3 s^-1, so need to multiply by dt
     ion_density += (Siz + Srec) * dt;
 
-    // diagnose timestep stepx
+    // Write to VANTAGE dump files
     update_diagnostics(neutral_density, ion_density, Siz, Srec, neso_mesh,
                        bout_output_data, *vantage_dump_writer, particle_time);
+
+    // Write to particle_trajectories file
+    h5part->write();
   }
+  // Warning: if h5part gets destroyed while open due to crash, you will get a NESO_ASSERT
+  // warning which will mask the actual backtrace. In this event
+  // you could move this into the loop, but it will have an IO cost.
   h5part->close();
 
   // mass for conservation check

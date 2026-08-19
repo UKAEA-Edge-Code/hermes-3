@@ -61,6 +61,10 @@ private:
   Options& units;
 };
 
+// Need to declare empty struct because the Monitor needs it and it must be
+// before component construction as it has the monitor as a member.
+// See https://bout-dev.readthedocs.io/en/latest/user_docs/time_integration.html#monitoring-the-simulation-output
+// for more information on monitors.
 struct Vantage;
 
 /// @brief  Monitor to schedule kinetic iterations.
