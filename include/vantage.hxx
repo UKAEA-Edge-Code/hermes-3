@@ -5,6 +5,7 @@
 #include <neso_particles.hpp>
 #include <neso_rng_toolkit.hpp>
 #include <reactions/reactions.hpp>
+#include <vector>
 
 using namespace NESO::Particles;
 using namespace VANTAGE::Reactions;
@@ -26,6 +27,8 @@ private:
   std::shared_ptr<PetscInterface::BoundaryInteraction2D> b2d;
   std::shared_ptr<PetscInterface::DMPlexProjectEvaluateDG> project_eval_dg0;
   std::shared_ptr<PetscInterface::DMPlexMeshCouplerDG0> mesh_coupler_dg0;
+  std::vector<REAL> dof_kinetic_mesh_scalar;
+  std::vector<REAL> dof_bout_mesh_scalar;
   std::vector<PetscInt> kinetic_mesh_map; // variable for recording the map from serial to parallelised DMPlex cells in terms of a vector of integers
 
   Field2D ion_density;
@@ -62,7 +65,10 @@ struct VantageSource {
 class VantageSourceManager {
 public:
   VantageSourceManager(std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh,
-                       Mesh* bout_mesh, Options& units);
+                      std::shared_ptr<PetscInterface::DMPlexMeshCouplerDG0>& mesh_coupler_dg0,
+                      std::vector<REAL>& dof_kinetic_mesh_scalar,
+                      std::vector<REAL>& dof_bout_mesh_scalar,
+                      Mesh* bout_mesh, Options& units);
 
   Mesh* bout_mesh;
 
@@ -86,6 +92,9 @@ public:
 private:
   std::map<std::string, VantageSource> sources;
   std::shared_ptr<PetscInterface::DMPlexInterface> neso_mesh;
+  std::shared_ptr<PetscInterface::DMPlexMeshCouplerDG0> mesh_coupler_dg0;
+  std::vector<REAL> dof_kinetic_mesh_scalar;
+  std::vector<REAL> dof_bout_mesh_scalar;
   Options& units;
 };
 

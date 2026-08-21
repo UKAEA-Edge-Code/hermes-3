@@ -468,9 +468,17 @@ void check_mass_conservation(double total_mass_final, double total_mass_initial)
 // VANTAGE source manager implementation
 // ------------------------------------------------------------------------------
 VantageSourceManager::VantageSourceManager(
-    std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh, Mesh* bout_mesh,
+    std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh,
+    std::shared_ptr<PetscInterface::DMPlexMeshCouplerDG0>& mesh_coupler_dg0,
+    std::vector<REAL>& dof_kinetic_mesh_scalar,
+    std::vector<REAL>& dof_bout_mesh_scalar,
+    Mesh* bout_mesh,
     Options& units)
-    : bout_mesh(bout_mesh), neso_mesh(neso_mesh), units(units) {}
+    : bout_mesh(bout_mesh),
+    neso_mesh(neso_mesh),
+    mesh_coupler_dg0(mesh_coupler_dg0),
+    dof_kinetic_mesh_scalar(dof_kinetic_mesh_scalar), dof_bout_mesh_scalar(dof_bout_mesh_scalar),
+    units(units) {}
 
 // Register new source with the manager and initialise its data
 void VantageSourceManager::add_source(
@@ -503,12 +511,25 @@ void VantageSourceManager::update_source(const std::string& hermes_source_name,
 
   std::vector<CellData<double>> accumulated_1d =
       source.accumulator->get_cell_data(source.vantage_source_name);
-
+  size_t naccumulated = accumulated_1d.size();
+  if (mesh_coupler_dg0 != nullptr){
+    // copy accumulated data into the relevant kinetic dof variable
+    for (size_t ic = 0; ic < naccumulated; ic++){
+      dof_kinetic_mesh_scalar.at(ic) = accumulated_1d[ic]->at(0, 0);
+    }
+    // use the transform from kinetic to bout mesh
+    mesh_coupler_dg0->backward_transfer(dof_kinetic_mesh_scalar, 1, dof_bout_mesh_scalar);
+  } else {
+    // copy accumulated data directly into the relevant bout dof variable
+    for (size_t ic = 0; ic < naccumulated; ic++){
+      dof_bout_mesh_scalar.at(ic) = accumulated_1d[ic]->at(0, 0);
+    }
+  }
   std::size_t ic = 0;
   for (int ix = bout_mesh->xstart; ix <= bout_mesh->xend; ix++) {
     for (int iy = bout_mesh->ystart; iy <= bout_mesh->yend; iy++) {
       source.source_data(ix, iy) =
-          accumulated_1d[ic]->at(0, 0)                            // Total weight
+          dof_bout_mesh_scalar.at(ic)                            // Total weight
           * N_w                                                   // Total particles
           / neso_mesh->dmh->get_cell_volume(static_cast<int>(ic)) // Total density
           / dt;                                                   // Density source
@@ -698,8 +719,6 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
         std::make_shared<PetscInterface::DMPlexLocalMapper>(sycl_target, neso_mesh);
     // Create a domain from the neso_mesh and the mapper.
     auto domain = std::make_shared<Domain>(neso_mesh, mapper);
-    // Get the number of cells in the kinetic (neutral) mesh owned on this process
-    const int num_cells_owned_kinetic_mesh = neso_mesh->get_cell_count();
     // if requested, check that neso_mesh cell volumes are identical
     // to bout_mesh cell volumes, otherwise, exit.
     if (mesh_options["test_dmplex_cell_volumes"].withDefault(true)) {
@@ -793,10 +812,17 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
     const int Ny = bout_mesh->yend - bout_mesh->ystart + 1;
     // Get the number of cells in the bout (plasma) mesh owned on this process, excluding guard cells
     const int num_cells_owned_bout_mesh = Nx*Ny;
-
+    // Get the number of cells in the kinetic (neutral) mesh owned on this process
+    const int num_cells_owned_kinetic_mesh = neso_mesh->get_cell_count();
+    // allocate buffer vector for scalar projection/evaluation of NESO-Particles
+    // properties on to the kinetic mesh
+    dof_kinetic_mesh_scalar = std::vector<REAL>(static_cast<size_t>(num_cells_owned_kinetic_mesh));
+    // allocate buffer vector for scalar projection/evaluation of NESO-Particles
+    // properties on to the bout mesh
+    dof_bout_mesh_scalar = std::vector<REAL>(static_cast<size_t>(num_cells_owned_bout_mesh));
     // make pointer to projection object
     if (use_external_msh) {
-      // draft code below, not expected to execute correctly
+      // draft code below, not expected to execute correctly for non-rectangular BOUT++ cells
       // create the dg0 variable using a constructor that
       // respects the kinetic mesh external definition
       std::vector<std::vector<PetscInterface::DMPlexMeshCouplerDG0MapEntry>>
@@ -808,7 +834,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
       int icell = 0;
       for (int ix = bout_mesh->xstart; ix <= bout_mesh->xend; ix++) {
         for (int iy = bout_mesh->ystart; iy <= bout_mesh->yend; iy++) {
-          // n.b. forward and backward weights may be incorrect
+          // n.b. forward and backward weights may be incorrect for non-rectangular BOUT++ cells
           // lower triangle
           coupler_map.at(static_cast<size_t>(icell)).push_back(
             {kinetic_mesh_map.at(static_cast<size_t>(map_RZ_to_itriangle_0(ix,iy))), 1.0, 0.5});
@@ -818,13 +844,15 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
           icell += 1;
         }
       }
+      // object for transferring data between kinetic and bout mesh degree-of-freedom vectors
       mesh_coupler_dg0 = std::make_shared<PetscInterface::DMPlexMeshCouplerDG0>(
         dm, coupler_map);
     }
     // if (mesh_coupler_dg0 == nullptr){
     //   output << "mesh_coupler_dg0 is a nullptr" << std::endl;
     // }
-    // always create project_eval_dg0 for now, as only this variable is used below
+    // object for evaluating/projecting particle properties
+    // between the kinetic mesh degree-of-freedom vector and particles
     project_eval_dg0 = std::make_shared<PetscInterface::DMPlexProjectEvaluateDG>(
       neso_mesh, sycl_target, "DG", 0);
     // RNG kernel
@@ -911,7 +939,9 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
     // Wrappers & controllers
     // ------------------------------------------------------------------------------
 
-    VantageSourceManager source_manager(neso_mesh, bout_mesh, units);
+    VantageSourceManager source_manager(neso_mesh,
+        mesh_coupler_dg0, dof_kinetic_mesh_scalar, dof_bout_mesh_scalar,
+        bout_mesh, units);
 
     const REAL remove_threshold = options["remove_threshold"].withDefault(1.0e-10);
     const REAL merge_threshold = options["merge_threshold"].withDefault(1.0e-2);
@@ -1170,12 +1200,6 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
       }
     };
 
-    // allocate buffer vector for scalar projection/evaluation of NESO-Particles
-    // properties on to the kinetic mesh
-    std::vector<REAL> dof_kinetic_mesh_scalar(static_cast<size_t>(num_cells_owned_kinetic_mesh));
-    // allocate buffer vector for scalar projection/evaluation of NESO-Particles
-    // properties on to the bout mesh
-    std::vector<REAL> dof_bout_mesh_scalar(static_cast<size_t>(num_cells_owned_bout_mesh));
     // set weights from a Field2D from BOUT
     set_initial_particle_weights(initial_neutral_density,
           project_eval_dg0, mesh_coupler_dg0,
