@@ -30,6 +30,11 @@ parser.add_argument(
     action="store_true",
     help="Use equal aspect ratio R, Z axes",
 )
+parser.add_argument(
+    "--set-xlim-zero",
+    action="store_true",
+    help="Use 0 as the minimum R on the axes",
+)
 
 args = parser.parse_args()
 print(
@@ -126,7 +131,8 @@ ax.set_xlabel("R")
 ax.set_ylabel("Z")
 if args.equal_aspect:
     ax.set_aspect("equal",adjustable="box")
-ax.set_xlim(0.0,None)
+if args.set_xlim_zero:
+    ax.set_xlim(0.0,None)
 
 
 def update(frame):
