@@ -64,17 +64,25 @@ std::string make_output_path(const std::string& filename, Options& alloptions) {
 
 void calculate_neutral_density_in_place(
     Field2D& density, std::shared_ptr<PetscInterface::DMPlexProjectEvaluateDG>& dg0,
-    std::shared_ptr<ParticleGroup>& A_particle_group, std::vector<double>& h_project1,
+    std::shared_ptr<PetscInterface::DMPlexMeshCouplerDG0>& mesh_coupler,
+    std::shared_ptr<ParticleGroup>& A_particle_group,
+    std::vector<double>& dof_kinetic_mesh_scalar,
+    std::vector<double>& dof_bout_mesh_scalar,
     BoutReal N_w) {
   Mesh* bout_mesh = density.getMesh();
   // get a density by projecting the particle property WEIGHT to the bout_mesh
   dg0->project(A_particle_group, Sym<REAL>("WEIGHT"));
-  // std::vector<REAL> h_project1;
-  dg0->get_dofs(1, h_project1);
+  if (mesh_coupler != nullptr){
+    dg0->get_dofs(1, dof_kinetic_mesh_scalar);
+    // we need to port data from the kinetic mesh dofs to the dofs expected by BOUT++ in the loop below
+    mesh_coupler->backward_transfer(dof_kinetic_mesh_scalar, 1, dof_bout_mesh_scalar);
+  } else {
+    dg0->get_dofs(1, dof_bout_mesh_scalar);
+  }
   std::size_t ic = 0;
   for (PetscInt ix = bout_mesh->xstart; ix <= bout_mesh->xend; ix++) {
     for (PetscInt iy = bout_mesh->ystart; iy <= bout_mesh->yend; iy++) {
-      density(ix, iy) = h_project1.at(ic) * N_w;
+      density(ix, iy) = dof_bout_mesh_scalar.at(ic) * N_w;
       ic++;
     }
   }
@@ -301,9 +309,11 @@ void update_diagnostics(Field2D& neutral_density, Field2D& ion_density,
 void set_initial_particle_weights(
     Field2D& initial_neutral_density,
     std::shared_ptr<PetscInterface::DMPlexProjectEvaluateDG>& dg0,
+    std::shared_ptr<PetscInterface::DMPlexMeshCouplerDG0>& mesh_coupler,
     std::shared_ptr<ParticleGroup>& A_particle_group,
     std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh,
-    std::vector<double>& h_project1,
+    std::vector<double>& dof_kinetic_mesh_scalar,
+    std::vector<double>& dof_bout_mesh_scalar,
     BoutReal N_w) {
   Mesh* bout_mesh = initial_neutral_density.getMesh();
   PetscInt ixy = 0;
@@ -313,18 +323,24 @@ void set_initial_particle_weights(
       // we multiply the initial density by the volume to get particle number,
       // then divide by markers per cell to divide them between the requested markers,
       // then divide by N_w to get the weight of each marker.
-      const REAL cell_volume = neso_mesh->dmh->get_cell_volume(static_cast<int>(ixy));
+      const REAL cell_volume = neso_mesh->dmh->get_cell_volume(ixy);
       const INT nmarkers_per_cell =
-          A_particle_group->get_npart_cell(static_cast<int>(ixy));
+          A_particle_group->get_npart_cell(ixy);
       const REAL particle_weights = initial_neutral_density(ix, iy) * cell_volume
                                     / static_cast<BoutReal>(nmarkers_per_cell)
                                     / N_w;
-      h_project1.at(static_cast<std::size_t>(ixy)) = particle_weights;
+      dof_bout_mesh_scalar.at(static_cast<std::size_t>(ixy)) = particle_weights;
       ixy++;
     }
   }
-  // now copy the data to internal variables
-  dg0->set_dofs(1, h_project1);
+  if (mesh_coupler != nullptr){
+    mesh_coupler->forward_transfer(dof_bout_mesh_scalar, 1, dof_kinetic_mesh_scalar);
+    // now copy the data to internal variables
+    dg0->set_dofs(1, dof_kinetic_mesh_scalar);
+  } else {
+    // now copy the data to internal variables
+    dg0->set_dofs(1, dof_bout_mesh_scalar);
+  }
   // set the data from internal variables into the weights
   dg0->evaluate(A_particle_group, Sym<REAL>("WEIGHT"));
 }
@@ -682,8 +698,8 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
         std::make_shared<PetscInterface::DMPlexLocalMapper>(sycl_target, neso_mesh);
     // Create a domain from the neso_mesh and the mapper.
     auto domain = std::make_shared<Domain>(neso_mesh, mapper);
-    // Get the number of cells in the mesh owned on this process
-    int num_cells_owned = neso_mesh->get_cell_count();
+    // Get the number of cells in the kinetic (neutral) mesh owned on this process
+    const int num_cells_owned_kinetic_mesh = neso_mesh->get_cell_count();
     // if requested, check that neso_mesh cell volumes are identical
     // to bout_mesh cell volumes, otherwise, exit.
     if (mesh_options["test_dmplex_cell_volumes"].withDefault(true)) {
@@ -771,18 +787,20 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
     }
     // Add the new particles to the particle group
     A_particle_group->add_particles_local(initial_distribution);
+    // local number of x cells, excluding guards
+    const int Nx = bout_mesh->xend - bout_mesh->xstart + 1;
+    // local number of y cells, excluding guards
+    const int Ny = bout_mesh->yend - bout_mesh->ystart + 1;
+    // Get the number of cells in the bout (plasma) mesh owned on this process, excluding guard cells
+    const int num_cells_owned_bout_mesh = Nx*Ny;
+
     // make pointer to projection object
     if (use_external_msh) {
       // draft code below, not expected to execute correctly
       // create the dg0 variable using a constructor that
       // respects the kinetic mesh external definition
-      // local number of x cells, excluding guards
-      const int Nx = bout_mesh->xend - bout_mesh->xstart + 1;
-      // local number of y cells, excluding guards
-      const int Ny = bout_mesh->yend - bout_mesh->ystart + 1;
-      const int cell_count_inner = Nx*Ny;
       std::vector<std::vector<PetscInterface::DMPlexMeshCouplerDG0MapEntry>>
-        coupler_map(cell_count_inner);
+        coupler_map(static_cast<size_t>(num_cells_owned_bout_mesh));
       Field2D map_RZ_to_itriangle_0;
       Field2D map_RZ_to_itriangle_1;
       bout_mesh->get(map_RZ_to_itriangle_0, "map_RZ_to_itriangle_0");
@@ -792,17 +810,20 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
         for (int iy = bout_mesh->ystart; iy <= bout_mesh->yend; iy++) {
           // n.b. forward and backward weights may be incorrect
           // lower triangle
-          coupler_map.at(icell).push_back(
-            {kinetic_mesh_map.at(map_RZ_to_itriangle_0(ix,iy)), 1.0, 0.5});
+          coupler_map.at(static_cast<size_t>(icell)).push_back(
+            {kinetic_mesh_map.at(static_cast<size_t>(map_RZ_to_itriangle_0(ix,iy))), 1.0, 0.5});
           // upper triangle
-          coupler_map.at(icell).push_back(
-            {kinetic_mesh_map.at(map_RZ_to_itriangle_1(ix,iy)), 1.0, 0.5});
+          coupler_map.at(static_cast<size_t>(icell)).push_back(
+            {kinetic_mesh_map.at(static_cast<size_t>(map_RZ_to_itriangle_1(ix,iy))), 1.0, 0.5});
           icell += 1;
         }
       }
       mesh_coupler_dg0 = std::make_shared<PetscInterface::DMPlexMeshCouplerDG0>(
         dm, coupler_map);
     }
+    // if (mesh_coupler_dg0 == nullptr){
+    //   output << "mesh_coupler_dg0 is a nullptr" << std::endl;
+    // }
     // always create project_eval_dg0 for now, as only this variable is used below
     project_eval_dg0 = std::make_shared<PetscInterface::DMPlexProjectEvaluateDG>(
       neso_mesh, sycl_target, "DG", 0);
@@ -1150,15 +1171,20 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
     };
 
     // allocate buffer vector for scalar projection/evaluation of NESO-Particles
-    // properties
-    std::vector<REAL> h_project1(static_cast<size_t>(num_cells_owned));
+    // properties on to the kinetic mesh
+    std::vector<REAL> dof_kinetic_mesh_scalar(static_cast<size_t>(num_cells_owned_kinetic_mesh));
+    // allocate buffer vector for scalar projection/evaluation of NESO-Particles
+    // properties on to the bout mesh
+    std::vector<REAL> dof_bout_mesh_scalar(static_cast<size_t>(num_cells_owned_bout_mesh));
     // set weights from a Field2D from BOUT
-    set_initial_particle_weights(initial_neutral_density, project_eval_dg0, A_particle_group,
-                                 neso_mesh, h_project1, N_w);
+    set_initial_particle_weights(initial_neutral_density,
+          project_eval_dg0, mesh_coupler_dg0,
+          A_particle_group, neso_mesh, dof_kinetic_mesh_scalar, dof_bout_mesh_scalar, N_w);
 
     // Calculate neutral density and sources for initial condition
-    calculate_neutral_density_in_place(neutral_density, project_eval_dg0, A_particle_group,
-                                       h_project1, N_w);
+    calculate_neutral_density_in_place(neutral_density,
+      project_eval_dg0, mesh_coupler_dg0,
+      A_particle_group, dof_kinetic_mesh_scalar, dof_bout_mesh_scalar, N_w);
     source_manager.update_all_sources(dt);
 
     // diagnose the initial condition
@@ -1190,8 +1216,8 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
       // uncomment to write a trajectory
       h5part->write();
 
-      calculate_neutral_density_in_place(neutral_density, project_eval_dg0, A_particle_group,
-                                         h_project1, N_w);
+      calculate_neutral_density_in_place(neutral_density, project_eval_dg0, mesh_coupler_dg0, A_particle_group,
+                                         dof_kinetic_mesh_scalar, dof_bout_mesh_scalar, N_w);
       source_manager.update_all_sources(dt);
       Field2D Siz = source_manager.get_data("Siz");
       Field2D Srec = source_manager.get_data("Srec");
