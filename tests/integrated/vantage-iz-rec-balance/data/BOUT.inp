@@ -55,8 +55,9 @@ dt = 700
 nsteps = 3
 
 # This is the final expected steady state density
-initial_neutral_density = 8e18
-
+# initial_neutral_density = 8e18
+initial_neutral_pressure = 1.2817413072
+initial_neutral_temperature = 1
 
 test_mass_conservation = true
 

@@ -3,7 +3,9 @@
 #include "bout/field2d.hxx"
 #include "bout/output.hxx"
 #include "bout/petsclib.hxx"
+#include <bout/assert.hxx>
 #include <bout/field_factory.hxx>
+#include <bout/constants.hxx>
 #include <algorithm>
 #include <cmath>
 #include <fmt/core.h>
@@ -307,40 +309,29 @@ void update_diagnostics(Field2D& neutral_density, Field2D& ion_density,
 }
 
 void set_initial_particle_weights(
-    Field2D& initial_neutral_density,
+    const BoutReal& initial_neutral_density,
     std::shared_ptr<PetscInterface::DMPlexProjectEvaluateDG>& dg0,
-    std::shared_ptr<PetscInterface::DMPlexMeshCouplerDG0>& mesh_coupler,
     std::shared_ptr<ParticleGroup>& A_particle_group,
     std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh,
     std::vector<double>& dof_kinetic_mesh_scalar,
-    std::vector<double>& dof_bout_mesh_scalar,
     BoutReal N_w) {
-  Mesh* bout_mesh = initial_neutral_density.getMesh();
-  PetscInt ixy = 0;
-  for (PetscInt ix = bout_mesh->xstart; ix <= bout_mesh->xend; ix++) {
-    for (PetscInt iy = bout_mesh->ystart; iy <= bout_mesh->yend; iy++) {
-      // particle_weights are copied to all particles in this cell.
-      // we multiply the initial density by the volume to get particle number,
-      // then divide by markers per cell to divide them between the requested markers,
-      // then divide by N_w to get the weight of each marker.
-      const REAL cell_volume = neso_mesh->dmh->get_cell_volume(ixy);
-      const INT nmarkers_per_cell =
-          A_particle_group->get_npart_cell(ixy);
-      const REAL particle_weights = initial_neutral_density(ix, iy) * cell_volume
-                                    / static_cast<BoutReal>(nmarkers_per_cell)
-                                    / N_w;
-      dof_bout_mesh_scalar.at(static_cast<std::size_t>(ixy)) = particle_weights;
-      ixy++;
-    }
+  // set a constant density across the entire kinetic mesh
+  const size_t ncell = dof_kinetic_mesh_scalar.size();
+  for (size_t ic = 0; ic < ncell; ic++) {
+    // particle_weights are copied to all particles in this cell.
+    // we multiply the initial density by the volume to get particle number,
+    // then divide by markers per cell to divide them between the requested markers,
+    // then divide by N_w to get the weight of each marker.
+    const REAL cell_volume = neso_mesh->dmh->get_cell_volume(static_cast<int>(ic));
+    const INT nmarkers_per_cell =
+        A_particle_group->get_npart_cell(static_cast<int>(ic));
+    const REAL particle_weights = initial_neutral_density * cell_volume
+                                  / static_cast<BoutReal>(nmarkers_per_cell)
+                                  / N_w;
+    dof_kinetic_mesh_scalar.at(ic) = particle_weights;
   }
-  if (mesh_coupler != nullptr){
-    mesh_coupler->forward_transfer(dof_bout_mesh_scalar, 1, dof_kinetic_mesh_scalar);
-    // now copy the data to internal variables
-    dg0->set_dofs(1, dof_kinetic_mesh_scalar);
-  } else {
-    // now copy the data to internal variables
-    dg0->set_dofs(1, dof_bout_mesh_scalar);
-  }
+  // now copy the data to internal variables
+  dg0->set_dofs(1, dof_kinetic_mesh_scalar);
   // set the data from internal variables into the weights
   dg0->evaluate(A_particle_group, Sym<REAL>("WEIGHT"));
 }
@@ -578,6 +569,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
   Options& units = alloptions["units"];
   BoutReal inv_meters_cubed = get<BoutReal>(units["inv_meters_cubed"]);
   BoutReal eV = get<BoutReal>(units["eV"]);
+  BoutReal pascal = SI::qe*eV*inv_meters_cubed;
   BoutReal meters = get<BoutReal>(units["meters"]);
   BoutReal seconds = get<BoutReal>(units["seconds"]);
 
@@ -652,14 +644,35 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
   {
 
     // Normalisations
-        // Initial neutral parameters
-    Field2D initial_neutral_density{bout_mesh};
-    initial_neutral_density =
-        options["initial_neutral_density"]
+    // Charge for ionised species in IZ reaction and mass of ion and neutral
+    const BoutReal charge = options["charge"]
+                            .doc("Particle charge. electrons = -1")
+                            .withDefault(1.0);
+    const BoutReal AA = options["AA"]
+                        .doc("Particle atomic mass. Proton = 1")
+                        .withDefault(1.0);
+    // check mass positive
+    ASSERT1(AA > 0.0);
+    // Initial neutral parameters
+    const BoutReal initial_neutral_pressure =
+        options["initial_neutral_pressure"]
             .doc(
-                "Initial neutral density for VANTAGE kinetic neutrals [m^-3]")
-            .as<Field2D>()
-            / inv_meters_cubed;
+                "Initial neutral pressure for VANTAGE kinetic neutrals [Pa], default = 1")
+            .withDefault(1.0)
+            / pascal;
+    const BoutReal initial_neutral_temperature =
+        options["initial_neutral_temperature"]
+            .doc(
+                "Initial neutral temperature for VANTAGE kinetic neutrals [eV], default = 1")
+            .withDefault(1.0)
+            / eV;
+    // check initial neutral pressure is greater than or equal to zero
+    ASSERT1(initial_neutral_pressure >= 0.0);
+    // checking initial temperature greater than zero before division
+    ASSERT1(initial_neutral_temperature > 0.0);
+    const BoutReal initial_neutral_density = initial_neutral_pressure / initial_neutral_temperature;
+    // standard deviation (thermal speed) from initial condition
+    const BoutReal initial_neutral_thermal_speed = std::sqrt(initial_neutral_temperature/AA);
     const int npart_per_cell = options["npart_per_cell"]
                                    .doc("Number of VANTAGE kinetic neutral particles per "
                                         "cell during initialisation")
@@ -735,7 +748,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
     // create a Reactions particle spec
     auto particle_spec_builder = ParticleSpecBuilder(ndim);
     auto electron_species = Species("ELECTRON");
-    auto main_species = Species("ION", 1.0, 0.0, 0);
+    auto main_species = Species("ION", AA, charge, 0);
     std::vector<Species> fluid_species = {electron_species, main_species};
     particle_spec_builder.add_particle_prop(Properties<REAL>(
         fluid_species,
@@ -770,8 +783,9 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
                                 &rng_pos);
 
     const int N_actual = static_cast<int>(particle_cell_ids.size());
+    // use the 3D definition of sigma here, but note ndim = 2 for now
     auto velocities =
-        NESO::Particles::normal_distribution(N_actual, 2, 0.0, 1.0, rng_vel);
+        NESO::Particles::normal_distribution(N_actual, 2, 0.0, initial_neutral_thermal_speed, rng_vel);
 
     int id_offset = 0;
     MPICHK(MPI_Exscan(&N_actual, &id_offset, 1, MPI_INT, MPI_SUM,
@@ -878,8 +892,10 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
 
     // Give particle group initial kinetic values (positions and velocities)
     // Numerical settings: weight, stdev, species ID
+    // use the same standard deviation for markers as in the initial distribution of velocities
+    // we should consider if marker distribution should evolve with time to track the neutral temperature
     ParticleSet maxwellian_markers = uniform_cellwise_maxwellian<ndim>(
-        sycl_target, neso_mesh, particle_spec, rec_markers_per_cell, 1.0, 0.5, -1);
+        sycl_target, neso_mesh, particle_spec, rec_markers_per_cell, 1.0, initial_neutral_thermal_speed, -1);
 
     marker_group->add_particles_local(maxwellian_markers);
 
@@ -1202,8 +1218,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
 
     // set weights from a Field2D from BOUT
     set_initial_particle_weights(initial_neutral_density,
-          project_eval_dg0, mesh_coupler_dg0,
-          A_particle_group, neso_mesh, dof_kinetic_mesh_scalar, dof_bout_mesh_scalar, N_w);
+          project_eval_dg0, A_particle_group, neso_mesh, dof_kinetic_mesh_scalar, N_w);
 
     // Calculate neutral density and sources for initial condition
     calculate_neutral_density_in_place(neutral_density,

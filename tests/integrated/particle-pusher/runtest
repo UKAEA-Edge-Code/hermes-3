@@ -83,7 +83,8 @@ def particle_push_input(
     dt = {dt}
     nsteps = {nsteps}
     test_mass_conservation = true
-    initial_neutral_density = 1e19
+    initial_neutral_pressure = 1
+    initial_neutral_temperature = 1
     npart_per_cell = 20
     background_ion_density = 1e19
     background_ion_temperature = 50

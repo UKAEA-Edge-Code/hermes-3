@@ -36,7 +36,6 @@ dt = 0.005
 nsteps = 3
 
 test_mass_conservation = true
-initial_neutral_density = 20
 
 npart_per_cell = 20
 remove_threshold = 0.0
