@@ -8,6 +8,8 @@
 #include <bout/constants.hxx>
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
+#include <map>
 #include <fmt/core.h>
 #include <iostream>
 #include <memory>
@@ -15,6 +17,7 @@
 #include <neso_particles/compute_target.hpp>
 #include <neso_particles/containers/cell_data.hpp>
 #include <neso_particles/external_interfaces/petsc/petsc_interface.hpp>
+#include <neso_particles/external_interfaces/vtk/vtk.hpp>
 #include <neso_particles/typedefs.hpp>
 #include <netcdf>
 #include <petscsystypes.h>
@@ -763,7 +766,9 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
                                   ParticleProp(Sym<REAL>("FLUID_DENSITY"), 1),
                                   ParticleProp(Sym<REAL>("FLUID_FLOW_SPEED"), ndim),
                                   ParticleProp(Sym<REAL>("FLUID_TEMPERATURE"), 1),
-                                  ParticleProp(Sym<INT>("N_CELL"), 1)};
+                                  ParticleProp(Sym<INT>("N_CELL"), 1),
+                                  ParticleProp(Sym<REAL>("WEIGHT_V2"), 1),
+                                };
 
     particle_spec_builder.add_particle_spec(additional_props);
     ParticleSpec particle_spec = particle_spec_builder.get_particle_spec();
@@ -817,6 +822,11 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
       initial_distribution[Sym<INT>("CELL_ID")][px][0] = particle_cell_ids.at(pxu);
       initial_distribution[Sym<INT>("ID")][px][0] = px + id_offset;
       initial_distribution[Sym<REAL>("WEIGHT")][px][0] = 1.0;
+      initial_distribution[Sym<REAL>("WEIGHT_V2")][px][0] = 0.0;
+      for (int dimx = 0; dimx < ndim; dimx++) {
+        const auto dimu = static_cast<std::size_t>(dimx);
+        initial_distribution[Sym<REAL>("WEIGHT_V2")][px][0] += 1.0*(std::pow(velocities[dimu][pxu],2.0));
+      }
     }
     // Add the new particles to the particle group
     A_particle_group->add_particles_local(initial_distribution);
@@ -1219,6 +1229,39 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
     // set weights from a Field2D from BOUT
     set_initial_particle_weights(initial_neutral_density,
           project_eval_dg0, A_particle_group, neso_mesh, dof_kinetic_mesh_scalar, N_w);
+    const std::string vtkhdf_filename = make_output_path("BOUT.dmp.vantage.particle.moments.vtkhdf", alloptions);
+    VTK::VTKHDF vtk_writer(vtkhdf_filename, neso_mesh->get_comm());
+    // mesh data only CellData not yet filled on each cell
+    std::vector<VTK::UnstructuredCell> dvtk0 = neso_mesh->dmh->get_vtk_cell_data();
+    std::vector<std::map<std::string, double>> cell_data(static_cast<size_t>(num_cells_owned_kinetic_mesh));
+    // attempt to explore diagnostics on the DMPlex
+    // extract density
+    // get whatever data is in particle weights
+    project_eval_dg0->project(A_particle_group, Sym<REAL>("WEIGHT"));
+    // project to the kinetic dof vector
+    project_eval_dg0->get_dofs(1, dof_kinetic_mesh_scalar);
+    for (size_t ic=0; ic < static_cast<size_t>(num_cells_owned_kinetic_mesh); ic++){
+      // multiply by any factors not handled in the project step
+      dof_kinetic_mesh_scalar.at(ic) *= N_w;
+      // insert a map entry at this ic
+      cell_data.at(ic).insert({"density", dof_kinetic_mesh_scalar.at(ic)});
+    }
+    // energy
+    project_eval_dg0->project(A_particle_group, Sym<REAL>("WEIGHT_V2"));
+    // project to the kinetic dof vector
+    project_eval_dg0->get_dofs(1, dof_kinetic_mesh_scalar);
+    for (size_t ic=0; ic < static_cast<size_t>(num_cells_owned_kinetic_mesh); ic++){
+      // multiply by any factors not handled in the project step (weight factor * mass / 2)
+      dof_kinetic_mesh_scalar.at(ic) *= 0.5*N_w*AA;
+      // insert a map entry at this ic
+      cell_data.at(ic).insert({"energy", dof_kinetic_mesh_scalar.at(ic)});
+    }
+    for (size_t ic=0; ic < static_cast<size_t>(num_cells_owned_kinetic_mesh); ic++){
+      // fill the VTK::UnstructuredCell value appropriately
+      dvtk0.at(ic).cell_data = cell_data.at(ic);
+    }
+    vtk_writer.write(dvtk0);
+    vtk_writer.close();
 
     // Calculate neutral density and sources for initial condition
     calculate_neutral_density_in_place(neutral_density,
