@@ -77,16 +77,21 @@ void write_kinetic_velocity_moment_diagnostics(
     BoutReal N_w, BoutReal mass){
   // update the necessary particle properties for the moments
   // define the lambda updating the moments
+  const size_t ndimv = 2; // number of velocity dimensions
   auto lambda_update_moment_kernels =
         [=](ParticleSubGroupSharedPtr aa) -> void {
       particle_loop(
           "update_moment_kernels", aa,
-          [=](auto VELOCITY, auto WEIGHT, auto WEIGHT_V2) {
+          [=](auto VELOCITY, auto WEIGHT, auto WEIGHT_V2, auto WEIGHT_V) {
               WEIGHT_V2.at(0) = WEIGHT.at(0) * (VELOCITY.at(0) * VELOCITY.at(0) + VELOCITY.at(1) * VELOCITY.at(1));
+              for (int dim = 0; dim < static_cast<int>(ndimv); dim++){
+                WEIGHT_V.at(dim) = WEIGHT.at(0) * VELOCITY.at(dim);
+              }
           },
           Access::read(Sym<REAL>("VELOCITY")),
           Access::read(Sym<REAL>("WEIGHT")),
-          Access::write(Sym<REAL>("WEIGHT_V2")))
+          Access::write(Sym<REAL>("WEIGHT_V2")),
+          Access::write(Sym<REAL>("WEIGHT_V")))
           ->execute();
     };
   // call the particle loop
@@ -118,6 +123,21 @@ void write_kinetic_velocity_moment_diagnostics(
     dof_kinetic_mesh_scalar.at(ic) *= 0.5*N_w*mass;
     // insert a map entry at this ic
     cell_data.at(ic).insert({"energy", dof_kinetic_mesh_scalar.at(ic)});
+  }
+  // mean flow Gamma = nu
+  project_eval_dg0->project(A_particle_group, Sym<REAL>("WEIGHT_V"));
+  // project to the kinetic dof vector
+  // a dummy vector for ndimv component vector data
+  std::vector<REAL> dof_kinetic_mesh_vector(ndimv*num_cells_owned_kinetic_mesh);
+  project_eval_dg0->get_dofs(2, dof_kinetic_mesh_vector);
+  for (size_t ic=0; ic < num_cells_owned_kinetic_mesh; ic++){
+    for (size_t dim=0; dim < ndimv; dim++){
+      const size_t jc = ic*ndimv + dim; // compound index covering all cells and dimensions
+      // multiply by any factors not handled in the project step (weight factor * mass / 2)
+      dof_kinetic_mesh_vector.at(jc) *= N_w;
+      // insert a map entry at this ic
+      cell_data.at(ic).insert({fmt::format("gamma_{}",dim), dof_kinetic_mesh_vector.at(jc)});
+    }
   }
   for (size_t ic=0; ic < static_cast<size_t>(num_cells_owned_kinetic_mesh); ic++){
     // fill the VTK::UnstructuredCell value appropriately
@@ -829,6 +849,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
                                   ParticleProp(Sym<REAL>("FLUID_TEMPERATURE"), 1),
                                   ParticleProp(Sym<INT>("N_CELL"), 1),
                                   ParticleProp(Sym<REAL>("WEIGHT_V2"), 1),
+                                  ParticleProp(Sym<REAL>("WEIGHT_V"), ndim),
                                 };
 
     particle_spec_builder.add_particle_spec(additional_props);
@@ -885,6 +906,9 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
       initial_distribution[Sym<REAL>("WEIGHT")][px][0] = 1.0;
       // these diagnostic properties are updated by write_kinetic_velocity_moment_diagnostics()
       initial_distribution[Sym<REAL>("WEIGHT_V2")][px][0] = 0.0;
+      for (int dimx = 0; dimx < ndim; dimx++) {
+        initial_distribution[Sym<REAL>("WEIGHT_V")][px][dimx] = 0.0;
+      }
     }
     // Add the new particles to the particle group
     A_particle_group->add_particles_local(initial_distribution);
