@@ -75,6 +75,23 @@ void write_kinetic_velocity_moment_diagnostics(
     std::shared_ptr<ParticleGroup>& A_particle_group,
     std::vector<double>& dof_kinetic_mesh_scalar,
     BoutReal N_w, BoutReal mass){
+  // update the necessary particle properties for the moments
+  // define the lambda updating the moments
+  auto lambda_update_moment_kernels =
+        [=](ParticleSubGroupSharedPtr aa) -> void {
+      particle_loop(
+          "update_moment_kernels", aa,
+          [=](auto VELOCITY, auto WEIGHT, auto WEIGHT_V2) {
+              WEIGHT_V2.at(0) = WEIGHT.at(0) * (VELOCITY.at(0) * VELOCITY.at(0) + VELOCITY.at(1) * VELOCITY.at(1));
+          },
+          Access::read(Sym<REAL>("VELOCITY")),
+          Access::read(Sym<REAL>("WEIGHT")),
+          Access::write(Sym<REAL>("WEIGHT_V2")))
+          ->execute();
+    };
+  // call the particle loop
+  lambda_update_moment_kernels(static_particle_sub_group(A_particle_group));
+  // write the data
   VTK::VTKHDF vtk_writer(vtkhdf_filename, neso_mesh->get_comm());
   const std::size_t num_cells_owned_kinetic_mesh = dof_kinetic_mesh_scalar.size();
   // mesh data only CellData not yet filled on each cell
@@ -866,11 +883,8 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
       initial_distribution[Sym<INT>("CELL_ID")][px][0] = particle_cell_ids.at(pxu);
       initial_distribution[Sym<INT>("ID")][px][0] = px + id_offset;
       initial_distribution[Sym<REAL>("WEIGHT")][px][0] = 1.0;
+      // these diagnostic properties are updated by write_kinetic_velocity_moment_diagnostics()
       initial_distribution[Sym<REAL>("WEIGHT_V2")][px][0] = 0.0;
-      for (int dimx = 0; dimx < ndim; dimx++) {
-        const auto dimu = static_cast<std::size_t>(dimx);
-        initial_distribution[Sym<REAL>("WEIGHT_V2")][px][0] += 1.0*(std::pow(velocities[dimu][pxu],2.0));
-      }
     }
     // Add the new particles to the particle group
     A_particle_group->add_particles_local(initial_distribution);
