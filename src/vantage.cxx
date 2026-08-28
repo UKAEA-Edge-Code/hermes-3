@@ -67,6 +67,50 @@ std::string make_output_path(const std::string& filename, Options& alloptions) {
   return fmt::format("{}/{}", output_dir, filename);
 }
 
+// Functions for diagnostics on the kinetic mesh
+void write_kinetic_velocity_moment_diagnostics(
+    std::string vtkhdf_filename,
+    std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh,
+    std::shared_ptr<PetscInterface::DMPlexProjectEvaluateDG>& project_eval_dg0,
+    std::shared_ptr<ParticleGroup>& A_particle_group,
+    std::vector<double>& dof_kinetic_mesh_scalar,
+    BoutReal N_w, BoutReal mass){
+  VTK::VTKHDF vtk_writer(vtkhdf_filename, neso_mesh->get_comm());
+  const std::size_t num_cells_owned_kinetic_mesh = dof_kinetic_mesh_scalar.size();
+  // mesh data only CellData not yet filled on each cell
+  std::vector<VTK::UnstructuredCell> dvtk0 = neso_mesh->dmh->get_vtk_cell_data();
+  std::vector<std::map<std::string, double>> cell_data(num_cells_owned_kinetic_mesh);
+  // attempt to explore diagnostics on the DMPlex
+  // extract density
+  // get whatever data is in particle weights
+  project_eval_dg0->project(A_particle_group, Sym<REAL>("WEIGHT"));
+  // project to the kinetic dof vector
+  project_eval_dg0->get_dofs(1, dof_kinetic_mesh_scalar);
+  for (size_t ic=0; ic < num_cells_owned_kinetic_mesh; ic++){
+    // multiply by any factors not handled in the project step
+    dof_kinetic_mesh_scalar.at(ic) *= N_w;
+    // insert a map entry at this ic
+    cell_data.at(ic).insert({"density", dof_kinetic_mesh_scalar.at(ic)});
+  }
+  // energy
+  project_eval_dg0->project(A_particle_group, Sym<REAL>("WEIGHT_V2"));
+  // project to the kinetic dof vector
+  project_eval_dg0->get_dofs(1, dof_kinetic_mesh_scalar);
+  for (size_t ic=0; ic < num_cells_owned_kinetic_mesh; ic++){
+    // multiply by any factors not handled in the project step (weight factor * mass / 2)
+    dof_kinetic_mesh_scalar.at(ic) *= 0.5*N_w*mass;
+    // insert a map entry at this ic
+    cell_data.at(ic).insert({"energy", dof_kinetic_mesh_scalar.at(ic)});
+  }
+  for (size_t ic=0; ic < static_cast<size_t>(num_cells_owned_kinetic_mesh); ic++){
+    // fill the VTK::UnstructuredCell value appropriately
+    dvtk0.at(ic).cell_data = cell_data.at(ic);
+  }
+  vtk_writer.write(dvtk0);
+  vtk_writer.close();
+}
+
+
 void calculate_neutral_density_in_place(
     Field2D& density, std::shared_ptr<PetscInterface::DMPlexProjectEvaluateDG>& dg0,
     std::shared_ptr<PetscInterface::DMPlexMeshCouplerDG0>& mesh_coupler,
@@ -1229,39 +1273,11 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
     // set weights from a Field2D from BOUT
     set_initial_particle_weights(initial_neutral_density,
           project_eval_dg0, A_particle_group, neso_mesh, dof_kinetic_mesh_scalar, N_w);
-    const std::string vtkhdf_filename = make_output_path("BOUT.dmp.vantage.particle.moments.vtkhdf", alloptions);
-    VTK::VTKHDF vtk_writer(vtkhdf_filename, neso_mesh->get_comm());
-    // mesh data only CellData not yet filled on each cell
-    std::vector<VTK::UnstructuredCell> dvtk0 = neso_mesh->dmh->get_vtk_cell_data();
-    std::vector<std::map<std::string, double>> cell_data(static_cast<size_t>(num_cells_owned_kinetic_mesh));
-    // attempt to explore diagnostics on the DMPlex
-    // extract density
-    // get whatever data is in particle weights
-    project_eval_dg0->project(A_particle_group, Sym<REAL>("WEIGHT"));
-    // project to the kinetic dof vector
-    project_eval_dg0->get_dofs(1, dof_kinetic_mesh_scalar);
-    for (size_t ic=0; ic < static_cast<size_t>(num_cells_owned_kinetic_mesh); ic++){
-      // multiply by any factors not handled in the project step
-      dof_kinetic_mesh_scalar.at(ic) *= N_w;
-      // insert a map entry at this ic
-      cell_data.at(ic).insert({"density", dof_kinetic_mesh_scalar.at(ic)});
-    }
-    // energy
-    project_eval_dg0->project(A_particle_group, Sym<REAL>("WEIGHT_V2"));
-    // project to the kinetic dof vector
-    project_eval_dg0->get_dofs(1, dof_kinetic_mesh_scalar);
-    for (size_t ic=0; ic < static_cast<size_t>(num_cells_owned_kinetic_mesh); ic++){
-      // multiply by any factors not handled in the project step (weight factor * mass / 2)
-      dof_kinetic_mesh_scalar.at(ic) *= 0.5*N_w*AA;
-      // insert a map entry at this ic
-      cell_data.at(ic).insert({"energy", dof_kinetic_mesh_scalar.at(ic)});
-    }
-    for (size_t ic=0; ic < static_cast<size_t>(num_cells_owned_kinetic_mesh); ic++){
-      // fill the VTK::UnstructuredCell value appropriately
-      dvtk0.at(ic).cell_data = cell_data.at(ic);
-    }
-    vtk_writer.write(dvtk0);
-    vtk_writer.close();
+    // write velocity moment diagnostics
+    write_kinetic_velocity_moment_diagnostics(
+      make_output_path("BOUT.dmp.vantage.particle.moments.vtkhdf", alloptions),
+      neso_mesh, project_eval_dg0,
+      A_particle_group, dof_kinetic_mesh_scalar, N_w, AA);
 
     // Calculate neutral density and sources for initial condition
     calculate_neutral_density_in_place(neutral_density,
