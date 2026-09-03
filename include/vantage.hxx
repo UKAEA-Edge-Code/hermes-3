@@ -95,7 +95,6 @@ struct Vantage : public Component {
 
 private:
   bool test_mass_conservation;
-  BoutReal particle_time;
   BoutReal N_w;
   REAL dt;
   int nsteps;
@@ -113,8 +112,14 @@ private:
   std::string dmplex_filepath, vantage_dump_filepath,
       particle_data_filepath; // Path for output files
 
-  PetscLib petsc_lib; // Ensures PETSc is initialized for the lifetime of this component
+  // Physics
+  BoutReal particle_time;
+  std::string neutral_species; // Neutral species to simulate with VANTAGE
+  std::string ion_species;
+  bool plasma_coupling; // Whether to read plasma fields from the state or not
+  PetscLib petsc_lib;   // Ensures PETSc is initialized for the lifetime of this component
 
+  // DMPLex/VANTAGE stuff
   DM dm;
   std::shared_ptr<PetscInterface::DMPlexInterface> neso_mesh;
   std::shared_ptr<SYCLTarget> sycl_target;

@@ -56,6 +56,8 @@ charge = -1
 dt = 700
 nsteps = 3
 
+neutral_species = d
+
 # This is the final expected steady state density
 initial_neutral_density = 8e18
 

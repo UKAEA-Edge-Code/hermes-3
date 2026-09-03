@@ -37,6 +37,8 @@ charge = -1
 dt = 0.005
 nsteps = 3
 
+neutral_species = d
+
 test_mass_conservation = true
 initial_neutral_density = 20
 

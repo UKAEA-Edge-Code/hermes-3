@@ -586,6 +586,25 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
     const int rec_markers_per_cell = options["rec_markers_per_cell"].withDefault(1000);
 
     // Other settings
+    neutral_species =
+        options["neutral_species"].doc("Name of the neutral species to use in VANTAGE");
+
+    // Note we're using Options& to avoid copying the Options
+    Options& ion_species_opt =
+        options["ion_species"].doc("Name of the ion correspondng to the VANTAGE neutral "
+                                   "species. If unset, plasma coupling is disabled");
+
+    // Disable plasma coupling if ions unset.
+    // ion_species is the option content from ion_species_opt.
+    plasma_coupling = ion_species_opt.isSet();
+    if (plasma_coupling) {
+      ion_species = ion_species_opt.as<std::string>();
+      output_info.write("\tVANTAGE: plasma coupling with ion species '{:s}' enabled!\n",
+                        ion_species);
+    } else {
+      output_info.write("\tVANTAGE: no ion_species set, plasma coupling disabled!\n");
+    }
+
     const int ndim = 2;
     dt = options["dt"]
              .doc("Timestep to use for VANTAGE kinetic neutrals (normalised units)")
@@ -1152,7 +1171,13 @@ int Vantage::advance_vantage(BoutReal UNUSED(time)) {
 
 void Vantage::transform_impl(GuardedOptions& UNUSED(state)) {}
 
-void Vantage::finally(const Options& UNUSED(state)) {}
+void Vantage::finally(const Options& state) {
+
+  // Do not read from state if VANTAGE running standalone
+  if (!plasma_coupling) {
+    return;
+  }
+}
 
 void Vantage::outputVars(Options& UNUSED(state)) {}
 
