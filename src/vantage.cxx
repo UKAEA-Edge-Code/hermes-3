@@ -450,6 +450,17 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
     : Component({readOnly("species:d+:density", Regions::Interior),
                  readWrite("species:d+:density")}) {
 
+  //Get BOUT++ mesh and comm, throw if mesh not 2D
+  bout_mesh = bout::globals::mesh;
+  sycl_target = std::make_shared<SYCLTarget>(0, BoutComm::get());
+
+  if (bout_mesh->GlobalNz != 1) {
+    throw BoutException(
+        "VANTAGE currently only supports 2D grids, but the provided grid has "
+        "GlobalNz = {}. Set MZ = 1 on the top of the input file (root level).",
+        bout_mesh->GlobalNz);
+  }
+
   // TODO: Put proper permissions in
 
   // int main(int argc, char** argv) {
@@ -481,9 +492,6 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
 
   Options::root()["units"]["N_w"] = N_w;
   Options::root()["units"]["N_w"].setConditionallyUsed();
-
-  bout_mesh = bout::globals::mesh;
-  sycl_target = std::make_shared<SYCLTarget>(0, BoutComm::get());
 
   // keep dmplex_h5_filename in vantage.cxx to retain access to make_output_path()
   // which should presumably not need to exist within the hermes-3 library

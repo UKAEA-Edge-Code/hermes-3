@@ -31,12 +31,13 @@ def particle_push_input(
 
     nout = 1
     timestep = 1
+    MZ = 1
 
     [mesh]
     J = 1
 
-    nx = 40  # X grid size
-    ny = 36  # Y grid size
+    nx = {nx}  # X grid size
+    ny = {ny}  # Y grid size
 
     dx = 1.0/(nx-4)  # X mesh spacing
     dy = 2*pi/ny  # Y mesh spacing
