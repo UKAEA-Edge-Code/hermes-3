@@ -120,7 +120,7 @@ private:
  * particle.
  */
 
-template <size_t ndim>
+template <size_t ndimr, size_t ndimv>
 inline ParticleSet
 uniform_cellwise_maxwellian(SYCLTargetSharedPtr sycl_target,
                             std::shared_ptr<PetscInterface::DMPlexInterface> mesh,
@@ -140,15 +140,18 @@ uniform_cellwise_maxwellian(SYCLTargetSharedPtr sycl_target,
 
   const int N = static_cast<int>(cell_ids.size());
 
-  auto velocities = NESO::Particles::normal_distribution(N, ndim, 0.0, std_dev, rng_vel);
+  auto velocities = NESO::Particles::normal_distribution(N, ndimv, 0.0, std_dev, rng_vel);
 
   ParticleSet maxwellian(N, particle_spec);
 
   for (int px = 0; px < N; px++) {
     std::size_t pxu = static_cast<std::size_t>(px);
-    for (int dimx = 0; dimx < static_cast<int>(ndim); dimx++) {
+    for (int dimx = 0; dimx < static_cast<int>(ndimr); dimx++) {
       std::size_t dimxu = static_cast<std::size_t>(dimx);
       maxwellian[Sym<REAL>("POSITION")][px][dimx] = positions.at(dimxu).at(pxu);
+    }
+    for (int dimx = 0; dimx < static_cast<int>(ndimv); dimx++) {
+      std::size_t dimxu = static_cast<std::size_t>(dimx);
       maxwellian[Sym<REAL>("VELOCITY")][px][dimx] = velocities.at(dimxu).at(pxu);
     }
     maxwellian[Sym<INT>("CELL_ID")][px][0] = cell_ids.at(pxu);

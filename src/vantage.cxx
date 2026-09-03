@@ -76,13 +76,16 @@ void write_kinetic_velocity_moment_diagnostics(
     BoutReal N_w, BoutReal mass){
   // update the necessary particle properties for the moments
   // define the lambda updating the moments
-  const size_t ndimv = 2; // number of velocity dimensions
+  const size_t ndimv = 3; // number of velocity dimensions
   auto lambda_update_moment_kernels =
         [=](ParticleSubGroupSharedPtr aa) -> void {
       particle_loop(
           "update_moment_kernels", aa,
           [=](auto VELOCITY, auto WEIGHT, auto WEIGHT_V2, auto WEIGHT_V) {
-              WEIGHT_V2.at(0) = WEIGHT.at(0) * (VELOCITY.at(0) * VELOCITY.at(0) + VELOCITY.at(1) * VELOCITY.at(1));
+              WEIGHT_V2.at(0) = 0.0;
+              for (int dim = 0; dim < static_cast<int>(ndimv); dim++){
+                WEIGHT_V2.at(0) += WEIGHT.at(0) * VELOCITY.at(dim) * VELOCITY.at(dim);
+              }
               for (int dim = 0; dim < static_cast<int>(ndimv); dim++){
                 WEIGHT_V.at(dim) = WEIGHT.at(0) * VELOCITY.at(dim);
               }
@@ -121,7 +124,7 @@ void write_kinetic_velocity_moment_diagnostics(
   // mean flow Gamma = nu
   project_eval_dg0->project(A_particle_group, Sym<REAL>("WEIGHT_V"));
   // project to the kinetic dof vector
-  project_eval_dg0->get_dofs(2, gamma);
+  project_eval_dg0->get_dofs(ndimv, gamma);
   // scalar variables
   for (size_t ic=0; ic < num_cells_owned_kinetic_mesh; ic++){
     // multiply by any factors not handled in the project step
@@ -815,7 +818,8 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
                                   options["rec_markers_per_cell"].withDefault(1000);
 
     // Other settings
-    const int ndim = 2;
+    const int ndimv = 3;
+    const int ndimr = 2;
     const REAL dt = options["dt"]
                         .doc("Timestep to use for VANTAGE kinetic neutrals (normalised units)")
                         .withDefault(0.01);
@@ -850,7 +854,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
     }
 
     // create a Reactions particle spec
-    auto particle_spec_builder = ParticleSpecBuilder(ndim);
+    auto particle_spec_builder = ParticleSpecBuilder(ndimv);
     auto electron_species = Species("ELECTRON");
     auto main_species = Species("ION", AA, charge, 0);
     std::vector<Species> fluid_species = {electron_species, main_species};
@@ -862,14 +866,14 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
     particle_spec_builder.add_particle_prop(
         Properties<REAL>(fluid_species,
                          std::vector<int>{default_properties.source_momentum}),
-        ndim);
+        ndimv);
     ParticleSpec additional_props{ParticleProp(Sym<REAL>("TSP"), 2),
                                   ParticleProp(Sym<REAL>("FLUID_DENSITY"), 1),
-                                  ParticleProp(Sym<REAL>("FLUID_FLOW_SPEED"), ndim),
+                                  ParticleProp(Sym<REAL>("FLUID_FLOW_SPEED"), ndimv),
                                   ParticleProp(Sym<REAL>("FLUID_TEMPERATURE"), 1),
                                   ParticleProp(Sym<INT>("N_CELL"), 1),
                                   ParticleProp(Sym<REAL>("WEIGHT_V2"), 1),
-                                  ParticleProp(Sym<REAL>("WEIGHT_V"), ndim),
+                                  ParticleProp(Sym<REAL>("WEIGHT_V"), ndimv),
                                 };
 
     particle_spec_builder.add_particle_spec(additional_props);
@@ -890,9 +894,9 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
                                 &rng_pos);
 
     const int N_actual = static_cast<int>(particle_cell_ids.size());
-    // use the 3D definition of sigma here, but note ndim = 2 for now
+    // use the 3D definition of sigma here
     auto velocities =
-        NESO::Particles::normal_distribution(N_actual, 2, 0.0, initial_neutral_thermal_speed, rng_vel);
+        NESO::Particles::normal_distribution(N_actual, ndimv, 0.0, initial_neutral_thermal_speed, rng_vel);
 
     int id_offset = 0;
     MPICHK(MPI_Exscan(&N_actual, &id_offset, 1, MPI_INT, MPI_SUM,
@@ -904,10 +908,12 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
     for (int px = 0; px < N_actual; px++) {
       const auto pxu = static_cast<std::size_t>(px);
 
-      for (int dimx = 0; dimx < ndim; dimx++) {
+      for (int dimx = 0; dimx < ndimr; dimx++) {
         const auto dimu = static_cast<std::size_t>(dimx);
-
         initial_distribution[Sym<REAL>("POSITION")][px][dimx] = positions[dimu][pxu];
+      }
+      for (int dimx = 0; dimx < ndimv; dimx++) {
+        const auto dimu = static_cast<std::size_t>(dimx);
         initial_distribution[Sym<REAL>("VELOCITY")][px][dimx] = velocities[dimu][pxu];
       }
       initial_distribution[Sym<REAL>("ION_DENSITY")][px][0] = background_ion_density;
@@ -917,7 +923,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
       initial_distribution[Sym<REAL>("ELECTRON_TEMPERATURE")][px][0] = background_electron_temperature;
       initial_distribution[Sym<REAL>("ELECTRON_SOURCE_DENSITY")][px][0] = 0.0;
       initial_distribution[Sym<REAL>("ELECTRON_SOURCE_ENERGY")][px][0] = 0.0;
-      for (int dimx = 0; dimx < ndim; dimx++) {
+      for (int dimx = 0; dimx < ndimv; dimx++) {
         initial_distribution[Sym<REAL>("ION_SOURCE_MOMENTUM")][px][dimx] = 0.0;
         initial_distribution[Sym<REAL>("ELECTRON_SOURCE_MOMENTUM")][px][dimx] = 0.0;
       }
@@ -926,7 +932,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
       initial_distribution[Sym<REAL>("WEIGHT")][px][0] = 1.0;
       // these diagnostic properties are updated by write_kinetic_velocity_moment_diagnostics()
       initial_distribution[Sym<REAL>("WEIGHT_V2")][px][0] = 0.0;
-      for (int dimx = 0; dimx < ndim; dimx++) {
+      for (int dimx = 0; dimx < ndimv; dimx++) {
         initial_distribution[Sym<REAL>("WEIGHT_V")][px][dimx] = 0.0;
       }
     }
@@ -1006,7 +1012,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
     // Numerical settings: weight, stdev, species ID
     // use the same standard deviation for markers as in the initial distribution of velocities
     // we should consider if marker distribution should evolve with time to track the neutral temperature
-    ParticleSet maxwellian_markers = uniform_cellwise_maxwellian<ndim>(
+    ParticleSet maxwellian_markers = uniform_cellwise_maxwellian<ndimr,ndimv>(
         sycl_target, neso_mesh, particle_spec, rec_markers_per_cell, 1.0, initial_neutral_thermal_speed, -1);
 
     marker_group->add_particles_local(maxwellian_markers);
@@ -1022,7 +1028,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
           T.at(0) = background_ion_temperature;
           Te.at(0) = background_ion_temperature;
 
-          for (int i = 0; i < ndim; i++) {
+          for (int i = 0; i < ndimv; i++) {
             speed.at(i) = V_background[static_cast<std::size_t>(i)];
           }
         },
@@ -1085,7 +1091,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
         std::vector<std::shared_ptr<MarkingStrategy>>{make_direct_marking_strategy(
             "merge_marker", [=](auto w) { return w[0] < merge_threshold; },
             Access::read(Sym<REAL>("WEIGHT")))},
-        make_transformation_strategy<MergeTransformationStrategy<ndim>>());
+        make_transformation_strategy<MergeTransformationStrategy<ndimv>>());
 
     // Ionisation reaction transforms and controller
     auto accumulator_transform_iz = std::make_shared<CellwiseAccumulator<REAL>>(
@@ -1180,11 +1186,11 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
     // TODO: Do I need a separate rng kernel?
     auto constant_rate_cross_section = ConstantRateCrossSection(1.0);
     BoutReal normalised_potential_energy = 13.6 / eV;
-    auto rec_reaction_kernel = RecombReactionKernels<2>(
+    auto rec_reaction_kernel = RecombReactionKernels<ndimv>(
         rec_marker_species, electron_species, normalised_potential_energy);
 
     auto rec_data_calc_sampler =
-        FilteredMaxwellianSampler<2, decltype(constant_rate_cross_section)>(
+        FilteredMaxwellianSampler<ndimv, decltype(constant_rate_cross_section)>(
             1 / (rec_marker_species.get_mass() * eV), constant_rate_cross_section,
             rng_kernel);
 
@@ -1264,7 +1270,8 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* UNUSED(solver))
 
     b2d = std::make_shared<PetscInterface::BoundaryInteraction2D>(sycl_target, neso_mesh,
                                                                   boundary_groups);
-    auto reflection = std::make_shared<BoundaryReflection>(ndim, 1.0e-10);
+    // reflection in 2D space should not touch the third velocity dimension, so we pass ndimr = 2  < ndimv = 3 here
+    auto reflection = std::make_shared<BoundaryReflection>(ndimr, 1.0e-10);
 
     auto lambda_apply_boundary_conditions = [&](auto aa) {
       auto sub_groups = b2d->post_integration(aa);
