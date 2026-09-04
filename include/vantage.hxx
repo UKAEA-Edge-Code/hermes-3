@@ -118,6 +118,8 @@ private:
   std::string ion_species;
   bool plasma_coupling; // Whether to read plasma fields from the state or not
   PetscLib petsc_lib;   // Ensures PETSc is initialized for the lifetime of this component
+  BoutReal background_ion_temperature, background_ion_density;
+  std::vector<BoutReal> V_background;
 
   // DMPLex/VANTAGE stuff
   DM dm;
