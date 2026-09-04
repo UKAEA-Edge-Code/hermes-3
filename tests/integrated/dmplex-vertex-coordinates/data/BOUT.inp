@@ -1,4 +1,4 @@
-nout = 0
+nout = 1
 timestep = 1
 
 [mesh]
@@ -25,6 +25,7 @@ charge = 1
 
 [Nd+]
 function = 1
+bndry_all = neumann
 
 [e]
 type = quasineutral
