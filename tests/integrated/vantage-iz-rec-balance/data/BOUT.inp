@@ -1,4 +1,4 @@
-nout = 0
+nout = 1
 timestep = 1
 
 [mesh]
@@ -41,6 +41,7 @@ charge = 1
 
 [Nd+]
 function = 1
+bndry_all = neumann
 
 [e]
 type = quasineutral
@@ -49,7 +50,7 @@ charge = -1
 
 [vantage]
 # Trying to get as close to equilibrium in only 3 steps.
-# This is not straightforward because the step can't be too big 
+# This is not straightforward because the step can't be too big
 # so that it consumes all of the neutral particles in one go.
 dt = 700
 nsteps = 3
