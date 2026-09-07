@@ -134,6 +134,8 @@ private:
       h_project1; // Buffer for scalar projection/evaluation of NESO-Particles properties
   std::shared_ptr<ParticleGroup> A_particle_group; // Particle group for main neutrals
   std::shared_ptr<ParticleGroup> marker_group;     // Particle group for rec markers
+  std::shared_ptr<CellDatConst<REAL>>
+      plasma_data; // Data structure for plasma in VANTAGE grid
 
   // Needed for Vantage::apply_boundary_conditions
   std::shared_ptr<BoundaryReflection> reflection; // Boundary reflection object

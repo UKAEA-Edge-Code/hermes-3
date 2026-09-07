@@ -84,6 +84,7 @@ def particle_push_input(
     dt = {dt}
     nsteps = {nsteps}
     neutral_species = d
+    ion_species = d+
     test_mass_conservation = true
     initial_neutral_density = 1e19
     npart_per_cell = 20

@@ -257,14 +257,43 @@ void set_initial_particle_weights(
   // set the data from internal variables into the weights
   dg0->evaluate(A_particle_group, Sym<REAL>("WEIGHT"));
 }
+// Enum storing row IDs for the plasma data
+enum PlasmaRow { row_id_ne = 0, row_id_te, row_id_ni, row_id_ti, plasma_nrows };
+
+// Project plasma data onto VANTAGE grid
+// Copy the plasma data into the VANTAGE grid, done once per VANTAGE call.
+// Sends the data to SYCL target.
+void send_plasma_data(std::shared_ptr<CellDatConst<REAL>>& plasma_data,
+                      std::shared_ptr<SYCLTarget>& sycl_target, Mesh* bout_mesh,
+                      int num_cells_owned, BoutReal background_ion_density,
+                      BoutReal background_ion_temperature) {
+
+  // Assemble vector of plasma data
+  std::vector<CellData<REAL>> cell_data;
+  cell_data.reserve(static_cast<std::size_t>(num_cells_owned));
+
+  for (PetscInt ix = bout_mesh->xstart; ix <= bout_mesh->xend; ix++) {
+    for (PetscInt iy = bout_mesh->ystart; iy <= bout_mesh->yend; iy++) {
+      auto cell = std::make_shared<CellDataT<REAL>>(sycl_target, plasma_nrows, 1);
+      cell->at(row_id_ne, 0) = background_ion_density;
+      cell->at(row_id_te, 0) = background_ion_temperature;
+      cell->at(row_id_ni, 0) = background_ion_density;
+      cell->at(row_id_ti, 0) = background_ion_temperature;
+      cell_data.push_back(cell);
+    }
+  }
+
+  // Upload cell data to device
+  plasma_data->set_all_cells(cell_data);
+}
 
 // Calculate recombination marker properties
 // Set distribution based on plasma properties
 // Also send plasma properties themselves
 void update_recombination_markers(
     std::shared_ptr<ParticleGroup>& marker_group,
+    std::shared_ptr<CellDatConst<REAL>>& plasma_data,
     std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh, BoutReal N_w,
-    BoutReal background_ion_density, BoutReal background_ion_temperature,
     const std::vector<BoutReal>& V_background) {
 
   // number of velocity dimensions
@@ -275,17 +304,18 @@ void update_recombination_markers(
   // From demo app "set_init_fluid_values"
   particle_loop(
       "set init fluid values", marker_group,
-      [=](auto n, auto T, auto ne, auto Te, auto speed) {
-        n.at(0) = background_ion_density;
-        ne.at(0) = background_ion_density;
-        T.at(0) = background_ion_temperature;
-        Te.at(0) = background_ion_temperature;
+      [=](auto plasma_data, auto n, auto T, auto ne, auto Te, auto speed) {
+        n.at(0) = plasma_data.at(row_id_ni, 0);
+        ne.at(0) = plasma_data.at(row_id_ne, 0);
+        T.at(0) = plasma_data.at(row_id_ti, 0);
+        Te.at(0) = plasma_data.at(row_id_te, 0);
 
+        // Keep background velocity as scalar for now
         for (int i = 0; i < nvel; i++) {
           speed.at(i) = V_background[static_cast<std::size_t>(i)];
         }
       },
-      Access::write(Sym<REAL>("FLUID_DENSITY")),
+      Access::read(plasma_data), Access::write(Sym<REAL>("FLUID_DENSITY")),
       Access::write(Sym<REAL>("FLUID_TEMPERATURE")),
       Access::write(Sym<REAL>("ELECTRON_DENSITY")),
       Access::write(Sym<REAL>("ELECTRON_TEMPERATURE")),
@@ -323,6 +353,25 @@ void update_recombination_markers(
         Access::write(Sym<REAL>("WEIGHT")))
         ->execute(ic);
   }
+}
+
+// Update plasma data projection
+// Plasma data stays on device and particles read it every timestep.
+// This is necessary as particles move between cells.
+void update_particle_background(std::shared_ptr<ParticleGroup>& A_particle_group,
+                                std::shared_ptr<CellDatConst<REAL>>& plasma_data) {
+
+  particle_loop(
+      "update neutral plasma properties", A_particle_group,
+      [=](auto plasma_data, auto ni, auto ne, auto te) {
+        ni.at(0) = plasma_data.at(row_id_ni, 0);
+        ne.at(0) = plasma_data.at(row_id_ne, 0);
+        te.at(0) = plasma_data.at(row_id_te, 0);
+      },
+      Access::read(plasma_data), Access::write(Sym<REAL>("ION_DENSITY")),
+      Access::write(Sym<REAL>("ELECTRON_DENSITY")),
+      Access::write(Sym<REAL>("ELECTRON_TEMPERATURE")))
+      ->execute();
 }
 
 void check_cell_volumes(std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh,
@@ -694,6 +743,12 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
     auto domain = std::make_shared<Domain>(neso_mesh, mapper);
     // Get the number of cells in the mesh owned on this process
     num_cells_owned = neso_mesh->get_cell_count();
+
+    // Data structure for plasma data on VANTAGE grid. One row per variable.
+    // Save ID of each row to a variable.
+    plasma_data = std::make_shared<CellDatConst<REAL>>(sycl_target, num_cells_owned,
+                                                       plasma_nrows, 1);
+
     // if requested, check that neso_mesh cell volumes are identical
     // to bout_mesh cell volumes, otherwise, exit.
     if (mesh_options["test_dmplex_cell_volumes"].withDefault(true)) {
@@ -1081,9 +1136,14 @@ int VantageMonitor::call(Solver* UNUSED(solver), BoutReal time, int iter,
 // Function called by the Monitor to advance kinetic neutrals for some number of VANTAGE timesteps
 int Vantage::advance_vantage(BoutReal UNUSED(time)) {
 
+  // Send plasma data to VANTAGE grid
+  if (plasma_coupling) {
+    send_plasma_data(plasma_data, sycl_target, bout_mesh, num_cells_owned,
+                     background_ion_density, background_ion_temperature);
+  }
+
   // Send plasma data to recombination markers
-  update_recombination_markers(marker_group, neso_mesh, N_w, background_ion_density,
-                               background_ion_temperature, V_background);
+  update_recombination_markers(marker_group, plasma_data, neso_mesh, N_w, V_background);
 
   // Advection & rest of code
   // ------------------------------------------------------------------------------
@@ -1148,10 +1208,16 @@ int Vantage::advance_vantage(BoutReal UNUSED(time)) {
   for (int stepx = 0; stepx < nsteps; stepx++) {
 
     output << "Particle time: " << std::to_string(particle_time) << std::endl;
+
     particle_time += dt;
     A_particle_group->hybrid_move();
     A_particle_group->cell_move();
     lambda_apply_timestep(static_particle_sub_group(A_particle_group));
+
+    if (plasma_coupling) {
+      update_particle_background(A_particle_group, plasma_data);
+    }
+
     // apply reactions
     reaction_controller->apply(A_particle_group, dt, ControllerMode::standard_mode);
     recombination_controller->apply(marker_group, dt, A_particle_group);
