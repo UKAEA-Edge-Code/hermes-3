@@ -433,34 +433,87 @@ void set_initial_particle_weights(
   dg0->evaluate(A_particle_group, Sym<REAL>("WEIGHT"));
 }
 
-void check_cell_volumes(std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh,
+void check_cell_volumes(DM& dm, std::vector<PetscInt>& kinetic_mesh_map,
+          std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh,
                         Mesh*& bout_mesh, Options& alloptions) {
   Coordinates* coord = bout_mesh->getCoordinates();
-  PetscInt ixy = 0;
+  size_t ixy=0;
   const REAL tolerance = 1.0e-12;
+  // local number of BOUT++ x cells, excluding guards
+  const int Nx = bout_mesh->xend - bout_mesh->xstart + 1;
+  // local number of BOUT++ y cells, excluding guards
+  const int Ny = bout_mesh->yend - bout_mesh->ystart + 1;
+  // Get the number of cells in the bout (plasma) mesh owned on this process, excluding guard cells
+  const size_t num_cells_owned_bout_mesh = static_cast<size_t>(Nx*Ny);
+  // Get the number of cells in the kinetic (neutral) mesh owned on this process
+  const size_t num_cells_owned_kinetic_mesh = static_cast<size_t>(neso_mesh->get_cell_count());
+  // dimensional units
+  const BoutReal meters = get<BoutReal>(alloptions["units"]["meters"]);
+  const BoutReal meters_squared = meters * meters;
+  const BoutReal meters_cubed = meters * meters * meters;
+  // neso_mesh cell volumes on BOUT++ mesh indices
+  std::vector<double> neso_cell_volumes_bmsh(num_cells_owned_bout_mesh);
+  // the checks
+  if (num_cells_owned_kinetic_mesh == num_cells_owned_bout_mesh){
+    // zero the compound index
+    ixy = 0;
+    for (PetscInt ix = bout_mesh->xstart; ix <= bout_mesh->xend; ix++) {
+     for (PetscInt iy = bout_mesh->ystart; iy <= bout_mesh->yend; iy++) {
+      neso_cell_volumes_bmsh.at(ixy) = neso_mesh->dmh->get_cell_volume(static_cast<int>(ixy));
+      ixy++;
+     }
+    }
+  } else if (num_cells_owned_kinetic_mesh > num_cells_owned_bout_mesh) {
+    // assume that this corresponds to the case where the BOUT++ mesh is decomposed
+    // to triangles and there are also cells representing the region beyond the simulated plasma
+    // -------------------------------------------
+    // first, make a mesh_coupler_dg0 object with unit weights
+    std::vector<std::vector<PetscInterface::DMPlexMeshCouplerDG0MapEntry>>
+        coupler_map(static_cast<size_t>(num_cells_owned_bout_mesh));
+    Field2D map_RZ_to_itriangle_0;
+    Field2D map_RZ_to_itriangle_1;
+    bout_mesh->get(map_RZ_to_itriangle_0, "map_RZ_to_itriangle_0");
+    bout_mesh->get(map_RZ_to_itriangle_1, "map_RZ_to_itriangle_1");
+    int icell = 0;
+    for (int ix = bout_mesh->xstart; ix <= bout_mesh->xend; ix++) {
+      for (int iy = bout_mesh->ystart; iy <= bout_mesh->yend; iy++) {
+        // n.b. forward and backward weights may be incorrect for non-rectangular BOUT++ cells
+        // lower triangle
+        coupler_map.at(static_cast<size_t>(icell)).push_back(
+          {kinetic_mesh_map.at(static_cast<size_t>(map_RZ_to_itriangle_0(ix,iy))), 1.0, 1.0});
+        // upper triangle
+        coupler_map.at(static_cast<size_t>(icell)).push_back(
+          {kinetic_mesh_map.at(static_cast<size_t>(map_RZ_to_itriangle_1(ix,iy))), 1.0, 1.0});
+        icell += 1;
+      }
+    }
+    // object for transferring data between kinetic and bout mesh degree-of-freedom vectors
+    std::shared_ptr<PetscInterface::DMPlexMeshCouplerDG0> mesh_coupler_unit_weight = std::make_shared<PetscInterface::DMPlexMeshCouplerDG0>(dm, coupler_map);
+    // obtain a list of kinetic mesh cell volumes
+    std::vector<double> neso_cell_volumes_kmsh(num_cells_owned_kinetic_mesh);
+    for (size_t  ic=0; ic < num_cells_owned_kinetic_mesh; ic++){
+      neso_cell_volumes_kmsh.at(ic) = neso_mesh->dmh->get_cell_volume(static_cast<int>(ic));
+    }
+    // move these cell volumes to the bout mesh
+    mesh_coupler_unit_weight->backward_transfer(neso_cell_volumes_kmsh, 1, neso_cell_volumes_bmsh);
+  }
+  // zero the compound index
+  ixy = 0;
   for (PetscInt ix = bout_mesh->xstart; ix <= bout_mesh->xend; ix++) {
     for (PetscInt iy = bout_mesh->ystart; iy <= bout_mesh->yend; iy++) {
-
-      const BoutReal meters = get<BoutReal>(alloptions["units"]["meters"]);
-      const BoutReal meters_squared = meters * meters;
-      const BoutReal meters_cubed = meters * meters * meters;
-
       // Convert to SI: dx is m^2 T, J is m/T, dy is unitless, skip dz
       // so J * dx * dy = m^3, technically per radian toroidal angle due to missing dz
       const BoutReal bout_cell_area =
           coord->J(ix, iy) * coord->dx(ix, iy) * coord->dy(ix, iy) * meters_cubed;
-
-      // Straight up 2D grid, needs m^2
-      const REAL neso_cell_area = neso_mesh->dmh->get_cell_volume(ixy) * meters_squared;
-
+      // neso_mesh is a 2D grid, needs m^2
+      const REAL neso_cell_area = neso_cell_volumes_bmsh.at(ixy) * meters_squared;
       const bool volumes_match = (abs(bout_cell_area - neso_cell_area) < tolerance);
-
       // exit if we fail to find a match
       NESOASSERT(volumes_match,
-                 fmt::format("BOUT++ mesh volume {} does not match NESO-Particles mesh "
-                             "volume {} for ix = {} iy = {} \n Ignore this message by "
-                             "setting [neso_particles] test_cell_volumes = false",
-                             bout_cell_area, neso_cell_area, ix, iy));
+                fmt::format("BOUT++ mesh volume {} does not match NESO-Particles mesh "
+                            "volume {} for ix = {} iy = {} \n Ignore this message by "
+                            "setting [dmplex] test_dmplex_cell_volumes = false",
+                            bout_cell_area, neso_cell_area, ix, iy));
       ixy++;
     }
   }
@@ -840,7 +893,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
     // if requested, check that neso_mesh cell volumes are identical
     // to bout_mesh cell volumes, otherwise, exit.
     if (mesh_options["test_dmplex_cell_volumes"].withDefault(true)) {
-      check_cell_volumes(neso_mesh, bout_mesh, alloptions);
+      check_cell_volumes(dm, kinetic_mesh_map, neso_mesh, bout_mesh, alloptions);
     }
     if (mesh_options["test_dmplex_cell_centres"].withDefault(true)) {
       check_cell_centres(
