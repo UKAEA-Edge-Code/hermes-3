@@ -344,6 +344,9 @@ initialise_diagnostics(Options& alloptions, Mesh* bout_mesh, Field2D& neutral_de
       {"units", "m"},
       {"conversion", 1}, // Already in SI units
     });
+  set_with_attrs(bout_output_data["y_boundary_guards"], 2, {
+      {"source", "vantage -- should be provided by BOUT++"}
+    });
 
   // Add metadata with normalisation factors
   set_with_attrs(bout_output_data["Tnorm"], Tnorm,
