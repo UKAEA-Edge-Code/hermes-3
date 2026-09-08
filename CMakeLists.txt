@@ -194,10 +194,12 @@ set(HERMES_SOURCES
 
 if(HERMES_USE_VANTAGE)
   # include Hermes-VANTAGE include and source files
-  list(APPEND HERMES_SOURCES 
-    src/vantage_dmplex.cxx 
-    include/vantage_dmplex.hxx 
-    src/vantage.cxx 
+  list(APPEND HERMES_SOURCES
+    src/vantage_dmplex.cxx
+    include/vantage_dmplex.hxx
+    src/vantage_diagnostics.cxx
+    include/vantage_diagnostics.hxx
+    src/vantage.cxx
     include/vantage.hxx)
 endif()
 

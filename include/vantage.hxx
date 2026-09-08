@@ -7,6 +7,7 @@
 #include <neso_rng_toolkit.hpp>
 #include <reactions/reactions.hpp>
 #include <vector>
+#include "../include/vantage_diagnostics.hxx"
 
 using namespace NESO::Particles;
 using namespace VANTAGE::Reactions;
@@ -143,6 +144,8 @@ private:
   void apply_boundary_conditions(ParticleSubGroupSharedPtr aa);
 
   // These classes don't have a default constructor so need to be initialised as a unique_ptr
+  std::unique_ptr<VantageDiagnosticsManager>
+      diagnostics_manager;           // Manager for VANTAGE diagnostics
   std::unique_ptr<VantageSourceManager>
       source_manager;           // Manager for VANTAGE reaction sources
   VantageMonitor monitor{this}; // Output monitor to schedule VANTAGE iterations
