@@ -1,8 +1,151 @@
 #include "bout/bout.hxx"
+#include "bout/bout_types.hxx"
+#include "../include/component.hxx"
 #include <cstddef>
+#include <string>
 #include "../include/vantage_diagnostics.hxx"
 
 using namespace NESO::Particles;
+
+// helper functions for diagnostics
+
+BoutReal
+calculate_total_mass(Field2D& density,
+                     std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh) {
+  BoutReal local_mass = 0.0;
+  BoutReal total_mass = 0.0;
+  Mesh* bout_mesh = density.getMesh();
+  PetscInt ic = 0;
+  for (PetscInt ix = bout_mesh->xstart; ix <= bout_mesh->xend; ix++) {
+    for (PetscInt iy = bout_mesh->ystart; iy <= bout_mesh->yend; iy++) {
+      local_mass += density(ix, iy) * neso_mesh->dmh->get_cell_volume(ic);
+      ic++;
+    }
+  }
+  MPICHK(
+      MPI_Allreduce(&local_mass, &total_mass, 1, MPI_DOUBLE, MPI_SUM, BoutComm::get()));
+  return total_mass;
+}
+
+// helper function to initialise the plasma grid (BOUT++ mesh) diagnostics
+Options initialise_plasma_grid_diagnostics(Options& units, Mesh* bout_mesh,
+                      //  Field2D& neutral_density,
+                      //  Field2D& ion_density,
+                      std::string vantage_dump_filepath) {
+  // Options object to use to write out diagnostic data of fluid quantities
+
+  const BoutReal Nnorm = get<BoutReal>(units["inv_meters_cubed"]);
+  const BoutReal Tnorm = get<BoutReal>(units["eV"]);
+  const BoutReal Omega_ci = 1 / get<BoutReal>(units["seconds"]);
+  const BoutReal rho_s0 = get<BoutReal>(units["meters"]);
+  const BoutReal Bnorm = get<BoutReal>(units["Tesla"]);
+  const BoutReal Cs0 = get<BoutReal>(units["meters"])
+             / get<BoutReal>(units["seconds"]);
+
+  Options bout_output_data;
+  // Add metadata from mesh, e.g. branch cuts
+  bout_mesh->outputVars(bout_output_data);
+  // Add Rxy, Zxy coordinate data
+  Field2D Rxy;
+  Field2D Rxy_corners;
+  Field2D Rxy_lower_right_corners;
+  Field2D Rxy_upper_right_corners;
+  Field2D Rxy_upper_left_corners;
+  Field2D Zxy;
+  Field2D Zxy_corners;
+  Field2D Zxy_lower_right_corners;
+  Field2D Zxy_upper_right_corners;
+  Field2D Zxy_upper_left_corners;
+  // mesh->get(ivertex, "ivertex_lower_left_corners");
+  bout_mesh->get(Rxy, "Rxy");
+  bout_mesh->get(Rxy_corners, "Rxy_corners");
+  bout_mesh->get(Rxy_lower_right_corners, "Rxy_lower_right_corners");
+  bout_mesh->get(Rxy_upper_right_corners, "Rxy_upper_right_corners");
+  bout_mesh->get(Rxy_upper_left_corners, "Rxy_upper_left_corners");
+  bout_mesh->get(Zxy, "Zxy");
+  bout_mesh->get(Zxy_corners, "Zxy_corners");
+  bout_mesh->get(Zxy_lower_right_corners, "Zxy_lower_right_corners");
+  bout_mesh->get(Zxy_upper_right_corners, "Zxy_upper_right_corners");
+  bout_mesh->get(Zxy_upper_left_corners, "Zxy_upper_left_corners");
+  set_with_attrs(bout_output_data["Rxy"], Rxy, {
+      {"units", "m"},
+      {"conversion", 1}, // Already in SI units
+    });
+  set_with_attrs(bout_output_data["Rxy_corners"], Rxy_corners, {
+      {"units", "m"},
+      {"conversion", 1}, // Already in SI units
+    });
+  set_with_attrs(bout_output_data["Rxy_lower_right_corners"], Rxy_lower_right_corners, {
+      {"units", "m"},
+      {"conversion", 1}, // Already in SI units
+    });
+  set_with_attrs(bout_output_data["Rxy_upper_right_corners"], Rxy_upper_right_corners, {
+      {"units", "m"},
+      {"conversion", 1}, // Already in SI units
+    });
+  set_with_attrs(bout_output_data["Rxy_upper_left_corners"], Rxy_upper_left_corners, {
+      {"units", "m"},
+      {"conversion", 1}, // Already in SI units
+    });
+  set_with_attrs(bout_output_data["Zxy"], Zxy, {
+      {"units", "m"},
+      {"conversion", 1}, // Already in SI units
+    });
+  set_with_attrs(bout_output_data["Zxy_corners"], Zxy_corners, {
+      {"units", "m"},
+      {"conversion", 1}, // Already in SI units
+    });
+  set_with_attrs(bout_output_data["Zxy_lower_right_corners"], Zxy_lower_right_corners, {
+      {"units", "m"},
+      {"conversion", 1}, // Already in SI units
+    });
+  set_with_attrs(bout_output_data["Zxy_upper_right_corners"], Zxy_upper_right_corners, {
+      {"units", "m"},
+      {"conversion", 1}, // Already in SI units
+    });
+  set_with_attrs(bout_output_data["Zxy_upper_left_corners"], Zxy_upper_left_corners, {
+      {"units", "m"},
+      {"conversion", 1}, // Already in SI units
+    });
+  set_with_attrs(bout_output_data["y_boundary_guards"], 2, {
+      {"source", "vantage -- should be provided by BOUT++"}
+    });
+
+  // Add metadata with normalisation factors
+  set_with_attrs(bout_output_data["Tnorm"], Tnorm,
+                 {{"units", "eV"},
+                  {"conversion", 1}, // Already in SI units
+                  {"standard_name", "temperature normalisation"},
+                  {"long_name", "temperature normalisation"}});
+  set_with_attrs(bout_output_data["Nnorm"], Nnorm,
+                 {{"units", "m^-3"},
+                  {"conversion", 1},
+                  {"standard_name", "density normalisation"},
+                  {"long_name", "Number density normalisation"}});
+  set_with_attrs(bout_output_data["Bnorm"], Bnorm,
+                 {{"units", "T"},
+                  {"conversion", 1},
+                  {"standard_name", "magnetic field normalisation"},
+                  {"long_name", "Magnetic field normalisation"}});
+  set_with_attrs(bout_output_data["Cs0"], Cs0,
+                 {{"units", "m/s"},
+                  {"conversion", 1},
+                  {"standard_name", "velocity normalisation"},
+                  {"long_name", "Sound speed normalisation"}});
+  set_with_attrs(bout_output_data["Omega_ci"], Omega_ci,
+                 {{"units", "s^-1"},
+                  {"conversion", 1},
+                  {"standard_name", "frequency normalisation"},
+                  {"long_name", "Cyclotron frequency normalisation"}});
+  set_with_attrs(bout_output_data["rho_s0"], rho_s0,
+                 {{"units", "m"},
+                  {"conversion", 1},
+                  {"standard_name", "length normalisation"},
+                  {"long_name", "Gyro-radius length normalisation"}});
+
+  bout::OptionsIO::create(vantage_dump_filepath)->write(bout_output_data);
+  return bout_output_data;
+}
 
 // VANTAGE diagnostics manager implementation
 // ------------------------------------------------------------------------------
@@ -11,13 +154,18 @@ VantageDiagnosticsManager::VantageDiagnosticsManager(
     std::shared_ptr<PetscInterface::DMPlexInterface> neso_mesh,
     std::shared_ptr<PetscInterface::DMPlexProjectEvaluateDG> project_eval_dg0,
     std::shared_ptr<ParticleGroup> A_particle_group,
-    BoutReal N_w, BoutReal mass)
+    BoutReal N_w, BoutReal mass, Mesh* bout_mesh,
+    Options& units, std::string vantage_dump_filepath)
     : vtkhdf_filename(vtkhdf_filename),
     neso_mesh(neso_mesh),
     project_eval_dg0(project_eval_dg0),
     A_particle_group(A_particle_group),
     N_w(N_w),
-    mass(mass) {
+    mass(mass),
+    bout_mesh(bout_mesh),
+    units(units),
+    vantage_dump_filepath(vantage_dump_filepath) {
+      // initialise vectors for storing the moments on the kinetic mesh
       const size_t ndimv = this->ndimv;
       const std::size_t num_cells_owned_kinetic_mesh = static_cast<size_t>(neso_mesh->get_cell_count());
       density = std::vector<REAL>(num_cells_owned_kinetic_mesh);
@@ -26,6 +174,12 @@ VantageDiagnosticsManager::VantageDiagnosticsManager(
       uvector = std::vector<REAL>(ndimv*num_cells_owned_kinetic_mesh);
       pressure = std::vector<REAL>(num_cells_owned_kinetic_mesh);
       temperature = std::vector<REAL>(num_cells_owned_kinetic_mesh);
+      // initialise BOUT++ diagnostic on BOUT++ mesh
+      // Object for VANTAGE dump files
+      vantage_dump_writer =
+          bout::OptionsIO::create({{"file", vantage_dump_filepath}, {"append", true}});
+      bout_output_data =
+        initialise_plasma_grid_diagnostics(units, bout_mesh, vantage_dump_filepath);
     }
 
 // Functions for diagnostics on the kinetic mesh
@@ -155,4 +309,73 @@ void VantageDiagnosticsManager::write_kinetic_velocity_moment_diagnostics(){
   vtk_writer.write(dvtk0);
   vtk_writer.close();
 }
+
+
+void VantageDiagnosticsManager::write_bout_diagnostics(Field2D& neutral_density, Field2D& ion_density, Field2D& Siz,
+                        Field2D& Srec,
+                        // std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh,
+                        // Options& bout_output_data, bout::OptionsIO& vantage_dump_writer,
+                        BoutReal particle_time) {
+  // extract the units
+  const BoutReal Nnorm = get<BoutReal>(this->units["inv_meters_cubed"]);
+  // const BoutReal Tnorm = get<BoutReal>(units["eV"]);
+  const BoutReal Omega_ci = 1 / get<BoutReal>(this->units["seconds"]);
+  // const BoutReal rho_s0 = get<BoutReal>(units["meters"]);
+  // const BoutReal Bnorm = get<BoutReal>(units["Tesla"]);
+  // const BoutReal Cs0 = get<BoutReal>(units["meters"])
+  //            / get<BoutReal>(units["seconds"]);
+
+  set_with_attrs(this->bout_output_data["neutral_density"], neutral_density,
+                 {{"time_dimension", "t"}});
+
+  set_with_attrs(this->bout_output_data["ion_density"], ion_density, {{"time_dimension", "t"}});
+
+  set_with_attrs(this->bout_output_data["Nn"], neutral_density,
+                 {{"time_dimension", "t"},
+                  {"units", "m^-3"},
+                  {"conversion", Nnorm},
+                  {"standard_name", "Density"},
+                  {"long_name", "Kinetic neutral density"},
+                  {"species", "kinetic neutrals"},
+                  {"source", "vantage"}});
+
+  set_with_attrs(this->bout_output_data["Siz"], Siz,
+                 {{"time_dimension", "t"},
+                  {"units", "m^-3 s^-1"},
+                  {"conversion", Nnorm * Omega_ci},
+                  {"standard_name", "Density source"},
+                  {"long_name", "Ionisation density source"},
+                  {"species", "kinetic neutrals"},
+                  {"source", "vantage"}});
+
+  set_with_attrs(this->bout_output_data["Srec"], Srec,
+                 {{"time_dimension", "t"},
+                  {"units", "m^-3 s^-1"},
+                  {"conversion", Nnorm * Omega_ci},
+                  {"standard_name", "Density source"},
+                  {"long_name", "Recombination density source"},
+                  {"species", "kinetic neutrals"},
+                  {"source", "vantage"}});
+
+  // Integrals
+  Field2D total_density = ion_density + neutral_density;
+  set_with_attrs(this->bout_output_data["total_mass"],
+                 calculate_total_mass(total_density, this->neso_mesh),
+                 {{"time_dimension", "t"}});
+
+  set_with_attrs(this->bout_output_data["total_neutral_mass"],
+                 calculate_total_mass(neutral_density, this->neso_mesh),
+                 {{"time_dimension", "t"}});
+
+  set_with_attrs(this->bout_output_data["total_ion_mass"],
+                 calculate_total_mass(ion_density, this->neso_mesh), {{"time_dimension", "t"}});
+
+  set_with_attrs(this->bout_output_data["t_array"], particle_time, {{"time_dimension", "t"}});
+
+  // Append data to file
+  this->vantage_dump_writer->write(this->bout_output_data);
+  // Ensure buffer is written to disk to avoid crash data loss
+  this->vantage_dump_writer->flush();
+}
+
 

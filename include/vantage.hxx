@@ -113,10 +113,6 @@ private:
   int nsteps;
   int num_cells_owned; // Number of VANTAGE cells owned per rank
 
-  Options bout_output_data; // Options object to hold output data for VANTAGE diagnostics
-  std::unique_ptr<bout::OptionsIO>
-      vantage_dump_writer; // OptionsIO object to write VANTAGE diagnostics
-
   int mpi_rank;    // Current rank ID
   Mesh* bout_mesh; // Pointer to the BOUT++ mesh object
   Field2D ion_density, neutral_density, total_density;
