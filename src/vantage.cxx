@@ -1231,6 +1231,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
         project_eval_dg0, A_particle_group, neso_mesh, dof_kinetic_mesh_scalar, N_w);
   // write velocity moment diagnostics
   diagnostics_manager = std::make_unique<VantageDiagnosticsManager>(make_output_path("BOUT.dmp.vantage.particle.moments.vtkhdf", alloptions), neso_mesh, project_eval_dg0, A_particle_group, N_w, AA);
+  diagnostics_manager->update_kinetic_velocity_moments();
   diagnostics_manager->write_kinetic_velocity_moment_diagnostics();
 
   // Calculate neutral density and sources for initial condition
