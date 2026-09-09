@@ -1,8 +1,11 @@
 #include "bout/bout.hxx"
 #include "bout/bout_types.hxx"
+#include <bout/assert.hxx>
+#include <bout/field2d.hxx>
 #include "../include/component.hxx"
 #include <cstddef>
 #include <string>
+#include <vector>
 #include "../include/vantage_diagnostics.hxx"
 
 using namespace NESO::Particles;
@@ -151,14 +154,16 @@ Options initialise_plasma_grid_diagnostics(Options& units, Mesh* bout_mesh,
 // ------------------------------------------------------------------------------
 VantageDiagnosticsManager::VantageDiagnosticsManager(
     std::string vtkhdf_filename,
-    std::shared_ptr<PetscInterface::DMPlexInterface> neso_mesh,
-    std::shared_ptr<PetscInterface::DMPlexProjectEvaluateDG> project_eval_dg0,
-    std::shared_ptr<ParticleGroup> A_particle_group,
+    std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh,
+    std::shared_ptr<PetscInterface::DMPlexProjectEvaluateDG>& project_eval_dg0,
+    std::shared_ptr<PetscInterface::DMPlexMeshCouplerDG0>& mesh_coupler,
+    std::shared_ptr<ParticleGroup>& A_particle_group,
     BoutReal N_w, BoutReal mass, Mesh* bout_mesh,
     Options& units, std::string vantage_dump_filepath)
     : vtkhdf_filename(vtkhdf_filename),
     neso_mesh(neso_mesh),
     project_eval_dg0(project_eval_dg0),
+    mesh_coupler(mesh_coupler),
     A_particle_group(A_particle_group),
     N_w(N_w),
     mass(mass),
@@ -180,6 +185,19 @@ VantageDiagnosticsManager::VantageDiagnosticsManager(
           bout::OptionsIO::create({{"file", vantage_dump_filepath}, {"append", true}});
       bout_output_data =
         initialise_plasma_grid_diagnostics(units, bout_mesh, vantage_dump_filepath);
+      // initialise plasma grid variables
+      density_plasma_grid = Field2D(0.0, bout_mesh);
+      energy_plasma_grid = Field2D(0.0, bout_mesh);
+      pressure_plasma_grid = Field2D(0.0, bout_mesh);
+      temperature_plasma_grid = Field2D(0.0, bout_mesh);
+      // local number of BOUT++ x cells, excluding guards
+      const int Nx = bout_mesh->xend - bout_mesh->xstart + 1;
+      // local number of BOUT++ y cells, excluding guards
+      const int Ny = bout_mesh->yend - bout_mesh->ystart + 1;
+      // Get the number of cells in the bout (plasma) mesh owned on this process, excluding guard cells
+      const size_t num_cells_owned_bout_mesh = static_cast<size_t>(Nx*Ny);
+      // a vector used to receive scalar BOUT++ data from the kinetic mesh
+      dof_bout_mesh_scalar = std::vector<REAL>(num_cells_owned_bout_mesh);
     }
 
 // Functions for diagnostics on the kinetic mesh
@@ -310,8 +328,48 @@ void VantageDiagnosticsManager::write_kinetic_velocity_moment_diagnostics(){
   vtk_writer.close();
 }
 
+void VantageDiagnosticsManager::transfer_moments_to_plasma_grid(){
+  Mesh* bout_mesh = density_plasma_grid.getMesh();
+  // for all scalar diagnostic variables, reference the
+  // data from the kinetic mesh to the BOUT++ mesh
+  // in a vector of vectors, so that we can use a
+  // single buffer array to transfer from
+  // kinetic dofs to plasma grid dofs
+  std::vector<std::vector<REAL>*> scalar_kinetic_mesh_data{
+                              &this->density,
+                              &this->energy,
+                              &this->pressure,
+                              &this->temperature};
+  std::vector<Field2D*> scalar_plasma_grid_data{
+                              &this->density_plasma_grid,
+                              &this->energy_plasma_grid,
+                              &this->pressure_plasma_grid,
+                              &this->temperature_plasma_grid};
+  for (size_t ivar=0; ivar < 4; ivar++) {
+    if (mesh_coupler != nullptr){
+      ASSERT1(scalar_kinetic_mesh_data.at(ivar)->size() > dof_bout_mesh_scalar.size())
+      // we need to port data from the kinetic mesh dofs to the dofs expected by BOUT++ in the loop below
+      mesh_coupler->backward_transfer(*scalar_kinetic_mesh_data.at(ivar), 1, dof_bout_mesh_scalar);
+    } else {
+      ASSERT1(scalar_kinetic_mesh_data.at(ivar)->size() == dof_bout_mesh_scalar.size())
+      dof_bout_mesh_scalar = *scalar_kinetic_mesh_data.at(ivar);
+    }
+    std::size_t ic = 0;
+    for (PetscInt ix = bout_mesh->xstart; ix <= bout_mesh->xend; ix++) {
+      for (PetscInt iy = bout_mesh->ystart; iy <= bout_mesh->yend; iy++) {
+        (*scalar_plasma_grid_data.at(ivar))(ix, iy) = dof_bout_mesh_scalar.at(ic);
+        ic++;
+      }
+    }
+    // this fills internal guards
+    bout_mesh->communicate((*scalar_plasma_grid_data.at(ivar)));
+    // apply boundary conditions to fill external guards
+    // (*scalar_plasma_grid_data.at(ivar)).applyBoundary();
+    // extrapolate -> Neumann
+  }
+}
 
-void VantageDiagnosticsManager::write_bout_diagnostics(Field2D& neutral_density, Field2D& ion_density, Field2D& Siz,
+void VantageDiagnosticsManager::write_bout_diagnostics(Field2D& ion_density, Field2D& Siz,
                         Field2D& Srec,
                         // std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh,
                         // Options& bout_output_data, bout::OptionsIO& vantage_dump_writer,
@@ -324,7 +382,7 @@ void VantageDiagnosticsManager::write_bout_diagnostics(Field2D& neutral_density,
   // const BoutReal Bnorm = get<BoutReal>(units["Tesla"]);
   // const BoutReal Cs0 = get<BoutReal>(units["meters"])
   //            / get<BoutReal>(units["seconds"]);
-
+  Field2D neutral_density = this->density_plasma_grid;
   set_with_attrs(this->bout_output_data["neutral_density"], neutral_density,
                  {{"time_dimension", "t"}});
 

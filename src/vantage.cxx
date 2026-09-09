@@ -68,37 +68,6 @@ std::string make_output_path(const std::string& filename, Options& alloptions) {
   return fmt::format("{}/{}", output_dir, filename);
 }
 
-void calculate_neutral_density_in_place(
-    Field2D& density, std::shared_ptr<PetscInterface::DMPlexProjectEvaluateDG>& dg0,
-    std::shared_ptr<PetscInterface::DMPlexMeshCouplerDG0>& mesh_coupler,
-    std::shared_ptr<ParticleGroup>& A_particle_group,
-    std::vector<double>& dof_kinetic_mesh_scalar,
-    std::vector<double>& dof_bout_mesh_scalar,
-    BoutReal N_w) {
-  Mesh* bout_mesh = density.getMesh();
-  // get a density by projecting the particle property WEIGHT to the bout_mesh
-  dg0->project(A_particle_group, Sym<REAL>("WEIGHT"));
-  if (mesh_coupler != nullptr){
-    dg0->get_dofs(1, dof_kinetic_mesh_scalar);
-    // we need to port data from the kinetic mesh dofs to the dofs expected by BOUT++ in the loop below
-    mesh_coupler->backward_transfer(dof_kinetic_mesh_scalar, 1, dof_bout_mesh_scalar);
-  } else {
-    dg0->get_dofs(1, dof_bout_mesh_scalar);
-  }
-  std::size_t ic = 0;
-  for (PetscInt ix = bout_mesh->xstart; ix <= bout_mesh->xend; ix++) {
-    for (PetscInt iy = bout_mesh->ystart; iy <= bout_mesh->yend; iy++) {
-      density(ix, iy) = dof_bout_mesh_scalar.at(ic) * N_w;
-      ic++;
-    }
-  }
-  // this fills internal guards
-  bout_mesh->communicate(density);
-  // apply boundary conditions to fill external guards
-  // density.applyBoundary();
-  // extrapolate -> Neumann
-}
-
 void set_initial_particle_weights(
     BoutReal& initial_neutral_density,
     std::shared_ptr<PetscInterface::DMPlexProjectEvaluateDG>& dg0,
@@ -1021,14 +990,11 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
   set_initial_particle_weights(initial_neutral_density,
         project_eval_dg0, A_particle_group, neso_mesh, dof_kinetic_mesh_scalar, N_w);
   // write velocity moment diagnostics
-  diagnostics_manager = std::make_unique<VantageDiagnosticsManager>(make_output_path("BOUT.dmp.vantage.particle.moments.vtkhdf", alloptions), neso_mesh, project_eval_dg0, A_particle_group, N_w, AA, bout_mesh, units, vantage_dump_filepath);
+  diagnostics_manager = std::make_unique<VantageDiagnosticsManager>(make_output_path("BOUT.dmp.vantage.particle.moments.vtkhdf", alloptions), neso_mesh, project_eval_dg0, mesh_coupler_dg0, A_particle_group, N_w, AA, bout_mesh, units, vantage_dump_filepath);
   diagnostics_manager->update_kinetic_velocity_moments();
   diagnostics_manager->write_kinetic_velocity_moment_diagnostics();
+  diagnostics_manager->transfer_moments_to_plasma_grid();
 
-  // Calculate neutral density and sources for initial condition
-    calculate_neutral_density_in_place(neutral_density,
-      project_eval_dg0, mesh_coupler_dg0,
-      A_particle_group, dof_kinetic_mesh_scalar, dof_bout_mesh_scalar, N_w);
   this->source_manager->update_all_sources(dt);
   // Object for particle_trajectories.h5part file.
   // Close it straight away to ensure that it's closed in event of a crash.
@@ -1038,14 +1004,14 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
   h5part->close();
 
   // mass for conservation check
-  total_density = neutral_density + ion_density;
+  total_density = diagnostics_manager->density_plasma_grid + ion_density;
   total_mass_initial = calculate_total_mass(total_density, neso_mesh);
 
   // Initialise particle time
   particle_time = 0.0;
   Field2D Srec = Field2D{0.0, bout_mesh};
   Field2D Siz = Field2D{0.0, bout_mesh};
-  diagnostics_manager->write_bout_diagnostics(neutral_density, ion_density, Siz, Srec, particle_time);
+  diagnostics_manager->write_bout_diagnostics(ion_density, Siz, Srec, particle_time);
 
   // Register VANTAGE timestep scheduler.
   // https://bout-dev.readthedocs.io/en/latest/user_docs/time_integration.html#monitoring-the-simulation-output
@@ -1148,8 +1114,10 @@ int Vantage::advance_vantage(BoutReal UNUSED(time)) {
     reaction_controller->apply(A_particle_group, dt, ControllerMode::standard_mode);
     recombination_controller->apply(marker_group, dt, A_particle_group);
 
-    calculate_neutral_density_in_place(neutral_density, project_eval_dg0, mesh_coupler_dg0, A_particle_group,
-                                         dof_kinetic_mesh_scalar, dof_bout_mesh_scalar, N_w);
+    diagnostics_manager->update_kinetic_velocity_moments();
+    diagnostics_manager->write_kinetic_velocity_moment_diagnostics();
+    diagnostics_manager->transfer_moments_to_plasma_grid();
+
     this->source_manager->update_all_sources(dt);
     Field2D Siz = this->source_manager->get_data("Siz");
     Field2D Srec = this->source_manager->get_data("Srec");
@@ -1159,7 +1127,7 @@ int Vantage::advance_vantage(BoutReal UNUSED(time)) {
     ion_density += (Siz + Srec) * dt;
 
     // Write to VANTAGE dump files
-    diagnostics_manager->write_bout_diagnostics(neutral_density, ion_density, Siz, Srec, particle_time);
+    diagnostics_manager->write_bout_diagnostics(ion_density, Siz, Srec, particle_time);
     // Write to particle_trajectories file
     h5part->write();
   }
@@ -1169,7 +1137,7 @@ int Vantage::advance_vantage(BoutReal UNUSED(time)) {
   h5part->close();
 
   // mass for conservation check
-  total_density = neutral_density + ion_density;
+  total_density = diagnostics_manager->density_plasma_grid + ion_density;
   BoutReal total_mass_final = calculate_total_mass(total_density, neso_mesh);
   if (test_mass_conservation) {
     check_mass_conservation(total_mass_final, total_mass_initial);

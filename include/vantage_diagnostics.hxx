@@ -14,9 +14,10 @@ BoutReal calculate_total_mass(Field2D& density,
 class VantageDiagnosticsManager {
 public:
   VantageDiagnosticsManager(std::string vtkhdf_filename,
-    std::shared_ptr<PetscInterface::DMPlexInterface> neso_mesh,
-    std::shared_ptr<PetscInterface::DMPlexProjectEvaluateDG> project_eval_dg0,
-    std::shared_ptr<ParticleGroup> A_particle_group,
+    std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh,
+    std::shared_ptr<PetscInterface::DMPlexProjectEvaluateDG>& project_eval_dg0,
+    std::shared_ptr<PetscInterface::DMPlexMeshCouplerDG0>& mesh_coupler,
+    std::shared_ptr<ParticleGroup>& A_particle_group,
     BoutReal N_w, BoutReal mass,
     Mesh* bout_mesh, Options& units,
     std::string vantage_dump_filepath);
@@ -26,18 +27,23 @@ public:
   void update_kinetic_velocity_moments();
   // write kinetic diagnostics to a vtkhdf file
   void write_kinetic_velocity_moment_diagnostics();
+  // transfer kinetic moments to BOUT++ grid
+  void transfer_moments_to_plasma_grid();
   // write BOUT++ style diagnostics on the BOUT++ grid
   void write_bout_diagnostics(
-          Field2D& neutral_density,
           Field2D& ion_density,
           Field2D& Siz,
           Field2D& Srec,
           BoutReal particle_time);
+  // public Field2D for mass conservation test
+  Field2D density_plasma_grid;
+
 private:
   // internal variables needed for diagnostics
   std::string vtkhdf_filename;
   std::shared_ptr<PetscInterface::DMPlexInterface> neso_mesh;
   std::shared_ptr<PetscInterface::DMPlexProjectEvaluateDG> project_eval_dg0;
+  std::shared_ptr<PetscInterface::DMPlexMeshCouplerDG0> mesh_coupler;
   std::shared_ptr<ParticleGroup> A_particle_group;
   BoutReal N_w;
   BoutReal mass;
@@ -60,4 +66,15 @@ private:
   std::vector<REAL> uvector;
   std::vector<REAL> pressure;
   std::vector<REAL> temperature;
+
+  // variable used to transfer dofs from kinetic
+  // to BOUT++ meshes
+  std::vector<REAL> dof_bout_mesh_scalar;
+  // variables used to store the moments of the
+  // neutral distribution function projected on
+  // to the BOUT++ grid
+  Field2D energy_plasma_grid;
+  Field2D pressure_plasma_grid;
+  Field2D temperature_plasma_grid;
+  // n.b. only treat scalar variables for now
 };
