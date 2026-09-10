@@ -55,8 +55,11 @@ public:
   // Call update_source on all sources
   void update_all_sources(double dt);
 
-  // Return data for a given Hermes-3 source name
-  Field2D get_data(const std::string& hermes_source_name);
+  // Return data for a given Hermes-3 source name on the plasma grid
+  Field2D get_plasma_grid_data(const std::string& hermes_source_name);
+
+  // Return data for a given Hermes-3 source name on the kinetic mesh
+  std::vector<REAL> get_kinetic_mesh_data(const std::string& hermes_source_name);
 
 private:
   std::map<std::string, VantageSource> sources;

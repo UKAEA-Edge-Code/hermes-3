@@ -1031,8 +1031,8 @@ int Vantage::advance_vantage(BoutReal UNUSED(time)) {
     diagnostics_manager->transfer_moments_to_plasma_grid();
 
     this->source_manager->update_all_sources(dt);
-    Field2D Siz = this->source_manager->get_data("Siz");
-    Field2D Srec = this->source_manager->get_data("Srec");
+    Field2D Siz = this->source_manager->get_plasma_grid_data("Siz");
+    Field2D Srec = this->source_manager->get_plasma_grid_data("Srec");
 
     // "Solve" density
     // Sources are in normalised m^-3 s^-1, so need to multiply by dt

@@ -48,9 +48,14 @@ void VantageSourceManager::add_source(
   this->sources[hermes_source_name] = source;
 }
 
-// Return source data
-Field2D VantageSourceManager::get_data(const std::string& hermes_source_name) {
+// Return source data on plasma grid
+Field2D VantageSourceManager::get_plasma_grid_data(const std::string& hermes_source_name) {
   return this->sources[hermes_source_name].source_data_plasma_grid;
+}
+
+// Return source data on kinetic mesh
+std::vector<REAL> VantageSourceManager::get_kinetic_mesh_data(const std::string& hermes_source_name) {
+  return this->sources[hermes_source_name].source_data_kinetic_mesh;
 }
 
 // Update the source from VANTAGE and reset the VANTAGE data/accumulator
