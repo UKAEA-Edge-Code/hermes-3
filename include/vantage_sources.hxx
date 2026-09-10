@@ -3,6 +3,7 @@
 #include <neso_particles.hpp>
 #include <reactions_lib/common_transformations.hpp>
 #include <reactions_lib/transformation_wrapper.hpp>
+#include <vector>
 
 using namespace NESO::Particles;
 using namespace VANTAGE::Reactions;
@@ -23,6 +24,7 @@ struct VantageSource {
   std::shared_ptr<ParticleGroup> particle_group;
   std::shared_ptr<TransformationStrategy> zeroer;
   Field2D source_data_plasma_grid;
+  std::vector<REAL> source_data_kinetic_mesh;
 };
 
 /// @brief  Class to manage reaction channel sources from VANTAGE.

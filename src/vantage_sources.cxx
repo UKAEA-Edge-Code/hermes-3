@@ -1,10 +1,12 @@
 #include "bout/bout.hxx"
 #include "bout/bout_types.hxx"
+#include <bout/assert.hxx>
 #include "../include/component.hxx"
 #include <neso_particles.hpp>
 #include "../include/vantage_sources.hxx"
 #include <reactions_lib/common_transformations.hpp>
 #include <reactions_lib/transformation_wrapper.hpp>
+#include <vector>
 
 
 using namespace NESO::Particles;
@@ -34,10 +36,14 @@ void VantageSourceManager::add_source(
 
   Field2D source_data_plasma_grid{bout_mesh};
   source_data_plasma_grid = 0.0;
+  const int num_cells_owned_kinetic_mesh = neso_mesh->get_cell_count();
+  std::vector<REAL> source_data_kinetic_mesh(static_cast<size_t>(num_cells_owned_kinetic_mesh));
 
   VantageSource source{
-      hermes_source_name, vantage_source_name, accumulator, particle_group, zeroer,
-      source_data_plasma_grid};
+      hermes_source_name, vantage_source_name,
+      accumulator, particle_group, zeroer,
+      source_data_plasma_grid,
+      source_data_kinetic_mesh};
 
   this->sources[hermes_source_name] = source;
 }
@@ -58,16 +64,20 @@ void VantageSourceManager::update_source(const std::string& hermes_source_name,
       source.accumulator->get_cell_data(source.vantage_source_name);
   size_t naccumulated = accumulated_1d.size();
   if (mesh_coupler_dg0 != nullptr){
+    ASSERT1(source.source_data_kinetic_mesh.size() > dof_bout_mesh_scalar.size())
     // copy accumulated data into the relevant kinetic dof variable
     for (size_t ic = 0; ic < naccumulated; ic++){
       dof_kinetic_mesh_scalar.at(ic) = accumulated_1d[ic]->at(0, 0);
+      source.source_data_kinetic_mesh.at(ic) = dof_kinetic_mesh_scalar.at(ic);
     }
     // use the transform from kinetic to bout mesh
     mesh_coupler_dg0->backward_transfer(dof_kinetic_mesh_scalar, 1, dof_bout_mesh_scalar);
   } else {
+    ASSERT1(source.source_data_kinetic_mesh.size() == dof_bout_mesh_scalar.size())
     // copy accumulated data directly into the relevant bout dof variable
     for (size_t ic = 0; ic < naccumulated; ic++){
       dof_bout_mesh_scalar.at(ic) = accumulated_1d[ic]->at(0, 0);
+      source.source_data_kinetic_mesh.at(ic) = dof_bout_mesh_scalar.at(ic);
     }
   }
   std::size_t ic = 0;
