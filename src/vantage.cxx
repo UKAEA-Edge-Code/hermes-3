@@ -258,9 +258,9 @@ void check_cell_centres(Options& alloptions,
   }
 }
 
-void check_mass_conservation(BoutReal total_mass_final, BoutReal total_mass_initial) {
-  BoutReal rtol = 1.0e-13;
-  BoutReal mass_conserved =
+void check_mass_conservation(REAL total_mass_final, REAL total_mass_initial) {
+  REAL rtol = 1.0e-13;
+  REAL mass_conserved =
       (abs(total_mass_final - total_mass_initial) < rtol * total_mass_initial);
   // exit if we fail to find conservation
   NESOASSERT(mass_conserved,
@@ -456,8 +456,6 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
                                 .doc("Number of RNG samples to prepare per-particle")
                                 .withDefault(40);
 
-    ion_density = Field2D(background_ion_density, bout_mesh);
-    neutral_density = Field2D(0.0, bout_mesh);
     // Create a mesh interface from the DM
     neso_mesh = std::make_shared<PetscInterface::DMPlexInterface>(dm, 0, BoutComm::get());
     // Create a mapper for mapping particles into cells.
@@ -611,6 +609,9 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
     // between the kinetic mesh degree-of-freedom vector and particles
     project_eval_dg0 = std::make_shared<PetscInterface::DMPlexProjectEvaluateDG>(
       neso_mesh, sycl_target, "DG", 0);
+    // vectors for storing an ion density on the kinetic mesh
+    ion_density = std::vector<REAL>(static_cast<size_t>(num_cells_owned_kinetic_mesh), background_ion_density);
+    total_density = std::vector<REAL>(static_cast<size_t>(num_cells_owned_kinetic_mesh), 0.0);
     // RNG kernel
     // Used for sampling from velocity distribution for REC/CX
     // ------------------------------------------------------------------------------
@@ -902,9 +903,9 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
   set_initial_particle_weights(initial_neutral_density,
         project_eval_dg0, A_particle_group, neso_mesh, dof_kinetic_mesh_scalar, N_w);
   // write velocity moment diagnostics
-  diagnostics_manager = std::make_unique<VantageDiagnosticsManager>(make_output_path("BOUT.dmp.vantage.particle.moments.vtkhdf", alloptions), neso_mesh, project_eval_dg0, mesh_coupler_dg0, A_particle_group, N_w, AA, bout_mesh, units, vantage_dump_filepath);
+  diagnostics_manager = std::make_unique<VantageDiagnosticsManager>(make_output_path("BOUT.dmp.vantage.particle.moments", alloptions), neso_mesh, project_eval_dg0, mesh_coupler_dg0, A_particle_group, N_w, AA, bout_mesh, units, vantage_dump_filepath);
   diagnostics_manager->update_kinetic_velocity_moments();
-  diagnostics_manager->write_kinetic_velocity_moment_diagnostics();
+  diagnostics_manager->write_kinetic_velocity_moment_diagnostics(0, ion_density);
   diagnostics_manager->transfer_moments_to_plasma_grid();
 
   this->source_manager->update_all_sources(dt);
@@ -916,7 +917,10 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
   h5part->close();
 
   // mass for conservation check
-  total_density = diagnostics_manager->density_plasma_grid + ion_density;
+  neutral_density = diagnostics_manager->get_density_kinetic_mesh();
+  for (size_t ic=0; ic< static_cast<size_t>(neso_mesh->get_cell_count());ic++){
+    total_density.at(ic) = neutral_density.at(ic) + ion_density.at(ic);
+  }
   total_mass_initial = calculate_total_mass(total_density, neso_mesh);
 
   // Initialise particle time
@@ -1026,18 +1030,21 @@ int Vantage::advance_vantage(BoutReal UNUSED(time)) {
     reaction_controller->apply(A_particle_group, dt, ControllerMode::standard_mode);
     recombination_controller->apply(marker_group, dt, A_particle_group);
 
-    diagnostics_manager->update_kinetic_velocity_moments();
-    diagnostics_manager->write_kinetic_velocity_moment_diagnostics();
-    diagnostics_manager->transfer_moments_to_plasma_grid();
-
     this->source_manager->update_all_sources(dt);
     Field2D Siz = this->source_manager->get_plasma_grid_data("Siz");
     Field2D Srec = this->source_manager->get_plasma_grid_data("Srec");
+    const std::vector<REAL> Siz_kmsh = this->source_manager->get_kinetic_mesh_data("Siz");
+    const std::vector<REAL> Srec_kmsh = this->source_manager->get_kinetic_mesh_data("Srec");
 
     // "Solve" density
     // Sources are in normalised m^-3 s^-1, so need to multiply by dt
-    ion_density += (Siz + Srec) * dt;
+    for (size_t ic=0; ic < static_cast<size_t>(neso_mesh->get_cell_count());ic++){
+      ion_density.at(ic) += (Siz_kmsh.at(ic) + Srec_kmsh.at(ic)) * dt;
+    }
 
+    diagnostics_manager->update_kinetic_velocity_moments();
+    diagnostics_manager->write_kinetic_velocity_moment_diagnostics(stepx+1, ion_density);
+    diagnostics_manager->transfer_moments_to_plasma_grid();
     // Write to VANTAGE dump files
     diagnostics_manager->write_bout_diagnostics(ion_density, Siz, Srec, particle_time);
     // Write to particle_trajectories file
@@ -1049,8 +1056,11 @@ int Vantage::advance_vantage(BoutReal UNUSED(time)) {
   h5part->close();
 
   // mass for conservation check
-  total_density = diagnostics_manager->density_plasma_grid + ion_density;
-  BoutReal total_mass_final = calculate_total_mass(total_density, neso_mesh);
+  neutral_density = diagnostics_manager->get_density_kinetic_mesh();
+  for (size_t ic=0; ic < static_cast<size_t>(neso_mesh->get_cell_count());ic++){
+    total_density.at(ic) = neutral_density.at(ic) + ion_density.at(ic);
+  }
+  REAL total_mass_final = calculate_total_mass(total_density, neso_mesh);
   if (test_mass_conservation) {
     check_mass_conservation(total_mass_final, total_mass_initial);
   }

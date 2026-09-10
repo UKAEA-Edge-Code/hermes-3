@@ -58,7 +58,8 @@ private:
 
   int mpi_rank;    // Current rank ID
   Mesh* bout_mesh; // Pointer to the BOUT++ mesh object
-  Field2D ion_density, neutral_density, total_density;
+  // Diagnostic variables on the kinetic mesh, for testing
+  std::vector<REAL> ion_density, neutral_density, total_density;
   BoutReal total_mass_initial, total_mass;
   std::string dmplex_filepath, vantage_dump_filepath,
       particle_data_filepath; // Path for output files

@@ -6,7 +6,7 @@ from boututils.run_wrapper import shell, launch_safe
 
 import h5py
 import numpy as np
-import netCDF4 as nc
+import h5py
 
 verbose = False
 
@@ -15,6 +15,22 @@ shell("ln -s ../../../hermes-3 hermes-3")
 # make the run directory
 shell("mkdir particle-push-slab-test")
 
+def integrate_cellvalue(cellvalues, volumes):
+    integrand = cellvalues*volumes
+    integral = sum(integrand)
+    return integral
+
+def get_masses(vtkhdf_file_path):
+    # assume that a single .vtkhdf file corresponds to a single time slice
+    with h5py.File(vtkhdf_file_path,'r') as dataset:
+            density_cellvalues = np.copy(dataset[f"/VTKHDF/CellData/density"][:])
+            ion_density_cellvalues = np.copy(dataset[f"/VTKHDF/CellData/ion_density"][:])
+            volumes = np.copy(dataset[f"/VTKHDF/CellData/cellvolume"][:])
+            # get the masses from this time
+            total_neutral_mass = integrate_cellvalue(density_cellvalues,volumes)
+            total_ion_mass = integrate_cellvalue(ion_density_cellvalues,volumes)
+            total_mass = total_ion_mass + total_neutral_mass
+    return total_neutral_mass, total_ion_mass, total_mass
 
 # A function to define the BOUT.inp file contents
 def particle_push_input(
@@ -185,17 +201,16 @@ def test_particle_push(
         )
 
     # check the mass diagnostic
-    ncfile_path = r"particle-push-slab-test/BOUT.dmp.vantage.0.nc"
+    vtkhdf_file_path_time_0 = r"particle-push-slab-test/BOUT.dmp.vantage.particle.moments.istep.0.vtkhdf"
+    vtkhdf_file_path_time_end = rf"particle-push-slab-test/BOUT.dmp.vantage.particle.moments.istep.{nsteps}.vtkhdf"
 
-    with nc.Dataset(ncfile_path, mode="r") as ncdataset:
-        total_mass = np.copy(ncdataset.variables["total_mass"][:])
-        total_ion_mass = np.copy(ncdataset.variables["total_ion_mass"][:])
-        total_neutral_mass = np.copy(ncdataset.variables["total_neutral_mass"][:])
+    total_neutral_mass_0, total_ion_mass_0, total_mass_0 = get_masses(vtkhdf_file_path_time_0)
+    total_neutral_mass_end, total_ion_mass_end, total_mass_end = get_masses(vtkhdf_file_path_time_end)
 
     # total mass should always be conserved
     np.testing.assert_allclose(
-        total_mass[0],
-        total_mass[-1],
+        total_mass_0,
+        total_mass_end,
         atol=1.0e-11,
         err_msg=f"Total mass not conserved in {mode} test",
     )
@@ -203,26 +218,26 @@ def test_particle_push(
     # if we ionise particles there should be mass exchange between neutral and ion
     if mode == "ionisation":
         np.testing.assert_array_less(
-            total_ion_mass[0],
-            total_ion_mass[-1],
+            total_ion_mass_0,
+            total_ion_mass_end,
             err_msg="Ion mass did not increase in ionisation test",
         )
         np.testing.assert_array_less(
-            total_neutral_mass[-1],
-            total_neutral_mass[0],
+            total_neutral_mass_end,
+            total_neutral_mass_0,
             err_msg="Neutral mass did not decrease in ionisation test",
         )
 
     # Recombination is the opposite
     if mode == "recombination":
         np.testing.assert_array_less(
-            total_ion_mass[-1],
-            total_ion_mass[0],
+            total_ion_mass_end,
+            total_ion_mass_0,
             err_msg="Ion mass did not decrease in recombination test",
         )
         np.testing.assert_array_less(
-            total_neutral_mass[0],
-            total_neutral_mass[-1],
+            total_neutral_mass_0,
+            total_neutral_mass_end,
             err_msg="Neutral mass did not increase in recombination test",
         )
 

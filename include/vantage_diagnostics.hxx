@@ -7,7 +7,7 @@
 
 using namespace NESO::Particles;
 
-BoutReal calculate_total_mass(Field2D& density,
+REAL calculate_total_mass(std::vector<REAL>& density,
           std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh);
 
 /// @brief  Class to manage diagnostics from VANTAGE.
@@ -26,17 +26,17 @@ public:
   // store in private variables
   void update_kinetic_velocity_moments();
   // write kinetic diagnostics to a vtkhdf file
-  void write_kinetic_velocity_moment_diagnostics();
+  void write_kinetic_velocity_moment_diagnostics(int istep, std::vector<REAL>& ion_density);
   // transfer kinetic moments to BOUT++ grid
   void transfer_moments_to_plasma_grid();
   // write BOUT++ style diagnostics on the BOUT++ grid
   void write_bout_diagnostics(
-          Field2D& ion_density,
+          std::vector<REAL>& ion_density_kinetic_mesh,
           Field2D& Siz,
           Field2D& Srec,
           BoutReal particle_time);
-  // public Field2D for mass conservation test
-  Field2D density_plasma_grid;
+  std::vector<REAL> get_density_kinetic_mesh();
+  Field2D transfer_scalar_to_plasma_grid(std::vector<REAL>& scalar_field);
 
 private:
   // internal variables needed for diagnostics
@@ -73,6 +73,7 @@ private:
   // variables used to store the moments of the
   // neutral distribution function projected on
   // to the BOUT++ grid
+  Field2D density_plasma_grid;
   Field2D energy_plasma_grid;
   Field2D pressure_plasma_grid;
   Field2D temperature_plasma_grid;

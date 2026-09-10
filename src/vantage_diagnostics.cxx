@@ -12,18 +12,13 @@ using namespace NESO::Particles;
 
 // helper functions for diagnostics
 
-BoutReal
-calculate_total_mass(Field2D& density,
+REAL calculate_total_mass(std::vector<REAL>& density,
                      std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh) {
-  BoutReal local_mass = 0.0;
-  BoutReal total_mass = 0.0;
-  Mesh* bout_mesh = density.getMesh();
-  PetscInt ic = 0;
-  for (PetscInt ix = bout_mesh->xstart; ix <= bout_mesh->xend; ix++) {
-    for (PetscInt iy = bout_mesh->ystart; iy <= bout_mesh->yend; iy++) {
-      local_mass += density(ix, iy) * neso_mesh->dmh->get_cell_volume(ic);
-      ic++;
-    }
+  ASSERT1(density.size() == static_cast<size_t>(neso_mesh->get_cell_count()));
+  REAL local_mass = 0.0;
+  REAL total_mass = 0.0;
+  for (size_t ic = 0;ic < static_cast<size_t>(neso_mesh->get_cell_count()); ic++) {
+    local_mass += density.at(ic) * neso_mesh->dmh->get_cell_volume(static_cast<int>(ic));
   }
   MPICHK(
       MPI_Allreduce(&local_mass, &total_mass, 1, MPI_DOUBLE, MPI_SUM, BoutComm::get()));
@@ -285,9 +280,11 @@ void VantageDiagnosticsManager::update_kinetic_velocity_moments(){
 
 // Function to save a VTKHDF file, writing the private member
 // velocity moments and the mesh in VTK compatible format
-void VantageDiagnosticsManager::write_kinetic_velocity_moment_diagnostics(){
+// we pass in the ion_density here to enable testing of mass conservation
+void VantageDiagnosticsManager::write_kinetic_velocity_moment_diagnostics(int istep,
+        std::vector<REAL>& ion_density){
   // get the necessary inputs from the class
-  std::string vtkhdf_filename = this->vtkhdf_filename;
+  const std::string vtkhdf_filename = fmt::format("{}.istep.{}.vtkhdf",this->vtkhdf_filename,istep);
   std::shared_ptr<PetscInterface::DMPlexInterface> neso_mesh = this->neso_mesh;
 
   // write the data
@@ -310,6 +307,10 @@ void VantageDiagnosticsManager::write_kinetic_velocity_moment_diagnostics(){
     cell_data.at(ic).insert({"energy", energy.at(ic)});
     cell_data.at(ic).insert({"pressure", pressure.at(ic)});
     cell_data.at(ic).insert({"temperature", temperature.at(ic)});
+    // write cell volume for convenience in later post-processing analysis
+    cell_data.at(ic).insert({"cellvolume", neso_mesh->dmh->get_cell_volume(static_cast<int>(ic))});
+    // write the "ion density" for testing purposes only
+    cell_data.at(ic).insert({"ion_density", ion_density.at(ic)});
   }
   // vector variables
   for (size_t ic=0; ic < num_cells_owned_kinetic_mesh; ic++){
@@ -369,11 +370,39 @@ void VantageDiagnosticsManager::transfer_moments_to_plasma_grid(){
   }
 }
 
-void VantageDiagnosticsManager::write_bout_diagnostics(Field2D& ion_density, Field2D& Siz,
+Field2D VantageDiagnosticsManager::transfer_scalar_to_plasma_grid(
+    std::vector<REAL>& scalar_field) {
+  Field2D scalar_field_plasma_grid = Field2D{0.0, this->bout_mesh};
+  if (this->mesh_coupler != nullptr){
+    ASSERT1(scalar_field.size() == static_cast<size_t>(this->neso_mesh->get_cell_count()));
+    ASSERT1(scalar_field.size() > this->dof_bout_mesh_scalar.size());
+    // we need to port data from the kinetic mesh dofs to the dofs expected by BOUT++ in the loop below
+    this->mesh_coupler->backward_transfer(scalar_field, 1, dof_bout_mesh_scalar);
+  } else {
+    ASSERT1(scalar_field.size() == this->dof_bout_mesh_scalar.size());
+    this->dof_bout_mesh_scalar = scalar_field;
+  }
+  std::size_t ic = 0;
+  for (PetscInt ix = bout_mesh->xstart; ix <= bout_mesh->xend; ix++) {
+    for (PetscInt iy = bout_mesh->ystart; iy <= bout_mesh->yend; iy++) {
+      scalar_field_plasma_grid(ix, iy) = this->dof_bout_mesh_scalar.at(ic);
+      ic++;
+    }
+  }
+  // this fills internal guards
+  this->bout_mesh->communicate(scalar_field_plasma_grid);
+  // apply boundary conditions to fill external guards
+  // scalar_field_plasma_grid.applyBoundary();
+  // extrapolate -> Neumann
+  return scalar_field_plasma_grid;
+}
+
+void VantageDiagnosticsManager::write_bout_diagnostics(std::vector<REAL>& ion_density_kinetic_mesh, Field2D& Siz,
                         Field2D& Srec,
                         // std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh,
                         // Options& bout_output_data, bout::OptionsIO& vantage_dump_writer,
                         BoutReal particle_time) {
+  Field2D ion_density = transfer_scalar_to_plasma_grid(ion_density_kinetic_mesh);
   // extract the units
   const BoutReal Nnorm = get<BoutReal>(this->units["inv_meters_cubed"]);
   // const BoutReal Tnorm = get<BoutReal>(units["eV"]);
@@ -415,25 +444,16 @@ void VantageDiagnosticsManager::write_bout_diagnostics(Field2D& ion_density, Fie
                   {"species", "kinetic neutrals"},
                   {"source", "vantage"}});
 
-  // Integrals
-  Field2D total_density = ion_density + neutral_density;
-  set_with_attrs(this->bout_output_data["total_mass"],
-                 calculate_total_mass(total_density, this->neso_mesh),
-                 {{"time_dimension", "t"}});
-
-  set_with_attrs(this->bout_output_data["total_neutral_mass"],
-                 calculate_total_mass(neutral_density, this->neso_mesh),
-                 {{"time_dimension", "t"}});
-
-  set_with_attrs(this->bout_output_data["total_ion_mass"],
-                 calculate_total_mass(ion_density, this->neso_mesh), {{"time_dimension", "t"}});
-
   set_with_attrs(this->bout_output_data["t_array"], particle_time, {{"time_dimension", "t"}});
 
   // Append data to file
   this->vantage_dump_writer->write(this->bout_output_data);
   // Ensure buffer is written to disk to avoid crash data loss
   this->vantage_dump_writer->flush();
+}
+
+std::vector<REAL> VantageDiagnosticsManager::get_density_kinetic_mesh(){
+  return this->density;
 }
 
 

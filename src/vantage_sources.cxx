@@ -68,32 +68,34 @@ void VantageSourceManager::update_source(const std::string& hermes_source_name,
   std::vector<CellData<double>> accumulated_1d =
       source.accumulator->get_cell_data(source.vantage_source_name);
   size_t naccumulated = accumulated_1d.size();
+  ASSERT1(naccumulated == dof_kinetic_mesh_scalar.size());
+  for (size_t ic = 0; ic < naccumulated; ic++){
+    dof_kinetic_mesh_scalar.at(ic) = accumulated_1d[ic]->at(0, 0)   // Total weight
+          * N_w                                                   // Total particles
+          / neso_mesh->dmh->get_cell_volume(static_cast<int>(ic)) // Total density
+          / dt;                                                   // Density source;
+  }
+  // copy accumulated data into the relevant kinetic dof variable
+  ASSERT1(source.source_data_kinetic_mesh.size() == dof_kinetic_mesh_scalar.size())
+  for (size_t ic = 0; ic < naccumulated; ic++){
+    source.source_data_kinetic_mesh.at(ic) = dof_kinetic_mesh_scalar.at(ic);
+  }
   if (mesh_coupler_dg0 != nullptr){
-    ASSERT1(source.source_data_kinetic_mesh.size() > dof_bout_mesh_scalar.size())
-    // copy accumulated data into the relevant kinetic dof variable
-    for (size_t ic = 0; ic < naccumulated; ic++){
-      dof_kinetic_mesh_scalar.at(ic) = accumulated_1d[ic]->at(0, 0);
-      source.source_data_kinetic_mesh.at(ic) = dof_kinetic_mesh_scalar.at(ic);
-    }
+    ASSERT1(dof_bout_mesh_scalar.size() > dof_kinetic_mesh_scalar.size())
     // use the transform from kinetic to bout mesh
     mesh_coupler_dg0->backward_transfer(dof_kinetic_mesh_scalar, 1, dof_bout_mesh_scalar);
   } else {
-    ASSERT1(source.source_data_kinetic_mesh.size() == dof_bout_mesh_scalar.size())
+    ASSERT1(dof_bout_mesh_scalar.size() == dof_kinetic_mesh_scalar.size())
     // copy accumulated data directly into the relevant bout dof variable
     for (size_t ic = 0; ic < naccumulated; ic++){
-      dof_bout_mesh_scalar.at(ic) = accumulated_1d[ic]->at(0, 0);
-      source.source_data_kinetic_mesh.at(ic) = dof_bout_mesh_scalar.at(ic);
+      dof_bout_mesh_scalar.at(ic) = dof_kinetic_mesh_scalar.at(ic);
     }
   }
+  // copy the data to the Field2D variable for this source
   std::size_t ic = 0;
   for (int ix = bout_mesh->xstart; ix <= bout_mesh->xend; ix++) {
     for (int iy = bout_mesh->ystart; iy <= bout_mesh->yend; iy++) {
-      source.source_data_plasma_grid(ix, iy) =
-          dof_bout_mesh_scalar.at(ic)                            // Total weight
-          * N_w                                                   // Total particles
-          / neso_mesh->dmh->get_cell_volume(static_cast<int>(ic)) // Total density
-          / dt;                                                   // Density source
-
+      source.source_data_plasma_grid(ix, iy) = dof_bout_mesh_scalar.at(ic);
       ic++;
     }
   }
