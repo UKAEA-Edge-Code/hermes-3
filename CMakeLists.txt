@@ -197,6 +197,8 @@ if(HERMES_USE_VANTAGE)
   list(APPEND HERMES_SOURCES
     src/vantage_dmplex.cxx
     include/vantage_dmplex.hxx
+    src/vantage_sources.cxx
+    include/vantage_sources.hxx
     src/vantage_diagnostics.cxx
     include/vantage_diagnostics.hxx
     src/vantage.cxx
