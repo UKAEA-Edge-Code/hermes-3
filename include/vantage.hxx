@@ -3,12 +3,14 @@
 #include "bout/bout.hxx"
 #include "bout/petsclib.hxx"
 #include <bout/bout_types.hxx>
+#include <memory>
 #include <neso_particles.hpp>
 #include <neso_rng_toolkit.hpp>
 #include <reactions/reactions.hpp>
 #include <vector>
 #include "../include/vantage_diagnostics.hxx"
 #include "../include/vantage_sources.hxx"
+#include "vantage_datatransfer.hxx"
 
 using namespace NESO::Particles;
 using namespace VANTAGE::Reactions;
@@ -83,9 +85,10 @@ private:
   std::shared_ptr<BoundaryReflection> reflection; // Boundary reflection object
   void apply_boundary_conditions(ParticleSubGroupSharedPtr aa);
 
-  // These classes don't have a default constructor so need to be initialised as a unique_ptr
+  std::shared_ptr<VantageDataTransfer> data_transfer; // Manager for VANTAGE data transfer
   std::unique_ptr<VantageDiagnosticsManager>
       diagnostics_manager;           // Manager for VANTAGE diagnostics
+  // These classes don't have a default constructor so need to be initialised as a unique_ptr
   std::unique_ptr<VantageSourceManager>
       source_manager;           // Manager for VANTAGE reaction sources
   VantageMonitor monitor{this}; // Output monitor to schedule VANTAGE iterations

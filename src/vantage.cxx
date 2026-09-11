@@ -31,6 +31,7 @@
 #include "../include/vantage.hxx"
 #include "../include/vantage_dmplex.hxx"
 #include "../include/vantage_diagnostics.hxx"
+#include "../include/vantage_datatransfer.hxx"
 #include <reactions/reactions.hpp>
 
 #ifndef NESO_PARTICLES_PETSC
@@ -695,6 +696,10 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
 
     // Wrappers & controllers
     // ------------------------------------------------------------------------------
+    // Object for transferring data between BOUT++ and NESO-Particles data formats
+    this->data_transfer = std::make_shared<VantageDataTransfer>(
+      neso_mesh, project_eval_dg0, mesh_coupler_dg0,
+      A_particle_group, bout_mesh, ndim);
 
     this->source_manager =
         std::make_unique<VantageSourceManager>(neso_mesh,
@@ -903,7 +908,10 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
   set_initial_particle_weights(initial_neutral_density,
         project_eval_dg0, A_particle_group, neso_mesh, dof_kinetic_mesh_scalar, N_w);
   // write velocity moment diagnostics
-  diagnostics_manager = std::make_unique<VantageDiagnosticsManager>(make_output_path("BOUT.dmp.vantage.particle.moments", alloptions), neso_mesh, project_eval_dg0, mesh_coupler_dg0, A_particle_group, N_w, AA, bout_mesh, units, vantage_dump_filepath);
+  diagnostics_manager = std::make_unique<VantageDiagnosticsManager>(
+    make_output_path("BOUT.dmp.vantage.particle.moments", alloptions),
+    neso_mesh, A_particle_group, data_transfer,
+    N_w, AA, bout_mesh, units, vantage_dump_filepath);
   diagnostics_manager->update_kinetic_velocity_moments();
   diagnostics_manager->write_kinetic_velocity_moment_diagnostics(0, ion_density);
   diagnostics_manager->transfer_moments_to_plasma_grid();

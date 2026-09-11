@@ -1,9 +1,11 @@
 #pragma once
 #include "bout/bout.hxx"
 #include <bout/bout_types.hxx>
+#include <memory>
 #include <neso_particles.hpp>
 #include <string>
 #include <vector>
+#include "../include/vantage_datatransfer.hxx"
 
 using namespace NESO::Particles;
 
@@ -15,9 +17,8 @@ class VantageDiagnosticsManager {
 public:
   VantageDiagnosticsManager(std::string vtkhdf_filename,
     std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh,
-    std::shared_ptr<PetscInterface::DMPlexProjectEvaluateDG>& project_eval_dg0,
-    std::shared_ptr<PetscInterface::DMPlexMeshCouplerDG0>& mesh_coupler,
     std::shared_ptr<ParticleGroup>& A_particle_group,
+    std::shared_ptr<VantageDataTransfer>& data_transfer,
     BoutReal N_w, BoutReal mass,
     Mesh* bout_mesh, Options& units,
     std::string vantage_dump_filepath);
@@ -36,15 +37,14 @@ public:
           Field2D& Srec,
           BoutReal particle_time);
   std::vector<REAL> get_density_kinetic_mesh();
-  Field2D transfer_scalar_to_plasma_grid(std::vector<REAL>& scalar_field);
+  // Field2D transfer_scalar_to_plasma_grid(std::vector<REAL>& scalar_field);
 
 private:
   // internal variables needed for diagnostics
   std::string vtkhdf_filename;
   std::shared_ptr<PetscInterface::DMPlexInterface> neso_mesh;
-  std::shared_ptr<PetscInterface::DMPlexProjectEvaluateDG> project_eval_dg0;
-  std::shared_ptr<PetscInterface::DMPlexMeshCouplerDG0> mesh_coupler;
   std::shared_ptr<ParticleGroup> A_particle_group;
+  std::shared_ptr<VantageDataTransfer> data_transfer;
   BoutReal N_w;
   BoutReal mass;
 

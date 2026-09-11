@@ -81,11 +81,11 @@ void VantageSourceManager::update_source(const std::string& hermes_source_name,
     source.source_data_kinetic_mesh.at(ic) = dof_kinetic_mesh_scalar.at(ic);
   }
   if (mesh_coupler_dg0 != nullptr){
-    ASSERT1(dof_bout_mesh_scalar.size() > dof_kinetic_mesh_scalar.size())
+    ASSERT1(dof_kinetic_mesh_scalar.size() > dof_bout_mesh_scalar.size())
     // use the transform from kinetic to bout mesh
     mesh_coupler_dg0->backward_transfer(dof_kinetic_mesh_scalar, 1, dof_bout_mesh_scalar);
   } else {
-    ASSERT1(dof_bout_mesh_scalar.size() == dof_kinetic_mesh_scalar.size())
+    ASSERT1(dof_kinetic_mesh_scalar.size() == dof_bout_mesh_scalar.size())
     // copy accumulated data directly into the relevant bout dof variable
     for (size_t ic = 0; ic < naccumulated; ic++){
       dof_bout_mesh_scalar.at(ic) = dof_kinetic_mesh_scalar.at(ic);
