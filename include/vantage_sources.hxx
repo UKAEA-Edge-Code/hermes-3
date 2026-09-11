@@ -1,9 +1,11 @@
 #pragma once
 #include "bout/bout.hxx"
+#include <memory>
 #include <neso_particles.hpp>
 #include <reactions_lib/common_transformations.hpp>
 #include <reactions_lib/transformation_wrapper.hpp>
 #include <vector>
+#include "../include/vantage_datatransfer.hxx"
 
 using namespace NESO::Particles;
 using namespace VANTAGE::Reactions;
@@ -34,9 +36,7 @@ struct VantageSource {
 class VantageSourceManager {
 public:
   VantageSourceManager(std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh,
-                      std::shared_ptr<PetscInterface::DMPlexMeshCouplerDG0>& mesh_coupler_dg0,
-                      std::vector<REAL>& dof_kinetic_mesh_scalar,
-                      std::vector<REAL>& dof_bout_mesh_scalar,
+                      std::shared_ptr<VantageDataTransfer>& data_transfer,
                       Mesh* bout_mesh, Options& units);
 
   Mesh* bout_mesh;
@@ -64,8 +64,6 @@ public:
 private:
   std::map<std::string, VantageSource> sources;
   std::shared_ptr<PetscInterface::DMPlexInterface> neso_mesh;
-  std::shared_ptr<PetscInterface::DMPlexMeshCouplerDG0> mesh_coupler_dg0;
-  std::vector<REAL> dof_kinetic_mesh_scalar;
-  std::vector<REAL> dof_bout_mesh_scalar;
+  std::shared_ptr<VantageDataTransfer> data_transfer;
   Options& units;
 };

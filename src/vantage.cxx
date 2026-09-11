@@ -703,8 +703,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
 
     this->source_manager =
         std::make_unique<VantageSourceManager>(neso_mesh,
-        mesh_coupler_dg0, dof_kinetic_mesh_scalar, dof_bout_mesh_scalar,
-        bout_mesh, units);
+        data_transfer, bout_mesh, units);
 
     const REAL remove_threshold = options["remove_threshold"].withDefault(1.0e-10);
     const REAL merge_threshold = options["merge_threshold"].withDefault(1.0e-2);

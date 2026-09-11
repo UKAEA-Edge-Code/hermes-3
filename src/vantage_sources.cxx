@@ -2,11 +2,13 @@
 #include "bout/bout_types.hxx"
 #include <bout/assert.hxx>
 #include "../include/component.hxx"
+#include <memory>
 #include <neso_particles.hpp>
 #include "../include/vantage_sources.hxx"
 #include <reactions_lib/common_transformations.hpp>
 #include <reactions_lib/transformation_wrapper.hpp>
 #include <vector>
+#include "../include/vantage_datatransfer.hxx"
 
 
 using namespace NESO::Particles;
@@ -16,15 +18,12 @@ using namespace VANTAGE::Reactions;
 // ------------------------------------------------------------------------------
 VantageSourceManager::VantageSourceManager(
     std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh,
-    std::shared_ptr<PetscInterface::DMPlexMeshCouplerDG0>& mesh_coupler_dg0,
-    std::vector<REAL>& dof_kinetic_mesh_scalar,
-    std::vector<REAL>& dof_bout_mesh_scalar,
+    std::shared_ptr<VantageDataTransfer>& data_transfer,
     Mesh* bout_mesh,
     Options& units)
     : bout_mesh(bout_mesh),
     neso_mesh(neso_mesh),
-    mesh_coupler_dg0(mesh_coupler_dg0),
-    dof_kinetic_mesh_scalar(dof_kinetic_mesh_scalar), dof_bout_mesh_scalar(dof_bout_mesh_scalar),
+    data_transfer(data_transfer),
     units(units) {}
 
 // Register new source with the manager and initialise its data
@@ -68,40 +67,16 @@ void VantageSourceManager::update_source(const std::string& hermes_source_name,
   std::vector<CellData<double>> accumulated_1d =
       source.accumulator->get_cell_data(source.vantage_source_name);
   size_t naccumulated = accumulated_1d.size();
-  ASSERT1(naccumulated == dof_kinetic_mesh_scalar.size());
+  ASSERT1(naccumulated == source.source_data_kinetic_mesh.size());
   for (size_t ic = 0; ic < naccumulated; ic++){
-    dof_kinetic_mesh_scalar.at(ic) = accumulated_1d[ic]->at(0, 0)   // Total weight
+    source.source_data_kinetic_mesh.at(ic) = accumulated_1d[ic]->at(0, 0)   // Total weight
           * N_w                                                   // Total particles
           / neso_mesh->dmh->get_cell_volume(static_cast<int>(ic)) // Total density
           / dt;                                                   // Density source;
   }
-  // copy accumulated data into the relevant kinetic dof variable
-  ASSERT1(source.source_data_kinetic_mesh.size() == dof_kinetic_mesh_scalar.size())
-  for (size_t ic = 0; ic < naccumulated; ic++){
-    source.source_data_kinetic_mesh.at(ic) = dof_kinetic_mesh_scalar.at(ic);
-  }
-  if (mesh_coupler_dg0 != nullptr){
-    ASSERT1(dof_kinetic_mesh_scalar.size() > dof_bout_mesh_scalar.size())
-    // use the transform from kinetic to bout mesh
-    mesh_coupler_dg0->backward_transfer(dof_kinetic_mesh_scalar, 1, dof_bout_mesh_scalar);
-  } else {
-    ASSERT1(dof_kinetic_mesh_scalar.size() == dof_bout_mesh_scalar.size())
-    // copy accumulated data directly into the relevant bout dof variable
-    for (size_t ic = 0; ic < naccumulated; ic++){
-      dof_bout_mesh_scalar.at(ic) = dof_kinetic_mesh_scalar.at(ic);
-    }
-  }
-  // copy the data to the Field2D variable for this source
-  std::size_t ic = 0;
-  for (int ix = bout_mesh->xstart; ix <= bout_mesh->xend; ix++) {
-    for (int iy = bout_mesh->ystart; iy <= bout_mesh->yend; iy++) {
-      source.source_data_plasma_grid(ix, iy) = dof_bout_mesh_scalar.at(ic);
-      ic++;
-    }
-  }
-
-  // Fill internal guards
-  bout_mesh->communicate(source.source_data_plasma_grid);
+  // copy accumulated data into the BOUT++ Field2D variable
+  this->data_transfer->transfer_scalar_to_plasma_grid(
+    source.source_data_kinetic_mesh, source.source_data_plasma_grid);
   // Reset the accumulator object
   source.accumulator->zero_buffer(source.vantage_source_name);
   // Reset the accumulated source data on the particle
