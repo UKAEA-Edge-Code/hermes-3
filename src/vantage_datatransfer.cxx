@@ -123,3 +123,47 @@ void VantageDataTransfer::transfer_particle_property_to_vector(
   // project to the kinetic dof vector
   project_eval_dg0->get_dofs(static_cast<int>(ndim_vector), vector_kinetic_mesh);
 }
+
+void VantageDataTransfer::transfer_vector_to_particle_property(
+  std::vector<REAL>& vector_kinetic_mesh, std::string particle_property){
+  // check dimensions
+  ASSERT1(vector_kinetic_mesh.size() == this->ndim_vector*static_cast<size_t>(this->neso_mesh->get_cell_count()))
+  // set the kinetic mesh property to NESO-Particles internal variables
+  this->project_eval_dg0->set_dofs(static_cast<int>(this->ndim_vector), vector_kinetic_mesh);
+  // set the data from internal variables into the weights
+  this->project_eval_dg0->evaluate(this->A_particle_group, Sym<REAL>(particle_property));
+}
+
+void VantageDataTransfer::transfer_vector_to_kinetic_mesh(
+  std::vector<Field2D>& vector_plasma_grid, std::vector<REAL>& vector_kinetic_mesh){
+  // check dimensions
+  ASSERT1(vector_plasma_grid.size() == this->ndim_vector);
+  std::size_t ic = 0;
+  for (PetscInt ix = bout_mesh->xstart; ix <= bout_mesh->xend; ix++) {
+    for (PetscInt iy = bout_mesh->ystart; iy <= bout_mesh->yend; iy++) {
+      for (size_t idim=0; idim < this->ndim_vector; idim++){
+        const size_t jc = ic*this->ndim_vector + idim;
+        this->dof_bout_grid_vector.at(jc) = (vector_plasma_grid.at(idim))(ix, iy);
+      }
+      ic++;
+    }
+  }
+  // transfer data from the dummy vector into the kinetic mesh dofs
+  if (this->mesh_coupler != nullptr){
+    ASSERT1(dof_kinetic_mesh_vector.size() == ndim_vector*static_cast<size_t>(this->neso_mesh->get_cell_count()));
+    ASSERT1(dof_kinetic_mesh_vector.size() > this->dof_bout_grid_vector.size());
+    // we need to port data from the kinetic mesh dofs to the dofs expected by BOUT++ in the loop below
+    this->mesh_coupler->forward_transfer(
+      this->dof_bout_grid_vector,
+      static_cast<int>(this->ndim_vector),
+      this->dof_kinetic_mesh_vector);
+  } else {
+    ASSERT1(vector_kinetic_mesh.size() == this->dof_bout_grid_vector.size());
+    vector_kinetic_mesh = this->dof_bout_grid_vector;
+  }
+}
+void VantageDataTransfer::transfer_vector_to_particle_property(
+  std::vector<Field2D>& vector_plasma_grid, std::string particle_property){
+  this->transfer_vector_to_kinetic_mesh(vector_plasma_grid, this->dof_kinetic_mesh_vector);
+  this->transfer_vector_to_particle_property(this->dof_kinetic_mesh_vector, particle_property);
+}

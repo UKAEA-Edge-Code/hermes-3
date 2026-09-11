@@ -71,10 +71,10 @@ std::string make_output_path(const std::string& filename, Options& alloptions) {
 
 void set_initial_particle_weights(
     BoutReal& initial_neutral_density,
-    std::shared_ptr<PetscInterface::DMPlexProjectEvaluateDG>& dg0,
     std::shared_ptr<ParticleGroup>& A_particle_group,
     std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh,
     std::vector<double>& dof_kinetic_mesh_scalar,
+    std::shared_ptr<VantageDataTransfer>& data_transfer,
     BoutReal N_w) {
   // set a constant density across the entire kinetic mesh
   const size_t ncell = dof_kinetic_mesh_scalar.size();
@@ -92,9 +92,19 @@ void set_initial_particle_weights(
     dof_kinetic_mesh_scalar.at(ic) = particle_weights;
   }
   // now copy the data to internal variables
-  dg0->set_dofs(1, dof_kinetic_mesh_scalar);
-  // set the data from internal variables into the weights
-  dg0->evaluate(A_particle_group, Sym<REAL>("WEIGHT"));
+  data_transfer->transfer_scalar_to_particle_property(dof_kinetic_mesh_scalar, "WEIGHT");
+}
+
+void update_particle_properties_from_plasma(
+  std::shared_ptr<VantageDataTransfer>& data_transfer,
+  Field2D& ion_density, Field2D& ion_temperature,
+  std::vector<Field2D>& ion_velocity,
+  Field2D& electron_density, Field2D& electron_temperature){
+  data_transfer->transfer_scalar_to_particle_property(ion_density, "FLUID_DENSITY");
+  data_transfer->transfer_scalar_to_particle_property(ion_temperature, "FLUID_TEMPERATURE");
+  data_transfer->transfer_vector_to_particle_property(ion_velocity, "FLUID_FLOW_SPEED");
+  data_transfer->transfer_scalar_to_particle_property(electron_density, "ELECTRON_DENSITY");
+  data_transfer->transfer_scalar_to_particle_property(electron_temperature, "ELECTRON_TEMPERATURE");
 }
 
 void check_cell_volumes(DM& dm, std::vector<PetscInt>& kinetic_mesh_map,
@@ -611,8 +621,16 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
     project_eval_dg0 = std::make_shared<PetscInterface::DMPlexProjectEvaluateDG>(
       neso_mesh, sycl_target, "DG", 0);
     // vectors for storing an ion density on the kinetic mesh
-    ion_density = std::vector<REAL>(static_cast<size_t>(num_cells_owned_kinetic_mesh), background_ion_density);
+    ion_density_kmsh = std::vector<REAL>(static_cast<size_t>(num_cells_owned_kinetic_mesh), background_ion_density);
     total_density = std::vector<REAL>(static_cast<size_t>(num_cells_owned_kinetic_mesh), 0.0);
+    // Field2D for storing plasma data coming from the plasma grid
+    // that will be evaluated on to the particle properties
+    ion_density = Field2D{background_ion_density, bout_mesh};
+    electron_density = Field2D{background_electron_density, bout_mesh};
+    ion_temperature = Field2D{background_ion_temperature, bout_mesh};
+    electron_temperature = Field2D{background_electron_temperature, bout_mesh};
+    ion_velocity = std::vector<Field2D>{Field2D{background_ion_Vx, bout_mesh},
+     Field2D{background_ion_Vy, bout_mesh}};
     // RNG kernel
     // Used for sampling from velocity distribution for REC/CX
     // ------------------------------------------------------------------------------
@@ -905,14 +923,18 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
   // ------------------------------------------------------------------------------
   // set weights from a constant initial density
   set_initial_particle_weights(initial_neutral_density,
-        project_eval_dg0, A_particle_group, neso_mesh, dof_kinetic_mesh_scalar, N_w);
+        A_particle_group, neso_mesh,
+        dof_kinetic_mesh_scalar, data_transfer, N_w);
+  // update particle properties from the plasma
+  update_particle_properties_from_plasma(data_transfer, ion_density, ion_temperature,
+      ion_velocity, electron_density, electron_temperature);
   // write velocity moment diagnostics
   diagnostics_manager = std::make_unique<VantageDiagnosticsManager>(
     make_output_path("BOUT.dmp.vantage.particle.moments", alloptions),
     neso_mesh, A_particle_group, data_transfer,
     N_w, AA, bout_mesh, units, vantage_dump_filepath);
   diagnostics_manager->update_kinetic_velocity_moments();
-  diagnostics_manager->write_kinetic_velocity_moment_diagnostics(0, ion_density);
+  diagnostics_manager->write_kinetic_velocity_moment_diagnostics(0, ion_density_kmsh);
   diagnostics_manager->transfer_moments_to_plasma_grid();
 
   this->source_manager->update_all_sources(dt);
@@ -926,7 +948,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
   // mass for conservation check
   neutral_density = diagnostics_manager->get_density_kinetic_mesh();
   for (size_t ic=0; ic< static_cast<size_t>(neso_mesh->get_cell_count());ic++){
-    total_density.at(ic) = neutral_density.at(ic) + ion_density.at(ic);
+    total_density.at(ic) = neutral_density.at(ic) + ion_density_kmsh.at(ic);
   }
   total_mass_initial = calculate_total_mass(total_density, neso_mesh);
 
@@ -1033,6 +1055,9 @@ int Vantage::advance_vantage(BoutReal UNUSED(time)) {
     A_particle_group->hybrid_move();
     A_particle_group->cell_move();
     lambda_apply_timestep(static_particle_sub_group(A_particle_group));
+    // update plasma properties on particles based on their new locations
+    update_particle_properties_from_plasma(data_transfer, ion_density, ion_temperature,
+      ion_velocity, electron_density, electron_temperature);
     // apply reactions
     reaction_controller->apply(A_particle_group, dt, ControllerMode::standard_mode);
     recombination_controller->apply(marker_group, dt, A_particle_group);
@@ -1046,13 +1071,14 @@ int Vantage::advance_vantage(BoutReal UNUSED(time)) {
     // "Solve" density
     // Sources are in normalised m^-3 s^-1, so need to multiply by dt
     for (size_t ic=0; ic < static_cast<size_t>(neso_mesh->get_cell_count());ic++){
-      ion_density.at(ic) += (Siz_kmsh.at(ic) + Srec_kmsh.at(ic)) * dt;
+      ion_density_kmsh.at(ic) += (Siz_kmsh.at(ic) + Srec_kmsh.at(ic)) * dt;
     }
 
     diagnostics_manager->update_kinetic_velocity_moments();
-    diagnostics_manager->write_kinetic_velocity_moment_diagnostics(stepx+1, ion_density);
+    diagnostics_manager->write_kinetic_velocity_moment_diagnostics(stepx+1, ion_density_kmsh);
     diagnostics_manager->transfer_moments_to_plasma_grid();
     // Write to VANTAGE dump files
+    data_transfer->transfer_scalar_to_plasma_grid(ion_density_kmsh, ion_density);
     diagnostics_manager->write_bout_diagnostics(ion_density, Siz, Srec, particle_time);
     // Write to particle_trajectories file
     h5part->write();
@@ -1065,7 +1091,7 @@ int Vantage::advance_vantage(BoutReal UNUSED(time)) {
   // mass for conservation check
   neutral_density = diagnostics_manager->get_density_kinetic_mesh();
   for (size_t ic=0; ic < static_cast<size_t>(neso_mesh->get_cell_count());ic++){
-    total_density.at(ic) = neutral_density.at(ic) + ion_density.at(ic);
+    total_density.at(ic) = neutral_density.at(ic) + ion_density_kmsh.at(ic);
   }
   REAL total_mass_final = calculate_total_mass(total_density, neso_mesh);
   if (test_mass_conservation) {

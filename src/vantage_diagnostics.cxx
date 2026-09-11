@@ -337,13 +337,9 @@ void VantageDiagnosticsManager::transfer_moments_to_plasma_grid(){
     this->temperature_plasma_grid);
 }
 
-void VantageDiagnosticsManager::write_bout_diagnostics(std::vector<REAL>& ion_density_kinetic_mesh, Field2D& Siz,
+void VantageDiagnosticsManager::write_bout_diagnostics(Field2D& ion_density, Field2D& Siz,
                         Field2D& Srec,
                         BoutReal particle_time) {
-
-  Field2D ion_density = Field2D{0.0, this->bout_mesh};
-  this->data_transfer->transfer_scalar_to_plasma_grid(
-    ion_density_kinetic_mesh, ion_density);
   // extract the units
   const BoutReal Nnorm = get<BoutReal>(this->units["inv_meters_cubed"]);
   // const BoutReal Tnorm = get<BoutReal>(units["eV"]);

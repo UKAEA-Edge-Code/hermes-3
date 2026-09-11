@@ -32,7 +32,7 @@ public:
   void transfer_moments_to_plasma_grid();
   // write BOUT++ style diagnostics on the BOUT++ grid
   void write_bout_diagnostics(
-          std::vector<REAL>& ion_density_kinetic_mesh,
+          Field2D& ion_density,
           Field2D& Siz,
           Field2D& Srec,
           BoutReal particle_time);

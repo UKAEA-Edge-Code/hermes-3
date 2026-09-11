@@ -3,6 +3,7 @@
 #include "bout/bout.hxx"
 #include "bout/petsclib.hxx"
 #include <bout/bout_types.hxx>
+#include <bout/field2d.hxx>
 #include <memory>
 #include <neso_particles.hpp>
 #include <neso_rng_toolkit.hpp>
@@ -61,7 +62,13 @@ private:
   int mpi_rank;    // Current rank ID
   Mesh* bout_mesh; // Pointer to the BOUT++ mesh object
   // Diagnostic variables on the kinetic mesh, for testing
-  std::vector<REAL> ion_density, neutral_density, total_density;
+  std::vector<REAL> neutral_density, total_density;
+  std::vector<REAL> ion_density_kmsh;
+  // Field2D for storing plasma data coming from the plasma grid, that will be evaluated
+  // on to the kinetic mesh, and then on to the particles themselves.
+  Field2D electron_density, electron_temperature;
+  Field2D ion_density, ion_temperature;
+  std::vector<Field2D> ion_velocity;
   BoutReal total_mass_initial, total_mass;
   std::string dmplex_filepath, vantage_dump_filepath,
       particle_data_filepath; // Path for output files
