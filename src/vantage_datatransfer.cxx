@@ -80,7 +80,7 @@ void VantageDataTransfer::transfer_scalar_to_kinetic_mesh(
     this->mesh_coupler->forward_transfer(dof_bout_grid_scalar, 1, scalar_kinetic_mesh);
   } else {
     ASSERT1(scalar_kinetic_mesh.size() == this->dof_bout_grid_scalar.size());
-    this->dof_bout_grid_scalar = scalar_kinetic_mesh;
+    scalar_kinetic_mesh = this->dof_bout_grid_scalar;
   }
 }
 
