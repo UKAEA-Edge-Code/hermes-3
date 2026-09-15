@@ -109,6 +109,21 @@ void update_particle_properties_from_plasma(
   data_transfer->transfer_scalar_to_particle_property(electron_temperature, A_particle_group, "ELECTRON_TEMPERATURE");
 }
 
+// Create a ParticleSubGroup from particles that are in a cell with nonzero electron_density.
+ParticleSubGroupSharedPtr create_particle_sub_group_in_plasma_volume(
+  std::shared_ptr<ParticleGroup>& A_particle_group,
+  const REAL electron_density_threshold
+) {
+  ParticleSubGroupSharedPtr particle_group_in_plasma = particle_sub_group(
+    A_particle_group,
+    [=](auto ne) {
+      return (ne[0] > electron_density_threshold);
+    },
+    Access::read(Sym<REAL>("ELECTRON_DENSITY"))
+  );
+  return particle_group_in_plasma;
+}
+
 void check_cell_volumes(DM& dm, std::vector<PetscInt>& kinetic_mesh_map,
           std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh,
                         Mesh*& bout_mesh, Options& alloptions) {
@@ -316,6 +331,10 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
                  "unit weight. Default = 1.1 as a value close but different to unity"
                  "to make sure an incorrect implementation would show up in tests.")
             .withDefault<BoutReal>(1.1);
+  electron_density_threshold = options["electron_density_reaction_threshold"]
+            .doc("Parameter controlling the minimum (normalised) electron density "
+                 "at which the reactions between neutrals and charged plasma species are applied.")
+            .withDefault<BoutReal>(1.0e-12);
 
   Options::root()["units"]["N_w"] = N_w;
   Options::root()["units"]["N_w"].setConditionallyUsed();
@@ -622,6 +641,11 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
     // between the kinetic mesh degree-of-freedom vector and particles
     project_eval_dg0 = std::make_shared<PetscInterface::DMPlexProjectEvaluateDG>(
       neso_mesh, sycl_target, "DG", 0);
+
+    // Object for transferring data between BOUT++ and NESO-Particles data formats
+    this->data_transfer = std::make_shared<VantageDataTransfer>(
+      neso_mesh, project_eval_dg0, mesh_coupler_dg0, bout_mesh, ndim);
+
     // vectors for storing an ion density on the kinetic mesh
     ion_density_kmsh = std::vector<REAL>(static_cast<size_t>(num_cells_owned_kinetic_mesh), background_ion_density);
     total_density = std::vector<REAL>(static_cast<size_t>(num_cells_owned_kinetic_mesh), 0.0);
@@ -654,33 +678,19 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
     // Give particle group initial kinetic values (positions and velocities)
     // Numerical settings: weight, stdev, species ID
     // use the same standard deviation for markers as in the initial distribution of velocities
-    // we should consider if marker distribution should evolve with time to track the neutral temperature
+    // we should consider if marker distribution should evolve with time to track the neutral/ion temperature
+    // we should consider if marker distrubution should be initialised using Field2D information
+    const REAL initial_ion_thermal_speed = std::sqrt(background_ion_temperature/AA);
     ParticleSet maxwellian_markers = uniform_cellwise_maxwellian<ndim>(
-        sycl_target, neso_mesh, particle_spec, rec_markers_per_cell, 1.0, initial_neutral_thermal_speed, -1);
+        sycl_target, neso_mesh, particle_spec, rec_markers_per_cell, 1.0, initial_ion_thermal_speed, -1);
 
     marker_group->add_particles_local(maxwellian_markers);
 
-    // Give particle group initial fluid values: markers will contain background
-    // plasma properties
-    // From demo app "set_init_fluid_values"
-    particle_loop(
-        "set init fluid values", marker_group,
-        [=](auto n, auto T, auto ne, auto Te, auto speed) {
-          n.at(0) = background_ion_density;
-          ne.at(0) = background_ion_density;
-          T.at(0) = background_ion_temperature;
-          Te.at(0) = background_ion_temperature;
-
-          for (int i = 0; i < ndim; i++) {
-            speed.at(i) = V_background[static_cast<std::size_t>(i)];
-          }
-        },
-        Access::write(Sym<REAL>("FLUID_DENSITY")),
-        Access::write(Sym<REAL>("FLUID_TEMPERATURE")),
-        Access::write(Sym<REAL>("ELECTRON_DENSITY")),
-        Access::write(Sym<REAL>("ELECTRON_TEMPERATURE")),
-        Access::write(Sym<REAL>("FLUID_FLOW_SPEED")))
-        ->execute();
+    // Give particle group initial fluid values:
+    // markers will contain background plasma properties
+    update_particle_properties_from_plasma(data_transfer, marker_group,
+        ion_density, ion_temperature, ion_velocity,
+        electron_density, electron_temperature);
 
     // Calculate marker weights
 
@@ -716,9 +726,6 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
 
     // Wrappers & controllers
     // ------------------------------------------------------------------------------
-    // Object for transferring data between BOUT++ and NESO-Particles data formats
-    this->data_transfer = std::make_shared<VantageDataTransfer>(
-      neso_mesh, project_eval_dg0, mesh_coupler_dg0, bout_mesh, ndim);
 
     this->source_manager =
         std::make_unique<VantageSourceManager>(neso_mesh,
@@ -1047,6 +1054,11 @@ int Vantage::advance_vantage(BoutReal UNUSED(time)) {
       aa = lambda_find_partial_moves(aa);
     }
   };
+  // Create a ParticleSubGroup from particles that are in a cell with nonzero electron_density.
+  // This makes sure reactions are only applied where the neutrals are within the plasma volume
+  const REAL electron_density_threshold = this->electron_density_threshold;
+  ParticleSubGroupSharedPtr marker_group_in_plasma = create_particle_sub_group_in_plasma_volume(marker_group,electron_density_threshold);
+  ParticleSubGroupSharedPtr A_particle_group_in_plasma = create_particle_sub_group_in_plasma_volume(A_particle_group,electron_density_threshold);
 
   // begin timestepping
   output << "\nBegin VANTAGE iterations \n";
@@ -1061,9 +1073,12 @@ int Vantage::advance_vantage(BoutReal UNUSED(time)) {
     update_particle_properties_from_plasma(data_transfer, A_particle_group,
       ion_density, ion_temperature, ion_velocity,
       electron_density, electron_temperature);
-    // apply reactions
-    reaction_controller->apply(A_particle_group, dt, ControllerMode::standard_mode);
-    recombination_controller->apply(marker_group, dt, A_particle_group);
+    update_particle_properties_from_plasma(data_transfer, marker_group,
+      ion_density, ion_temperature, ion_velocity,
+      electron_density, electron_temperature);
+    // apply reactions to particles with a non-zero electron density property (those neutrals in the plasma)
+    reaction_controller->apply(A_particle_group_in_plasma, dt, ControllerMode::standard_mode);
+    recombination_controller->apply(marker_group_in_plasma, dt, A_particle_group);
 
     this->source_manager->update_all_sources(dt);
     Field2D Siz = this->source_manager->get_plasma_grid_data("Siz");

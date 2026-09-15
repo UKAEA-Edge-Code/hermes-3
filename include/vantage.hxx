@@ -69,6 +69,8 @@ private:
   Field2D electron_density, electron_temperature;
   Field2D ion_density, ion_temperature;
   std::vector<Field2D> ion_velocity;
+  // a threshold density, for reactions between neutrals and the plasma
+  REAL electron_density_threshold;
   BoutReal total_mass_initial, total_mass;
   std::string dmplex_filepath, vantage_dump_filepath,
       particle_data_filepath; // Path for output files
