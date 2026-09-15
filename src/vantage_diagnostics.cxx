@@ -236,11 +236,14 @@ void VantageDiagnosticsManager::update_kinetic_velocity_moments(){
   // call the particle loop
   lambda_update_moment_kernels(static_particle_sub_group(A_particle_group));
   // extract density
-  this->data_transfer->transfer_particle_property_to_scalar("WEIGHT", density);
+  this->data_transfer->transfer_particle_property_to_scalar(
+    A_particle_group, "WEIGHT", density);
   // energy
-  this->data_transfer->transfer_particle_property_to_scalar("WEIGHT_V2", energy);
+  this->data_transfer->transfer_particle_property_to_scalar(
+    A_particle_group, "WEIGHT_V2", energy);
   // mean flow Gamma = nu
-  this->data_transfer->transfer_particle_property_to_vector("WEIGHT_V", gamma);
+  this->data_transfer->transfer_particle_property_to_vector(
+    A_particle_group, "WEIGHT_V", gamma);
   // scalar variables
   for (size_t ic=0; ic < num_cells_owned_kinetic_mesh; ic++){
     // multiply by any factors not handled in the project step

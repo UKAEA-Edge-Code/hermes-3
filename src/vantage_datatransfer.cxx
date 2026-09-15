@@ -13,12 +13,10 @@ VantageDataTransfer::VantageDataTransfer(
     std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh,
     std::shared_ptr<PetscInterface::DMPlexProjectEvaluateDG>& project_eval_dg0,
     std::shared_ptr<PetscInterface::DMPlexMeshCouplerDG0>& mesh_coupler,
-    std::shared_ptr<ParticleGroup>& A_particle_group,
     Mesh* bout_mesh, size_t ndim_vector)
     : neso_mesh(neso_mesh),
     project_eval_dg0(project_eval_dg0),
     mesh_coupler(mesh_coupler),
-    A_particle_group(A_particle_group),
     bout_mesh(bout_mesh),
     dof_kinetic_mesh_scalar(std::vector<REAL>(static_cast<size_t>(neso_mesh->get_cell_count()))),
     ndim_vector(ndim_vector),
@@ -85,53 +83,63 @@ void VantageDataTransfer::transfer_scalar_to_kinetic_mesh(
 }
 
 void VantageDataTransfer::transfer_scalar_to_particle_property(
-  std::vector<REAL>& scalar_kinetic_mesh, std::string particle_property){
+  std::vector<REAL>& scalar_kinetic_mesh,
+  std::shared_ptr<ParticleGroup>& A_particle_group,
+  std::string particle_property){
   // check dimensions
   ASSERT1(scalar_kinetic_mesh.size() == static_cast<size_t>(this->neso_mesh->get_cell_count()))
   // set the kinetic mesh property to NESO-Particles internal variables
   this->project_eval_dg0->set_dofs(1, scalar_kinetic_mesh);
   // set the data from internal variables into the weights
-  this->project_eval_dg0->evaluate(this->A_particle_group, Sym<REAL>(particle_property));
+  this->project_eval_dg0->evaluate(A_particle_group, Sym<REAL>(particle_property));
 }
 
 void VantageDataTransfer::transfer_scalar_to_particle_property(
-  Field2D& scalar_plasma_grid, std::string particle_property){
+  Field2D& scalar_plasma_grid,
+  std::shared_ptr<ParticleGroup>& A_particle_group,
+  std::string particle_property){
   // check dimensions
   // need some ASSERT to check bout_mesh is the same variables
   this->transfer_scalar_to_kinetic_mesh(scalar_plasma_grid,this->dof_kinetic_mesh_scalar);
-  this->transfer_scalar_to_particle_property(this->dof_kinetic_mesh_scalar, particle_property);
+  this->transfer_scalar_to_particle_property(this->dof_kinetic_mesh_scalar, A_particle_group, particle_property);
 }
 
 void VantageDataTransfer::transfer_particle_property_to_scalar(
-  std::string particle_property, std::vector<REAL>& scalar_kinetic_mesh){
+  std::shared_ptr<ParticleGroup>& A_particle_group,
+  std::string particle_property,
+  std::vector<REAL>& scalar_kinetic_mesh){
   // check dimensions
   ASSERT1(scalar_kinetic_mesh.size() == static_cast<size_t>(this->neso_mesh->get_cell_count()))
   // set the particle property to NESO-Particles internal variables
   // some ASSERT to check particle property corresponds to a scalar?
-  this->project_eval_dg0->project(this->A_particle_group, Sym<REAL>(particle_property));
+  this->project_eval_dg0->project(A_particle_group, Sym<REAL>(particle_property));
   // project to the kinetic dof vector
   project_eval_dg0->get_dofs(1, scalar_kinetic_mesh);
 }
 
 void VantageDataTransfer::transfer_particle_property_to_vector(
-  std::string particle_property, std::vector<REAL>& vector_kinetic_mesh){
+  std::shared_ptr<ParticleGroup>& A_particle_group,
+  std::string particle_property,
+  std::vector<REAL>& vector_kinetic_mesh){
   // check dimensions
   ASSERT1(vector_kinetic_mesh.size() == this->ndim_vector*static_cast<size_t>(this->neso_mesh->get_cell_count()))
   // set the particle property to NESO-Particles internal variables
   // some ASSERT to check particle property corresponds to a vector?
-  this->project_eval_dg0->project(this->A_particle_group, Sym<REAL>(particle_property));
+  this->project_eval_dg0->project(A_particle_group, Sym<REAL>(particle_property));
   // project to the kinetic dof vector
   project_eval_dg0->get_dofs(static_cast<int>(ndim_vector), vector_kinetic_mesh);
 }
 
 void VantageDataTransfer::transfer_vector_to_particle_property(
-  std::vector<REAL>& vector_kinetic_mesh, std::string particle_property){
+  std::vector<REAL>& vector_kinetic_mesh,
+  std::shared_ptr<ParticleGroup>& A_particle_group,
+  std::string particle_property){
   // check dimensions
   ASSERT1(vector_kinetic_mesh.size() == this->ndim_vector*static_cast<size_t>(this->neso_mesh->get_cell_count()))
   // set the kinetic mesh property to NESO-Particles internal variables
   this->project_eval_dg0->set_dofs(static_cast<int>(this->ndim_vector), vector_kinetic_mesh);
   // set the data from internal variables into the weights
-  this->project_eval_dg0->evaluate(this->A_particle_group, Sym<REAL>(particle_property));
+  this->project_eval_dg0->evaluate(A_particle_group, Sym<REAL>(particle_property));
 }
 
 void VantageDataTransfer::transfer_vector_to_kinetic_mesh(
@@ -163,7 +171,9 @@ void VantageDataTransfer::transfer_vector_to_kinetic_mesh(
   }
 }
 void VantageDataTransfer::transfer_vector_to_particle_property(
-  std::vector<Field2D>& vector_plasma_grid, std::string particle_property){
+  std::vector<Field2D>& vector_plasma_grid,
+  std::shared_ptr<ParticleGroup>& A_particle_group,
+  std::string particle_property){
   this->transfer_vector_to_kinetic_mesh(vector_plasma_grid, this->dof_kinetic_mesh_vector);
-  this->transfer_vector_to_particle_property(this->dof_kinetic_mesh_vector, particle_property);
+  this->transfer_vector_to_particle_property(this->dof_kinetic_mesh_vector, A_particle_group, particle_property);
 }

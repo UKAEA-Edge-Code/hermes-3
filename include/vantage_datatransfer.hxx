@@ -12,24 +12,44 @@ public:
   VantageDataTransfer(std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh,
     std::shared_ptr<PetscInterface::DMPlexProjectEvaluateDG>& project_eval_dg0,
     std::shared_ptr<PetscInterface::DMPlexMeshCouplerDG0>& mesh_coupler,
-    std::shared_ptr<ParticleGroup>& A_particle_group,
     Mesh* bout_mesh, size_t ndim_vector);
 
   // transfer functions for physics scalars
-  void transfer_scalar_to_plasma_grid(std::vector<REAL>& scalar_kinetic_mesh, Field2D& scalar_plasma_grid);
-  void transfer_scalar_to_kinetic_mesh(Field2D& scalar_plasma_grid, std::vector<REAL>& scalar_kinetic_mesh);
-  void transfer_scalar_to_particle_property(std::vector<REAL>& scalar_kinetic_mesh, std::string particle_property);
-  void transfer_scalar_to_particle_property(Field2D& scalar_plasma_grid, std::string particle_property);
-  void transfer_particle_property_to_scalar(std::string particle_property, std::vector<REAL>& scalar_kinetic_mesh);
-  void transfer_particle_property_to_vector(std::string particle_property, std::vector<REAL>& vector_kinetic_mesh);
+  void transfer_scalar_to_plasma_grid(
+    std::vector<REAL>& scalar_kinetic_mesh,
+    Field2D& scalar_plasma_grid);
+  void transfer_scalar_to_kinetic_mesh(
+    Field2D& scalar_plasma_grid,
+    std::vector<REAL>& scalar_kinetic_mesh);
+  void transfer_scalar_to_particle_property(
+    std::vector<REAL>& scalar_kinetic_mesh,
+    std::shared_ptr<ParticleGroup>& A_particle_group,
+    std::string particle_property);
+  void transfer_scalar_to_particle_property(
+    Field2D& scalar_plasma_grid,
+    std::shared_ptr<ParticleGroup>& A_particle_group,
+    std::string particle_property);
+  void transfer_particle_property_to_scalar(
+    std::shared_ptr<ParticleGroup>& A_particle_group,
+    std::string particle_property,
+    std::vector<REAL>& scalar_kinetic_mesh);
+  void transfer_particle_property_to_vector(
+    std::shared_ptr<ParticleGroup>& A_particle_group,
+    std::string particle_property,
+    std::vector<REAL>& vector_kinetic_mesh);
 
   // transfer functions for physics vectors
   void transfer_vector_to_particle_property(
-  std::vector<Field2D>& vector_plasma_grid, std::string particle_property);
+    std::vector<Field2D>& vector_plasma_grid,
+    std::shared_ptr<ParticleGroup>& A_particle_group,
+    std::string particle_property);
   void transfer_vector_to_particle_property(
-  std::vector<REAL>& vector_kinetic_mesh, std::string particle_property);
+    std::vector<REAL>& vector_kinetic_mesh,
+    std::shared_ptr<ParticleGroup>& A_particle_group,
+    std::string particle_property);
   void transfer_vector_to_kinetic_mesh(
-  std::vector<Field2D>& vector_plasma_grid, std::vector<REAL>& vector_kinetic_mesh);
+    std::vector<Field2D>& vector_plasma_grid,
+    std::vector<REAL>& vector_kinetic_mesh);
 
 
 private:
@@ -37,7 +57,6 @@ private:
   std::shared_ptr<PetscInterface::DMPlexInterface> neso_mesh;
   std::shared_ptr<PetscInterface::DMPlexProjectEvaluateDG> project_eval_dg0;
   std::shared_ptr<PetscInterface::DMPlexMeshCouplerDG0> mesh_coupler;
-  std::shared_ptr<ParticleGroup> A_particle_group;
 
   // the bout_mesh variable needed for Hermes-3/BOUT++ diagnostics
   Mesh* bout_mesh;

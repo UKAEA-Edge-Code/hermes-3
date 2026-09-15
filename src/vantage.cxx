@@ -92,19 +92,21 @@ void set_initial_particle_weights(
     dof_kinetic_mesh_scalar.at(ic) = particle_weights;
   }
   // now copy the data to internal variables
-  data_transfer->transfer_scalar_to_particle_property(dof_kinetic_mesh_scalar, "WEIGHT");
+  data_transfer->transfer_scalar_to_particle_property(
+    dof_kinetic_mesh_scalar, A_particle_group, "WEIGHT");
 }
 
 void update_particle_properties_from_plasma(
   std::shared_ptr<VantageDataTransfer>& data_transfer,
+  std::shared_ptr<ParticleGroup>& A_particle_group,
   Field2D& ion_density, Field2D& ion_temperature,
   std::vector<Field2D>& ion_velocity,
   Field2D& electron_density, Field2D& electron_temperature){
-  data_transfer->transfer_scalar_to_particle_property(ion_density, "FLUID_DENSITY");
-  data_transfer->transfer_scalar_to_particle_property(ion_temperature, "FLUID_TEMPERATURE");
-  data_transfer->transfer_vector_to_particle_property(ion_velocity, "FLUID_FLOW_SPEED");
-  data_transfer->transfer_scalar_to_particle_property(electron_density, "ELECTRON_DENSITY");
-  data_transfer->transfer_scalar_to_particle_property(electron_temperature, "ELECTRON_TEMPERATURE");
+  data_transfer->transfer_scalar_to_particle_property(ion_density, A_particle_group, "FLUID_DENSITY");
+  data_transfer->transfer_scalar_to_particle_property(ion_temperature, A_particle_group,  "FLUID_TEMPERATURE");
+  data_transfer->transfer_vector_to_particle_property(ion_velocity, A_particle_group, "FLUID_FLOW_SPEED");
+  data_transfer->transfer_scalar_to_particle_property(electron_density, A_particle_group, "ELECTRON_DENSITY");
+  data_transfer->transfer_scalar_to_particle_property(electron_temperature, A_particle_group, "ELECTRON_TEMPERATURE");
 }
 
 void check_cell_volumes(DM& dm, std::vector<PetscInt>& kinetic_mesh_map,
@@ -716,8 +718,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
     // ------------------------------------------------------------------------------
     // Object for transferring data between BOUT++ and NESO-Particles data formats
     this->data_transfer = std::make_shared<VantageDataTransfer>(
-      neso_mesh, project_eval_dg0, mesh_coupler_dg0,
-      A_particle_group, bout_mesh, ndim);
+      neso_mesh, project_eval_dg0, mesh_coupler_dg0, bout_mesh, ndim);
 
     this->source_manager =
         std::make_unique<VantageSourceManager>(neso_mesh,
@@ -926,8 +927,9 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
         A_particle_group, neso_mesh,
         dof_kinetic_mesh_scalar, data_transfer, N_w);
   // update particle properties from the plasma
-  update_particle_properties_from_plasma(data_transfer, ion_density, ion_temperature,
-      ion_velocity, electron_density, electron_temperature);
+  update_particle_properties_from_plasma(data_transfer, A_particle_group,
+        ion_density, ion_temperature, ion_velocity,
+        electron_density, electron_temperature);
   // write velocity moment diagnostics
   diagnostics_manager = std::make_unique<VantageDiagnosticsManager>(
     make_output_path("BOUT.dmp.vantage.particle.moments", alloptions),
@@ -1056,8 +1058,9 @@ int Vantage::advance_vantage(BoutReal UNUSED(time)) {
     A_particle_group->cell_move();
     lambda_apply_timestep(static_particle_sub_group(A_particle_group));
     // update plasma properties on particles based on their new locations
-    update_particle_properties_from_plasma(data_transfer, ion_density, ion_temperature,
-      ion_velocity, electron_density, electron_temperature);
+    update_particle_properties_from_plasma(data_transfer, A_particle_group,
+      ion_density, ion_temperature, ion_velocity,
+      electron_density, electron_temperature);
     // apply reactions
     reaction_controller->apply(A_particle_group, dt, ControllerMode::standard_mode);
     recombination_controller->apply(marker_group, dt, A_particle_group);
