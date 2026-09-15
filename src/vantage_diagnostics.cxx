@@ -29,6 +29,32 @@ REAL calculate_total_mass(std::vector<REAL>& density,
   return total_mass;
 }
 
+REAL calculate_total_mass(Field2D& density,
+                    std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh,
+                    std::shared_ptr<VantageDataTransfer>& data_transfer) {
+  Mesh* bout_mesh = density.getMesh();
+  size_t nkinetic_cells = static_cast<size_t>(neso_mesh->get_cell_count());
+  std::vector<REAL> cell_volume(nkinetic_cells);
+  for (size_t ic = 0;ic < nkinetic_cells; ic++) {
+    cell_volume.at(ic) = neso_mesh->dmh->get_cell_volume(static_cast<int>(ic));
+  }
+  Field2D cell_volume_on_bout_mesh = Field2D{0.0, bout_mesh};
+  data_transfer->transfer_scalar_to_plasma_grid(cell_volume, cell_volume_on_bout_mesh);
+  // sum over the density on the BOUT++ grid, using NESO-Particles cell volumes
+  REAL local_mass = 0.0;
+  REAL total_mass = 0.0;
+  // sum over the ion density on the plasma mesh
+  for (PetscInt ix = bout_mesh->xstart; ix <= bout_mesh->xend; ix++) {
+    for (PetscInt iy = bout_mesh->ystart; iy <= bout_mesh->yend; iy++) {
+      local_mass += density(ix, iy) * cell_volume_on_bout_mesh(ix,iy);
+    }
+  }
+  // sum contributions from different MPI ranks
+  MPICHK(
+      MPI_Allreduce(&local_mass, &total_mass, 1, MPI_DOUBLE, MPI_SUM, BoutComm::get()));
+  return total_mass;
+}
+
 // helper function to initialise the plasma grid (BOUT++ mesh) diagnostics
 Options initialise_plasma_grid_diagnostics(Options& units, Mesh* bout_mesh,
                       //  Field2D& neutral_density,

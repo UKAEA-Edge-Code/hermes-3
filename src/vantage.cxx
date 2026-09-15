@@ -971,10 +971,11 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
 
   // mass for conservation check
   neutral_density = diagnostics_manager->get_density_kinetic_mesh();
-  for (size_t ic=0; ic< static_cast<size_t>(neso_mesh->get_cell_count());ic++){
-    total_density.at(ic) = neutral_density.at(ic) + ion_density_kmsh.at(ic);
-  }
-  total_mass_initial = calculate_total_mass(total_density, neso_mesh);
+  // for (size_t ic=0; ic< static_cast<size_t>(neso_mesh->get_cell_count());ic++){
+  //   total_density.at(ic) = neutral_density.at(ic) + ion_density_kmsh.at(ic);
+  // }
+  total_mass_initial = calculate_total_mass(neutral_density, neso_mesh);
+  total_mass_initial += calculate_total_mass(ion_density, neso_mesh, data_transfer);
 
   // Initialise particle time
   particle_time = 0.0;
@@ -1101,6 +1102,7 @@ int Vantage::advance_vantage(BoutReal UNUSED(time)) {
 
     // "Solve" density
     // Sources are in normalised m^-3 s^-1, so need to multiply by dt
+    // ion_density += (Siz + Srec) * dt;
     for (size_t ic=0; ic < static_cast<size_t>(neso_mesh->get_cell_count());ic++){
       ion_density_kmsh.at(ic) += (Siz_kmsh.at(ic) + Srec_kmsh.at(ic)) * dt;
     }
@@ -1121,10 +1123,11 @@ int Vantage::advance_vantage(BoutReal UNUSED(time)) {
 
   // mass for conservation check
   neutral_density = diagnostics_manager->get_density_kinetic_mesh();
-  for (size_t ic=0; ic < static_cast<size_t>(neso_mesh->get_cell_count());ic++){
-    total_density.at(ic) = neutral_density.at(ic) + ion_density_kmsh.at(ic);
-  }
-  REAL total_mass_final = calculate_total_mass(total_density, neso_mesh);
+  // for (size_t ic=0; ic < static_cast<size_t>(neso_mesh->get_cell_count());ic++){
+  //   total_density.at(ic) = neutral_density.at(ic) + ion_density_kmsh.at(ic);
+  // }
+  REAL total_mass_final = calculate_total_mass(neutral_density, neso_mesh);
+  total_mass_final += calculate_total_mass(ion_density, neso_mesh, data_transfer);
   if (test_mass_conservation) {
     check_mass_conservation(total_mass_final, total_mass_initial);
   }
