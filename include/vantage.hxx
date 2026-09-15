@@ -97,9 +97,9 @@ private:
   std::shared_ptr<VantageDataTransfer> data_transfer; // Manager for VANTAGE data transfer
   std::unique_ptr<VantageDiagnosticsManager>
       diagnostics_manager;           // Manager for VANTAGE diagnostics
-  // These classes don't have a default constructor so need to be initialised as a unique_ptr
-  std::unique_ptr<VantageSourceManager>
+  std::shared_ptr<VantageSourceManager>
       source_manager;           // Manager for VANTAGE reaction sources
+  // These classes don't have a default constructor so need to be initialised as a unique_ptr
   VantageMonitor monitor{this}; // Output monitor to schedule VANTAGE iterations
 
   std::unique_ptr<ReactionController> reaction_controller;

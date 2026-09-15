@@ -2,6 +2,7 @@
 #include "bout/bout_types.hxx"
 #include <bout/assert.hxx>
 #include "../include/component.hxx"
+#include <cstddef>
 #include <memory>
 #include <neso_particles.hpp>
 #include "../include/vantage_sources.hxx"
@@ -29,6 +30,10 @@ VantageSourceManager::VantageSourceManager(
 // Register new source with the manager and initialise its data
 void VantageSourceManager::add_source(
     const std::string& hermes_source_name, const std::string& vantage_source_name,
+    const std::string& bout_diagnostic_units,
+    const BoutReal bout_diagnostic_conversion,
+    const std::string& bout_diagnostic_standard_name,
+    const std::string& bout_diagnostic_long_name,
     std::shared_ptr<CellwiseAccumulator<REAL>> accumulator,
     std::shared_ptr<ParticleGroup> particle_group,
     std::shared_ptr<TransformationStrategy> zeroer) {
@@ -39,7 +44,12 @@ void VantageSourceManager::add_source(
   std::vector<REAL> source_data_kinetic_mesh(static_cast<size_t>(num_cells_owned_kinetic_mesh));
 
   VantageSource source{
-      hermes_source_name, vantage_source_name,
+      hermes_source_name,
+      vantage_source_name,
+      bout_diagnostic_units,
+      bout_diagnostic_conversion,
+      bout_diagnostic_standard_name,
+      bout_diagnostic_long_name,
       accumulator, particle_group, zeroer,
       source_data_plasma_grid,
       source_data_kinetic_mesh};
@@ -55,6 +65,26 @@ Field2D VantageSourceManager::get_plasma_grid_data(const std::string& hermes_sou
 // Return source data on kinetic mesh
 std::vector<REAL> VantageSourceManager::get_kinetic_mesh_data(const std::string& hermes_source_name) {
   return this->sources[hermes_source_name].source_data_kinetic_mesh;
+}
+
+// Return diagnostic units data
+std::string VantageSourceManager::get_units(const std::string& hermes_source_name) {
+  return this->sources[hermes_source_name].bout_diagnostic_units;
+}
+
+// Return diagnostic units data
+BoutReal VantageSourceManager::get_conversion(const std::string& hermes_source_name) {
+  return this->sources[hermes_source_name].bout_diagnostic_conversion;
+}
+
+// Return diagnostic units data
+std::string VantageSourceManager::get_standard_name(const std::string& hermes_source_name) {
+  return this->sources[hermes_source_name].bout_diagnostic_standard_name;
+}
+
+// Return diagnostic units data
+std::string VantageSourceManager::get_long_name(const std::string& hermes_source_name) {
+  return this->sources[hermes_source_name].bout_diagnostic_long_name;
 }
 
 // Update the source from VANTAGE and reset the VANTAGE data/accumulator
@@ -88,4 +118,16 @@ void VantageSourceManager::update_all_sources(double dt) {
   for (auto& [hermes_source_name, source] : this->sources) {
     update_source(hermes_source_name, dt);
   }
+}
+
+// get list of (hermes-3) source names
+std::vector<std::string> VantageSourceManager::get_source_names() {
+  const size_t nsources=this->sources.size();
+  std::vector<std::string> source_names(nsources);
+  size_t is=0;
+  for (auto& [hermes_source_name, source] : this->sources) {
+    source_names.at(is) = hermes_source_name;
+    is += 1;
+  }
+  return source_names;
 }

@@ -10,6 +10,7 @@
 #include <vector>
 #include "../include/vantage_datatransfer.hxx"
 #include "../include/vantage_diagnostics.hxx"
+#include "../include/vantage_sources.hxx"
 
 using namespace NESO::Particles;
 
@@ -155,12 +156,14 @@ VantageDiagnosticsManager::VantageDiagnosticsManager(
     std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh,
     std::shared_ptr<ParticleGroup>& A_particle_group,
     std::shared_ptr<VantageDataTransfer>& data_transfer,
+    std::shared_ptr<VantageSourceManager>& source_manager,
     BoutReal N_w, BoutReal mass, Mesh* bout_mesh,
     Options& units, std::string vantage_dump_filepath)
     : vtkhdf_filename(vtkhdf_filename),
     neso_mesh(neso_mesh),
     A_particle_group(A_particle_group),
     data_transfer(data_transfer),
+    source_manager(source_manager),
     N_w(N_w),
     mass(mass),
     bout_mesh(bout_mesh),
@@ -317,6 +320,16 @@ void VantageDiagnosticsManager::write_kinetic_velocity_moment_diagnostics(int is
       cell_data.at(ic).insert({fmt::format("uvector_{}",dim), uvector.at(jc)});
     }
   }
+  // source variables (stored as scalars -> vector sources would require a refactor)
+  const std::vector<std::string> source_names = this->source_manager->get_source_names();
+  for (size_t is=0; is < source_names.size(); is++){
+    const std::vector<REAL> source_kinetic_mesh = this->source_manager->get_kinetic_mesh_data(
+      source_names.at(is));
+    for (size_t ic=0; ic < num_cells_owned_kinetic_mesh; ic++){
+      // insert map entries at this ic
+      cell_data.at(ic).insert({source_names.at(is), source_kinetic_mesh.at(ic)});
+    }
+  }
   for (size_t ic=0; ic < static_cast<size_t>(num_cells_owned_kinetic_mesh); ic++){
     // fill the VTK::UnstructuredCell value appropriately
     dvtk0.at(ic).cell_data = cell_data.at(ic);
@@ -340,13 +353,13 @@ void VantageDiagnosticsManager::transfer_moments_to_plasma_grid(){
     this->temperature_plasma_grid);
 }
 
-void VantageDiagnosticsManager::write_bout_diagnostics(Field2D& ion_density, Field2D& Siz,
-                        Field2D& Srec,
+void VantageDiagnosticsManager::write_bout_diagnostics(Field2D& ion_density,
+    //  Field2D& Siz, Field2D& Srec,
                         BoutReal particle_time) {
   // extract the units
   const BoutReal Nnorm = get<BoutReal>(this->units["inv_meters_cubed"]);
   // const BoutReal Tnorm = get<BoutReal>(units["eV"]);
-  const BoutReal Omega_ci = 1 / get<BoutReal>(this->units["seconds"]);
+  // const BoutReal Omega_ci = 1 / get<BoutReal>(this->units["seconds"]);
   // const BoutReal rho_s0 = get<BoutReal>(units["meters"]);
   // const BoutReal Bnorm = get<BoutReal>(units["Tesla"]);
   // const BoutReal Cs0 = get<BoutReal>(units["meters"])
@@ -365,24 +378,28 @@ void VantageDiagnosticsManager::write_bout_diagnostics(Field2D& ion_density, Fie
                   {"long_name", "Kinetic neutral density"},
                   {"species", "kinetic neutrals"},
                   {"source", "vantage"}});
-
-  set_with_attrs(this->bout_output_data["Siz"], Siz,
+  // diagnose sources (scalars only -> vectors require a refactor)
+  const std::vector<std::string> source_names = this->source_manager->get_source_names();
+  for (size_t is=0; is < source_names.size(); is++){
+    const Field2D source = this->source_manager->get_plasma_grid_data(
+      source_names.at(is));
+    const std::string units_description = this->source_manager->get_units(
+      source_names.at(is));
+    const BoutReal conversion = this->source_manager->get_conversion(
+      source_names.at(is));
+    const std::string long_name = this->source_manager->get_long_name(
+      source_names.at(is));
+    const std::string standard_name = this->source_manager->get_long_name(
+      source_names.at(is));
+    set_with_attrs(this->bout_output_data[source_names.at(is)], source,
                  {{"time_dimension", "t"},
-                  {"units", "m^-3 s^-1"},
-                  {"conversion", Nnorm * Omega_ci},
-                  {"standard_name", "Density source"},
-                  {"long_name", "Ionisation density source"},
+                  {"units", units_description},
+                  {"conversion", conversion},
+                  {"standard_name", standard_name},
+                  {"long_name", long_name},
                   {"species", "kinetic neutrals"},
                   {"source", "vantage"}});
-
-  set_with_attrs(this->bout_output_data["Srec"], Srec,
-                 {{"time_dimension", "t"},
-                  {"units", "m^-3 s^-1"},
-                  {"conversion", Nnorm * Omega_ci},
-                  {"standard_name", "Density source"},
-                  {"long_name", "Recombination density source"},
-                  {"species", "kinetic neutrals"},
-                  {"source", "vantage"}});
+  }
 
   set_with_attrs(this->bout_output_data["t_array"], particle_time, {{"time_dimension", "t"}});
 

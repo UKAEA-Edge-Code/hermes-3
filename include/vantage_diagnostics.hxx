@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 #include "../include/vantage_datatransfer.hxx"
+#include "../include/vantage_sources.hxx"
 
 using namespace NESO::Particles;
 
@@ -19,6 +20,7 @@ public:
     std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh,
     std::shared_ptr<ParticleGroup>& A_particle_group,
     std::shared_ptr<VantageDataTransfer>& data_transfer,
+    std::shared_ptr<VantageSourceManager>& source_manager,
     BoutReal N_w, BoutReal mass,
     Mesh* bout_mesh, Options& units,
     std::string vantage_dump_filepath);
@@ -33,8 +35,6 @@ public:
   // write BOUT++ style diagnostics on the BOUT++ grid
   void write_bout_diagnostics(
           Field2D& ion_density,
-          Field2D& Siz,
-          Field2D& Srec,
           BoutReal particle_time);
   std::vector<REAL> get_density_kinetic_mesh();
   // Field2D transfer_scalar_to_plasma_grid(std::vector<REAL>& scalar_field);
@@ -45,6 +45,8 @@ private:
   std::shared_ptr<PetscInterface::DMPlexInterface> neso_mesh;
   std::shared_ptr<ParticleGroup> A_particle_group;
   std::shared_ptr<VantageDataTransfer> data_transfer;
+  // pointer to vantage source_manager for diagnostics
+  std::shared_ptr<VantageSourceManager> source_manager;
   BoutReal N_w;
   BoutReal mass;
 

@@ -728,8 +728,11 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
     // ------------------------------------------------------------------------------
 
     this->source_manager =
-        std::make_unique<VantageSourceManager>(neso_mesh,
+        std::make_shared<VantageSourceManager>(neso_mesh,
         data_transfer, bout_mesh, units);
+    // extract the units for the sources below
+    const BoutReal Nnorm = get<BoutReal>(units["inv_meters_cubed"]);
+    const BoutReal Omega_ci = 1 / get<BoutReal>(units["seconds"]);
 
     const REAL remove_threshold = options["remove_threshold"].withDefault(1.0e-10);
     const REAL merge_threshold = options["merge_threshold"].withDefault(1.0e-2);
@@ -766,9 +769,15 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
     this->reaction_controller =
         std::make_unique<ReactionController>(parent_transforms_iz, child_transforms);
 
-    this->source_manager->add_source("Siz", "ION_SOURCE_DENSITY",
-                                     accumulator_transform_iz, A_particle_group,
-                                     ion_source_density_zeroer);
+    this->source_manager->add_source("Siz",
+                                    "ION_SOURCE_DENSITY",
+                                    "m^-3 s^-1",
+                                    Nnorm * Omega_ci,
+                                    "Density source",
+                                    "Ionisation density source",
+                                    accumulator_transform_iz,
+                                    A_particle_group,
+                                    ion_source_density_zeroer);
 
     // Recombination transforms and controller
 
@@ -784,9 +793,15 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
     this->recombination_controller =
         std::make_unique<ReactionController>(parent_transforms_rec, child_transforms);
 
-    this->source_manager->add_source("Srec", "ION_SOURCE_DENSITY",
-                                     accumulator_transform_rec, marker_group,
-                                     ion_source_density_zeroer);
+    this->source_manager->add_source("Srec",
+                                    "ION_SOURCE_DENSITY",
+                                    "m^-3 s^-1",
+                                    Nnorm * Omega_ci,
+                                    "Density source",
+                                    "Recombination density source",
+                                    accumulator_transform_rec,
+                                    marker_group,
+                                    ion_source_density_zeroer);
 
     // Ionisation reaction
     // ------------------------------------------------------------------------------
@@ -940,7 +955,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
   // write velocity moment diagnostics
   diagnostics_manager = std::make_unique<VantageDiagnosticsManager>(
     make_output_path("BOUT.dmp.vantage.particle.moments", alloptions),
-    neso_mesh, A_particle_group, data_transfer,
+    neso_mesh, A_particle_group, data_transfer, this->source_manager,
     N_w, AA, bout_mesh, units, vantage_dump_filepath);
   diagnostics_manager->update_kinetic_velocity_moments();
   diagnostics_manager->write_kinetic_velocity_moment_diagnostics(0, ion_density_kmsh);
@@ -963,9 +978,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
 
   // Initialise particle time
   particle_time = 0.0;
-  Field2D Srec = Field2D{0.0, bout_mesh};
-  Field2D Siz = Field2D{0.0, bout_mesh};
-  diagnostics_manager->write_bout_diagnostics(ion_density, Siz, Srec, particle_time);
+  diagnostics_manager->write_bout_diagnostics(ion_density, particle_time);
 
   // Register VANTAGE timestep scheduler.
   // https://bout-dev.readthedocs.io/en/latest/user_docs/time_integration.html#monitoring-the-simulation-output
@@ -1097,7 +1110,7 @@ int Vantage::advance_vantage(BoutReal UNUSED(time)) {
     diagnostics_manager->transfer_moments_to_plasma_grid();
     // Write to VANTAGE dump files
     data_transfer->transfer_scalar_to_plasma_grid(ion_density_kmsh, ion_density);
-    diagnostics_manager->write_bout_diagnostics(ion_density, Siz, Srec, particle_time);
+    diagnostics_manager->write_bout_diagnostics(ion_density, particle_time);
     // Write to particle_trajectories file
     h5part->write();
   }
