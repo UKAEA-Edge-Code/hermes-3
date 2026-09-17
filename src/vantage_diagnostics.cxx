@@ -59,9 +59,18 @@ REAL calculate_total_mass(Field2D& density,
 
 // helper function to initialise the plasma grid (BOUT++ mesh) diagnostics
 Options initialise_plasma_grid_diagnostics(Options& units, Mesh* bout_mesh,
-                      //  Field2D& neutral_density,
-                      //  Field2D& ion_density,
-                      std::string vantage_dump_filepath) {
+          std::vector<REAL>& neso_cell_volumes,
+          std::string vantage_dump_filepath) {
+
+  // local number of BOUT++ x cells, excluding guards
+  const int Nx = bout_mesh->xend - bout_mesh->xstart + 1;
+  // local number of BOUT++ y cells, excluding guards
+  const int Ny = bout_mesh->yend - bout_mesh->ystart + 1;
+  // Get the number of cells in the bout (plasma) mesh owned on this process, excluding guard cells
+  const size_t num_cells_owned_bout_mesh = static_cast<size_t>(Nx*Ny);
+  // Get the number of cells in the kinetic (neutral) mesh owned on this process
+  ASSERT1(neso_cell_volumes.size() == num_cells_owned_bout_mesh);
+
   // Options object to use to write out diagnostic data of fluid quantities
 
   const BoutReal Nnorm = get<BoutReal>(units["inv_meters_cubed"]);
@@ -71,6 +80,16 @@ Options initialise_plasma_grid_diagnostics(Options& units, Mesh* bout_mesh,
   const BoutReal Bnorm = get<BoutReal>(units["Tesla"]);
   const BoutReal Cs0 = get<BoutReal>(units["meters"])
              / get<BoutReal>(units["seconds"]);
+
+  // save the area of each 2D cell where it aligns with the BOUT++ mesh
+  Field2D neso_cell_areas{0.0, bout_mesh};
+  size_t ixy=0;
+  for (PetscInt ix = bout_mesh->xstart; ix <= bout_mesh->xend; ix++) {
+    for (PetscInt iy = bout_mesh->ystart; iy <= bout_mesh->yend; iy++) {
+      neso_cell_areas(ix,iy) = neso_cell_volumes.at(ixy);
+      ixy++;
+    }
+  }
 
   Options bout_output_data;
   // Add metadata from mesh, e.g. branch cuts
@@ -137,6 +156,10 @@ Options initialise_plasma_grid_diagnostics(Options& units, Mesh* bout_mesh,
       {"units", "m"},
       {"conversion", 1}, // Already in SI units
     });
+  set_with_attrs(bout_output_data["neso_cell_areas"], neso_cell_areas, {
+      {"units", "m^2"},
+      {"conversion", rho_s0*rho_s0}, // Already in SI units
+    });
   set_with_attrs(bout_output_data["y_boundary_guards"], 2, {
       {"source", "vantage -- should be provided by BOUT++"}
     });
@@ -182,6 +205,7 @@ Options initialise_plasma_grid_diagnostics(Options& units, Mesh* bout_mesh,
 VantageDiagnosticsManager::VantageDiagnosticsManager(
     std::string vtkhdf_filename,
     std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh,
+    std::vector<REAL>& neso_cell_volumes,
     std::shared_ptr<ParticleGroup>& A_particle_group,
     std::shared_ptr<VantageDataTransfer>& data_transfer,
     std::shared_ptr<VantageSourceManager>& source_manager,
@@ -211,7 +235,7 @@ VantageDiagnosticsManager::VantageDiagnosticsManager(
       vantage_dump_writer =
           bout::OptionsIO::create({{"file", vantage_dump_filepath}, {"append", true}});
       bout_output_data =
-        initialise_plasma_grid_diagnostics(units, bout_mesh, vantage_dump_filepath);
+        initialise_plasma_grid_diagnostics(units, bout_mesh, neso_cell_volumes, vantage_dump_filepath);
       // initialise plasma grid variables
       density_plasma_grid = Field2D(0.0, bout_mesh);
       energy_plasma_grid = Field2D(0.0, bout_mesh);

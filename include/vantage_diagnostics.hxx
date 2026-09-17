@@ -20,6 +20,8 @@ class VantageDiagnosticsManager {
 public:
   VantageDiagnosticsManager(std::string vtkhdf_filename,
     std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh,
+    // neso_mesh cell volumes on the BOUT++ mesh
+    std::vector<REAL>& neso_cell_volumes,
     std::shared_ptr<ParticleGroup>& A_particle_group,
     std::shared_ptr<VantageDataTransfer>& data_transfer,
     std::shared_ptr<VantageSourceManager>& source_manager,

@@ -971,7 +971,8 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
   // write velocity moment diagnostics
   diagnostics_manager = std::make_unique<VantageDiagnosticsManager>(
     make_output_path("BOUT.dmp.vantage.particle.moments", alloptions),
-    neso_mesh, A_particle_group, data_transfer, this->source_manager,
+    neso_mesh, neso_mesh_cell_volumes_on_plasma_grid,
+    A_particle_group, data_transfer, this->source_manager,
     N_w, AA, bout_mesh, units, vantage_dump_filepath);
   diagnostics_manager->update_kinetic_velocity_moments();
   diagnostics_manager->write_kinetic_velocity_moment_diagnostics(0, ion_density_kmsh);

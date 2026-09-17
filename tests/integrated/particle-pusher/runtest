@@ -7,6 +7,7 @@ from boututils.run_wrapper import shell, launch_safe
 import h5py
 import numpy as np
 import h5py
+import netCDF4 as nc
 
 verbose = False
 
@@ -20,17 +21,24 @@ def integrate_cellvalue(cellvalues, volumes):
     integral = sum(integrand)
     return integral
 
-def get_masses(vtkhdf_file_path):
+def get_neutral_mass(vtkhdf_file_path):
     # assume that a single .vtkhdf file corresponds to a single time slice
     with h5py.File(vtkhdf_file_path,'r') as dataset:
             density_cellvalues = np.copy(dataset[f"/VTKHDF/CellData/density"][:])
-            ion_density_cellvalues = np.copy(dataset[f"/VTKHDF/CellData/ion_density"][:])
+            # ion_density_cellvalues = np.copy(dataset[f"/VTKHDF/CellData/ion_density"][:])
             volumes = np.copy(dataset[f"/VTKHDF/CellData/cellvolume"][:])
             # get the masses from this time
             total_neutral_mass = integrate_cellvalue(density_cellvalues,volumes)
-            total_ion_mass = integrate_cellvalue(ion_density_cellvalues,volumes)
-            total_mass = total_ion_mass + total_neutral_mass
-    return total_neutral_mass, total_ion_mass, total_mass
+    return total_neutral_mass
+
+# consider how to parallelise this when the test is run in parallel
+def get_ion_mass(ncfile_path):
+    with nc.Dataset(ncfile_path, mode="r") as ncdataset:
+        ion_density = np.copy(ncdataset.variables["ion_density"][:])
+        cellareas = np.copy(ncdataset.variables["neso_cell_areas"][:])
+    ion_mass_0 = np.sum(ion_density[0,:,:]*cellareas[:,:])
+    ion_mass_end = np.sum(ion_density[-1,:,:]*cellareas[:,:])
+    return ion_mass_0, ion_mass_end
 
 # A function to define the BOUT.inp file contents
 def particle_push_input(
@@ -203,9 +211,14 @@ def test_particle_push(
     # check the mass diagnostic
     vtkhdf_file_path_time_0 = r"particle-push-slab-test/BOUT.dmp.vantage.particle.moments.istep.0.vtkhdf"
     vtkhdf_file_path_time_end = rf"particle-push-slab-test/BOUT.dmp.vantage.particle.moments.istep.{nsteps}.vtkhdf"
+    ncfile_path = r"particle-push-slab-test/BOUT.dmp.vantage.0.nc"
 
-    total_neutral_mass_0, total_ion_mass_0, total_mass_0 = get_masses(vtkhdf_file_path_time_0)
-    total_neutral_mass_end, total_ion_mass_end, total_mass_end = get_masses(vtkhdf_file_path_time_end)
+    total_neutral_mass_0 = get_neutral_mass(vtkhdf_file_path_time_0)
+    total_neutral_mass_end = get_neutral_mass(vtkhdf_file_path_time_end)
+    total_ion_mass_0, total_ion_mass_end = get_ion_mass(ncfile_path)
+
+    total_mass_0 = total_neutral_mass_0 + total_ion_mass_0
+    total_mass_end = total_neutral_mass_end + total_ion_mass_end
 
     # total mass should always be conserved
     np.testing.assert_allclose(
