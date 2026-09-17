@@ -2,64 +2,19 @@
 #include "../include/component.hxx"
 #include "bout/bout.hxx"
 #include "bout/petsclib.hxx"
+#include <bout/bout_types.hxx>
+#include <bout/field2d.hxx>
+#include <memory>
 #include <neso_particles.hpp>
 #include <neso_rng_toolkit.hpp>
 #include <reactions/reactions.hpp>
+#include <vector>
+#include "../include/vantage_diagnostics.hxx"
+#include "../include/vantage_sources.hxx"
+#include "vantage_datatransfer.hxx"
 
 using namespace NESO::Particles;
 using namespace VANTAGE::Reactions;
-
-/// @brief Data struct to hold information about a reaction source.
-/// @param reaction_name Name of the reaction, e.g. "ionistaion"
-/// @param source_name Name of the source, e.g. Siz (ion density source due to
-/// ionisation).
-/// @param accumulator CellwiseAccumulator to use to accumulate the source term for this
-/// reaction.
-/// @param particle_group ParticleGroup to which this source applies.
-/// @param zeroer TransformationStrategy to use to zero the source term dat after
-/// accumulation.
-struct VantageSource {
-  std::string hermes_source_name;
-  std::string vantage_source_name;
-  std::shared_ptr<CellwiseAccumulator<REAL>> accumulator;
-  std::shared_ptr<ParticleGroup> particle_group;
-  std::shared_ptr<TransformationStrategy> zeroer;
-  Field2D source_data;
-};
-
-/// @brief  Class to manage reaction channel sources from VANTAGE.
-/// Source terms from VANTAGE are extracted from the accumulator.
-/// These are then converted to actual sources, e.g. units of m^-3 s^-1 for a
-/// density source.
-class VantageSourceManager {
-public:
-  VantageSourceManager(std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh,
-                       Mesh* bout_mesh, Options& units);
-
-  Mesh* bout_mesh;
-
-  // Register new source
-  void add_source(const std::string& hermes_source_name,
-                  const std::string& vantage_source_name,
-                  std::shared_ptr<CellwiseAccumulator<REAL>> accumulator,
-                  std::shared_ptr<ParticleGroup> particle_group,
-                  std::shared_ptr<TransformationStrategy> zeroer);
-
-  // Update the Hermes-3 source field using the accumulated data from corresponding
-  // VANTAGE source
-  void update_source(const std::string& hermes_source_name, double dt);
-
-  // Call update_source on all sources
-  void update_all_sources(double dt);
-
-  // Return data for a given Hermes-3 source name
-  Field2D get_data(const std::string& hermes_source_name);
-
-private:
-  std::map<std::string, VantageSource> sources;
-  std::shared_ptr<PetscInterface::DMPlexInterface> neso_mesh;
-  Options& units;
-};
 
 // Need to declare empty struct because the Monitor needs it and it must be
 // before component construction as it has the monitor as a member.
@@ -98,33 +53,45 @@ private:
   BoutReal particle_time;
   BoutReal N_w;
   REAL dt;
+  BoutReal charge;
+  BoutReal AA; // mass
+  BoutReal initial_neutral_density;
   int nsteps;
   int num_cells_owned; // Number of VANTAGE cells owned per rank
 
-  Options bout_output_data; // Options object to hold output data for VANTAGE diagnostics
-  std::unique_ptr<bout::OptionsIO>
-      vantage_dump_writer; // OptionsIO object to write VANTAGE diagnostics
-
   int mpi_rank;    // Current rank ID
   Mesh* bout_mesh; // Pointer to the BOUT++ mesh object
-  Field2D ion_density, neutral_density, total_density;
-  Field2D initial_neutral_density; // Initial VANTAGE kinetic neutral density
+  // Diagnostic variables on the kinetic mesh, for testing
+  std::vector<REAL> neutral_density, total_density;
+  std::vector<REAL> ion_density_kmsh;
+  // Field2D for storing plasma data coming from the plasma grid, that will be evaluated
+  // on to the kinetic mesh, and then on to the particles themselves.
+  Field2D electron_density, electron_temperature;
+  Field2D ion_density, ion_temperature;
+  std::vector<Field2D> ion_velocity;
+  // a threshold density, for reactions between neutrals and the plasma
+  REAL electron_density_threshold;
   BoutReal total_mass_initial, total_mass;
   std::string dmplex_filepath, vantage_dump_filepath,
       particle_data_filepath; // Path for output files
+  // volumes of neso_mesh cells (from neso_mesh->dmh->get_cell_volume())
+  // in a vector of size of Nx*Ny, where Nx and Ny are the number of local
+  // x and y cells in the BOUT++ mesh (excluding guards)
+  std::vector<REAL> neso_mesh_cell_volumes_on_plasma_grid;
+
 
   PetscLib petsc_lib; // Ensures PETSc is initialized for the lifetime of this component
 
   DM dm;
   std::shared_ptr<PetscInterface::DMPlexInterface> neso_mesh;
   std::shared_ptr<SYCLTarget> sycl_target;
-  std::shared_ptr<PetscInterface::BoundaryInteraction2D>
-      b2d; // Boundary interaction object
-  std::shared_ptr<PetscInterface::DMPlexProjectEvaluateDG>
-      dg0;                        // DMPlex projection object
+  std::shared_ptr<PetscInterface::BoundaryInteraction2D> b2d;
+  std::shared_ptr<PetscInterface::DMPlexProjectEvaluateDG> project_eval_dg0;
+  std::shared_ptr<PetscInterface::DMPlexMeshCouplerDG0> mesh_coupler_dg0;
+  std::vector<REAL> dof_kinetic_mesh_scalar;
+  std::vector<REAL> dof_bout_mesh_scalar;
+  std::vector<PetscInt> kinetic_mesh_map; // variable for recording the map from serial to parallelised DMPlex cells in terms of a vector of integers
   std::shared_ptr<H5Part> h5part; // HDF5 particle output object
-  std::vector<REAL>
-      h_project1; // Buffer for scalar projection/evaluation of NESO-Particles properties
   std::shared_ptr<ParticleGroup> A_particle_group; // Particle group for main neutrals
   std::shared_ptr<ParticleGroup> marker_group;     // Particle group for rec markers
 
@@ -132,9 +99,12 @@ private:
   std::shared_ptr<BoundaryReflection> reflection; // Boundary reflection object
   void apply_boundary_conditions(ParticleSubGroupSharedPtr aa);
 
-  // These classes don't have a default constructor so need to be initialised as a unique_ptr
-  std::unique_ptr<VantageSourceManager>
+  std::shared_ptr<VantageDataTransfer> data_transfer; // Manager for VANTAGE data transfer
+  std::unique_ptr<VantageDiagnosticsManager>
+      diagnostics_manager;           // Manager for VANTAGE diagnostics
+  std::shared_ptr<VantageSourceManager>
       source_manager;           // Manager for VANTAGE reaction sources
+  // These classes don't have a default constructor so need to be initialised as a unique_ptr
   VantageMonitor monitor{this}; // Output monitor to schedule VANTAGE iterations
 
   std::unique_ptr<ReactionController> reaction_controller;

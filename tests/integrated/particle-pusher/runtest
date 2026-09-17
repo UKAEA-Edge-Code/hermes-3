@@ -6,6 +6,7 @@ from boututils.run_wrapper import shell, launch_safe
 
 import h5py
 import numpy as np
+import h5py
 import netCDF4 as nc
 
 verbose = False
@@ -15,6 +16,43 @@ shell("ln -s ../../../hermes-3 hermes-3")
 # make the run directory
 shell("mkdir particle-push-slab-test")
 
+def integrate_cellvalue(cellvalues, volumes):
+    integrand = cellvalues*volumes
+    integral = sum(integrand)
+    return integral
+
+def get_neutral_mass(vtkhdf_file_path):
+    # assume that a single .vtkhdf file corresponds to a single time slice
+    with h5py.File(vtkhdf_file_path,'r') as dataset:
+            density_cellvalues = np.copy(dataset[f"/VTKHDF/CellData/density"][:])
+            # ion_density_cellvalues = np.copy(dataset[f"/VTKHDF/CellData/ion_density"][:])
+            volumes = np.copy(dataset[f"/VTKHDF/CellData/cellvolume"][:])
+            # get the masses from this time
+            total_neutral_mass = integrate_cellvalue(density_cellvalues,volumes)
+    return total_neutral_mass
+
+# consider how to parallelise this when the test is run in parallel
+def get_ion_mass(ncfile_path):
+    with nc.Dataset(ncfile_path, mode="r") as ncdataset:
+        ion_density = np.copy(ncdataset.variables["ion_density"][:])
+        cellareas = np.copy(ncdataset.variables["neso_cell_areas"][:])
+    ion_mass_0 = np.sum(ion_density[0,:,:]*cellareas[:,:])
+    ion_mass_end = np.sum(ion_density[-1,:,:]*cellareas[:,:])
+    return ion_mass_0, ion_mass_end
+
+def get_ionised_mass(ncfile_path):
+    with nc.Dataset(ncfile_path, mode="r") as ncdataset:
+        time = np.copy(ncdataset.variables["t_array"][:])
+        Siz = np.copy(ncdataset.variables["Siz"][:])
+        Srec = np.copy(ncdataset.variables["Srec"][:])
+        cellareas = np.copy(ncdataset.variables["neso_cell_areas"][:])
+    ntime, = time.shape
+    ionised_mass = 0.0
+    for it in range(1,ntime):
+        dt = time[it] - time[it-1]
+        ionised_mass += dt*np.sum(Siz[it,:,:]*cellareas[:,:])
+        ionised_mass += dt*np.sum(Srec[it,:,:]*cellareas[:,:])
+    return 0, ionised_mass
 
 # A function to define the BOUT.inp file contents
 def particle_push_input(
@@ -83,7 +121,8 @@ def particle_push_input(
     dt = {dt}
     nsteps = {nsteps}
     test_mass_conservation = true
-    initial_neutral_density = 1e19
+    initial_neutral_pressure = 1
+    initial_neutral_temperature = 1
     npart_per_cell = 20
     background_ion_density = 1e19
     background_ion_temperature = 50
@@ -184,44 +223,68 @@ def test_particle_push(
         )
 
     # check the mass diagnostic
+    vtkhdf_file_path_time_0 = r"particle-push-slab-test/BOUT.dmp.vantage.particle.moments.istep.0.vtkhdf"
+    vtkhdf_file_path_time_end = rf"particle-push-slab-test/BOUT.dmp.vantage.particle.moments.istep.{nsteps}.vtkhdf"
     ncfile_path = r"particle-push-slab-test/BOUT.dmp.vantage.0.nc"
 
-    with nc.Dataset(ncfile_path, mode="r") as ncdataset:
-        total_mass = np.copy(ncdataset.variables["total_mass"][:])
-        total_ion_mass = np.copy(ncdataset.variables["total_ion_mass"][:])
-        total_neutral_mass = np.copy(ncdataset.variables["total_neutral_mass"][:])
+    total_neutral_mass_0 = get_neutral_mass(vtkhdf_file_path_time_0)
+    total_neutral_mass_end = get_neutral_mass(vtkhdf_file_path_time_end)
+    total_ion_mass_0, total_ion_mass_end = get_ion_mass(ncfile_path)
+    total_ionised_mass_0, total_ionised_mass_end = get_ionised_mass(ncfile_path)
+
+    total_mass_0 = total_neutral_mass_0 + total_ion_mass_0
+    total_mass_end = total_neutral_mass_end + total_ion_mass_end
+
+    neutral_plus_ionised_mass_0 = total_neutral_mass_0 + total_ionised_mass_0
+    neutral_plus_ionised_mass_end = total_neutral_mass_end + total_ionised_mass_end
 
     # total mass should always be conserved
     np.testing.assert_allclose(
-        total_mass[0],
-        total_mass[-1],
+        total_mass_0,
+        total_mass_end,
         atol=1.0e-11,
         err_msg=f"Total mass not conserved in {mode} test",
+    )
+    np.testing.assert_allclose(
+        neutral_plus_ionised_mass_0,
+        neutral_plus_ionised_mass_end,
+        atol=1.0e-11,
+        err_msg=f"Neutral + ionised mass not conserved in {mode} test",
     )
 
     # if we ionise particles there should be mass exchange between neutral and ion
     if mode == "ionisation":
         np.testing.assert_array_less(
-            total_ion_mass[0],
-            total_ion_mass[-1],
+            total_ion_mass_0,
+            total_ion_mass_end,
             err_msg="Ion mass did not increase in ionisation test",
         )
         np.testing.assert_array_less(
-            total_neutral_mass[-1],
-            total_neutral_mass[0],
+            total_ionised_mass_0,
+            total_ionised_mass_end,
+            err_msg="Ionised mass did not increase in ionisation test",
+        )
+        np.testing.assert_array_less(
+            total_neutral_mass_end,
+            total_neutral_mass_0,
             err_msg="Neutral mass did not decrease in ionisation test",
         )
 
     # Recombination is the opposite
     if mode == "recombination":
         np.testing.assert_array_less(
-            total_ion_mass[-1],
-            total_ion_mass[0],
+            total_ion_mass_end,
+            total_ion_mass_0,
             err_msg="Ion mass did not decrease in recombination test",
         )
         np.testing.assert_array_less(
-            total_neutral_mass[0],
-            total_neutral_mass[-1],
+            total_ionised_mass_end,
+            total_ionised_mass_0,
+            err_msg="Ionised mass did not decrease in recombination test",
+        )
+        np.testing.assert_array_less(
+            total_neutral_mass_0,
+            total_neutral_mass_end,
             err_msg="Neutral mass did not increase in recombination test",
         )
 
