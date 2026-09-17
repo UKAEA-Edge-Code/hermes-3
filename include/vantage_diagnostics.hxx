@@ -13,8 +13,7 @@ using namespace NESO::Particles;
 REAL calculate_total_mass(std::vector<REAL>& density,
           std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh);
 REAL calculate_total_mass(Field2D& density,
-          std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh,
-          std::shared_ptr<VantageDataTransfer>& data_transfer);
+          std::vector<REAL>& neso_cell_volume_on_bout_mesh);
 
 /// @brief  Class to manage diagnostics from VANTAGE.
 class VantageDiagnosticsManager {

@@ -30,23 +30,25 @@ REAL calculate_total_mass(std::vector<REAL>& density,
 }
 
 REAL calculate_total_mass(Field2D& density,
-                    std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh,
-                    std::shared_ptr<VantageDataTransfer>& data_transfer) {
+                    std::vector<REAL>& neso_cell_volume_on_bout_mesh) {
   Mesh* bout_mesh = density.getMesh();
-  size_t nkinetic_cells = static_cast<size_t>(neso_mesh->get_cell_count());
-  std::vector<REAL> cell_volume(nkinetic_cells);
-  for (size_t ic = 0;ic < nkinetic_cells; ic++) {
-    cell_volume.at(ic) = neso_mesh->dmh->get_cell_volume(static_cast<int>(ic));
-  }
-  Field2D cell_volume_on_bout_mesh = Field2D{0.0, bout_mesh};
-  data_transfer->transfer_scalar_to_plasma_grid(cell_volume, cell_volume_on_bout_mesh);
+  // local number of BOUT++ x cells, excluding guards
+  const int Nx = bout_mesh->xend - bout_mesh->xstart + 1;
+  // local number of BOUT++ y cells, excluding guards
+  const int Ny = bout_mesh->yend - bout_mesh->ystart + 1;
+  // Get the number of cells in the bout (plasma) mesh owned on this process, excluding guard cells
+  const size_t num_cells_owned_bout_mesh = static_cast<size_t>(Nx*Ny);
+  // Get the number of cells in the kinetic (neutral) mesh owned on this process
+  ASSERT1(neso_cell_volume_on_bout_mesh.size() == num_cells_owned_bout_mesh);
   // sum over the density on the BOUT++ grid, using NESO-Particles cell volumes
   REAL local_mass = 0.0;
   REAL total_mass = 0.0;
   // sum over the ion density on the plasma mesh
+  size_t ixy=0;
   for (PetscInt ix = bout_mesh->xstart; ix <= bout_mesh->xend; ix++) {
     for (PetscInt iy = bout_mesh->ystart; iy <= bout_mesh->yend; iy++) {
-      local_mass += density(ix, iy) * cell_volume_on_bout_mesh(ix,iy);
+      local_mass += density(ix, iy) * neso_cell_volume_on_bout_mesh.at(ixy);
+      ixy++;
     }
   }
   // sum contributions from different MPI ranks

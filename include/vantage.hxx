@@ -74,6 +74,11 @@ private:
   BoutReal total_mass_initial, total_mass;
   std::string dmplex_filepath, vantage_dump_filepath,
       particle_data_filepath; // Path for output files
+  // volumes of neso_mesh cells (from neso_mesh->dmh->get_cell_volume())
+  // in a vector of size of Nx*Ny, where Nx and Ny are the number of local
+  // x and y cells in the BOUT++ mesh (excluding guards)
+  std::vector<REAL> neso_mesh_cell_volumes_on_plasma_grid;
+
 
   PetscLib petsc_lib; // Ensures PETSc is initialized for the lifetime of this component
 

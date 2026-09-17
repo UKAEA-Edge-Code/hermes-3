@@ -124,12 +124,10 @@ ParticleSubGroupSharedPtr create_particle_sub_group_in_plasma_volume(
   return particle_group_in_plasma;
 }
 
-void check_cell_volumes(DM& dm, std::vector<PetscInt>& kinetic_mesh_map,
+std::vector<REAL> get_cell_volumes_on_plasma_grid(DM& dm,
+          std::vector<PetscInt>& kinetic_mesh_map,
           std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh,
-                        Mesh*& bout_mesh, Options& alloptions) {
-  Coordinates* coord = bout_mesh->getCoordinates();
-  size_t ixy=0;
-  const REAL tolerance = 1.0e-12;
+          Mesh*& bout_mesh){
   // local number of BOUT++ x cells, excluding guards
   const int Nx = bout_mesh->xend - bout_mesh->xstart + 1;
   // local number of BOUT++ y cells, excluding guards
@@ -138,16 +136,12 @@ void check_cell_volumes(DM& dm, std::vector<PetscInt>& kinetic_mesh_map,
   const size_t num_cells_owned_bout_mesh = static_cast<size_t>(Nx*Ny);
   // Get the number of cells in the kinetic (neutral) mesh owned on this process
   const size_t num_cells_owned_kinetic_mesh = static_cast<size_t>(neso_mesh->get_cell_count());
-  // dimensional units
-  const BoutReal meters = get<BoutReal>(alloptions["units"]["meters"]);
-  const BoutReal meters_squared = meters * meters;
-  const BoutReal meters_cubed = meters * meters * meters;
   // neso_mesh cell volumes on BOUT++ mesh indices
-  std::vector<double> neso_cell_volumes_bmsh(num_cells_owned_bout_mesh);
+  std::vector<REAL> neso_cell_volumes_bmsh(num_cells_owned_bout_mesh);
   // the checks
   if (num_cells_owned_kinetic_mesh == num_cells_owned_bout_mesh){
     // zero the compound index
-    ixy = 0;
+    size_t ixy = 0;
     for (PetscInt ix = bout_mesh->xstart; ix <= bout_mesh->xend; ix++) {
      for (PetscInt iy = bout_mesh->ystart; iy <= bout_mesh->yend; iy++) {
       neso_cell_volumes_bmsh.at(ixy) = neso_mesh->dmh->get_cell_volume(static_cast<int>(ixy));
@@ -168,7 +162,6 @@ void check_cell_volumes(DM& dm, std::vector<PetscInt>& kinetic_mesh_map,
     int icell = 0;
     for (int ix = bout_mesh->xstart; ix <= bout_mesh->xend; ix++) {
       for (int iy = bout_mesh->ystart; iy <= bout_mesh->yend; iy++) {
-        // n.b. forward and backward weights may be incorrect for non-rectangular BOUT++ cells
         // lower triangle
         coupler_map.at(static_cast<size_t>(icell)).push_back(
           {kinetic_mesh_map.at(static_cast<size_t>(map_RZ_to_itriangle_0(ix,iy))), 1.0, 1.0});
@@ -188,6 +181,27 @@ void check_cell_volumes(DM& dm, std::vector<PetscInt>& kinetic_mesh_map,
     // move these cell volumes to the bout mesh
     mesh_coupler_unit_weight->backward_transfer(neso_cell_volumes_kmsh, 1, neso_cell_volumes_bmsh);
   }
+  return neso_cell_volumes_bmsh;
+}
+
+void check_cell_volumes(std::vector<REAL> neso_cell_volumes_bmsh,
+                        Mesh*& bout_mesh, Options& alloptions) {
+  Coordinates* coord = bout_mesh->getCoordinates();
+  size_t ixy=0;
+  const REAL tolerance = 1.0e-12;
+  // local number of BOUT++ x cells, excluding guards
+  const int Nx = bout_mesh->xend - bout_mesh->xstart + 1;
+  // local number of BOUT++ y cells, excluding guards
+  const int Ny = bout_mesh->yend - bout_mesh->ystart + 1;
+  // Get the number of cells in the bout (plasma) mesh owned on this process, excluding guard cells
+  const size_t num_cells_owned_bout_mesh = static_cast<size_t>(Nx*Ny);
+  // Get the number of cells in the kinetic (neutral) mesh owned on this process
+  ASSERT1(neso_cell_volumes_bmsh.size() == num_cells_owned_bout_mesh);
+  // dimensional units
+  const BoutReal meters = get<BoutReal>(alloptions["units"]["meters"]);
+  const BoutReal meters_squared = meters * meters;
+  const BoutReal meters_cubed = meters * meters * meters;
+  // the checks of cell volumes
   // zero the compound index
   ixy = 0;
   for (PetscInt ix = bout_mesh->xstart; ix <= bout_mesh->xend; ix++) {
@@ -495,10 +509,12 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
         std::make_shared<PetscInterface::DMPlexLocalMapper>(sycl_target, neso_mesh);
     // Create a domain from the neso_mesh and the mapper.
     auto domain = std::make_shared<Domain>(neso_mesh, mapper);
+    // get the cell volumes from neso_mesh on the plasma grid, in the compound index
+    neso_mesh_cell_volumes_on_plasma_grid = get_cell_volumes_on_plasma_grid(dm, kinetic_mesh_map, neso_mesh, bout_mesh);
     // if requested, check that neso_mesh cell volumes are identical
     // to bout_mesh cell volumes, otherwise, exit.
     if (mesh_options["test_dmplex_cell_volumes"].withDefault(true)) {
-      check_cell_volumes(dm, kinetic_mesh_map, neso_mesh, bout_mesh, alloptions);
+      check_cell_volumes(neso_mesh_cell_volumes_on_plasma_grid, bout_mesh, alloptions);
     }
     if (mesh_options["test_dmplex_cell_centres"].withDefault(true)) {
       check_cell_centres(
@@ -975,7 +991,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
   //   total_density.at(ic) = neutral_density.at(ic) + ion_density_kmsh.at(ic);
   // }
   total_mass_initial = calculate_total_mass(neutral_density, neso_mesh);
-  total_mass_initial += calculate_total_mass(ion_density, neso_mesh, data_transfer);
+  total_mass_initial += calculate_total_mass(ion_density, this->neso_mesh_cell_volumes_on_plasma_grid);
 
   // Initialise particle time
   particle_time = 0.0;
@@ -1127,7 +1143,7 @@ int Vantage::advance_vantage(BoutReal UNUSED(time)) {
   //   total_density.at(ic) = neutral_density.at(ic) + ion_density_kmsh.at(ic);
   // }
   REAL total_mass_final = calculate_total_mass(neutral_density, neso_mesh);
-  total_mass_final += calculate_total_mass(ion_density, neso_mesh, data_transfer);
+  total_mass_final += calculate_total_mass(ion_density, this->neso_mesh_cell_volumes_on_plasma_grid);
   if (test_mass_conservation) {
     check_mass_conservation(total_mass_final, total_mass_initial);
   }
