@@ -1118,16 +1118,17 @@ int Vantage::advance_vantage(BoutReal UNUSED(time)) {
 
     // "Solve" density
     // Sources are in normalised m^-3 s^-1, so need to multiply by dt
-    // ion_density += (Siz + Srec) * dt;
-    for (size_t ic=0; ic < static_cast<size_t>(neso_mesh->get_cell_count());ic++){
-      ion_density_kmsh.at(ic) += (Siz_kmsh.at(ic) + Srec_kmsh.at(ic)) * dt;
-    }
+    ion_density += (Siz + Srec) * dt;
+    data_transfer->transfer_scalar_to_kinetic_mesh(ion_density, ion_density_kmsh);
+    // for (size_t ic=0; ic < static_cast<size_t>(neso_mesh->get_cell_count());ic++){
+    //   ion_density_kmsh.at(ic) += (Siz_kmsh.at(ic) + Srec_kmsh.at(ic)) * dt;
+    // }
 
     diagnostics_manager->update_kinetic_velocity_moments();
     diagnostics_manager->write_kinetic_velocity_moment_diagnostics(stepx+1, ion_density_kmsh);
     diagnostics_manager->transfer_moments_to_plasma_grid();
     // Write to VANTAGE dump files
-    data_transfer->transfer_scalar_to_plasma_grid(ion_density_kmsh, ion_density);
+    // data_transfer->transfer_scalar_to_plasma_grid(ion_density_kmsh, ion_density);
     diagnostics_manager->write_bout_diagnostics(ion_density, particle_time);
     // Write to particle_trajectories file
     h5part->write();
@@ -1139,9 +1140,6 @@ int Vantage::advance_vantage(BoutReal UNUSED(time)) {
 
   // mass for conservation check
   neutral_density = diagnostics_manager->get_density_kinetic_mesh();
-  // for (size_t ic=0; ic < static_cast<size_t>(neso_mesh->get_cell_count());ic++){
-  //   total_density.at(ic) = neutral_density.at(ic) + ion_density_kmsh.at(ic);
-  // }
   REAL total_mass_final = calculate_total_mass(neutral_density, neso_mesh);
   total_mass_final += calculate_total_mass(ion_density, this->neso_mesh_cell_volumes_on_plasma_grid);
   if (test_mass_conservation) {
