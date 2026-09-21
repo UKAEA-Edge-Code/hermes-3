@@ -57,6 +57,14 @@ void create_dmplex_from_GMSH_msh(DM* dm, std::string msh_file);
 
 void write_dmplex_to_file(DM dm, std::string dmplex_name, std::string dmplex_h5_filename);
 
+BoutReal get_triangle_area(size_t itriangle,
+    const std::vector<double>& vertices,
+    const std::vector<int>& tri_cell_vertices);
+
+std::vector<double> get_triangle_vertices();
+
+std::vector<int> get_triangle_cell_definition();
+
 #endif
 
 #endif // VANTAGE_DMPLEX_H

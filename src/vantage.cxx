@@ -624,7 +624,6 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
     dof_bout_mesh_scalar = std::vector<REAL>(static_cast<size_t>(num_cells_owned_bout_mesh));
     // make pointer to projection object
     if (use_external_msh) {
-      // draft code below, not expected to execute correctly for non-rectangular BOUT++ cells
       // create the dg0 variable using a constructor that
       // respects the kinetic mesh external definition
       std::vector<std::vector<PetscInterface::DMPlexMeshCouplerDG0MapEntry>>
@@ -633,16 +632,26 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
       Field2D map_RZ_to_itriangle_1;
       bout_mesh->get(map_RZ_to_itriangle_0, "map_RZ_to_itriangle_0");
       bout_mesh->get(map_RZ_to_itriangle_1, "map_RZ_to_itriangle_1");
+      // get data that defines triangular cells
+      const std::vector<REAL> vertices = get_triangle_vertices();
+      const std::vector<int> tri_cell_vertices = get_triangle_cell_definition();
       int icell = 0;
       for (int ix = bout_mesh->xstart; ix <= bout_mesh->xend; ix++) {
         for (int iy = bout_mesh->ystart; iy <= bout_mesh->yend; iy++) {
-          // n.b. forward and backward weights may be incorrect for non-rectangular BOUT++ cells
+          // get triangle areas, and total area for ratio in the backward weights
+          const int itri_0 = static_cast<int>(map_RZ_to_itriangle_0(ix,iy));
+          const REAL area_0 = get_triangle_area(static_cast<size_t>(itri_0), vertices, tri_cell_vertices);
+          const int itri_1 = static_cast<int>(map_RZ_to_itriangle_1(ix,iy));
+          const REAL area_1 = get_triangle_area(static_cast<size_t>(itri_1), vertices, tri_cell_vertices);
+          const REAL total_area = area_0 + area_1;
+          // std::cout << "total area: " << total_area << " area_0: " << area_0 << " area_1: " << area_1 << " area_0/total_area: " << area_0/total_area << " area_1/total_area: " << area_1/total_area <<'\n';
+          ASSERT1(total_area > 0.0);
           // lower triangle
           coupler_map.at(static_cast<size_t>(icell)).push_back(
-            {kinetic_mesh_map.at(static_cast<size_t>(map_RZ_to_itriangle_0(ix,iy))), 1.0, 0.5});
+            {kinetic_mesh_map.at(static_cast<size_t>(itri_0)), 1.0, area_0/total_area});
           // upper triangle
           coupler_map.at(static_cast<size_t>(icell)).push_back(
-            {kinetic_mesh_map.at(static_cast<size_t>(map_RZ_to_itriangle_1(ix,iy))), 1.0, 0.5});
+            {kinetic_mesh_map.at(static_cast<size_t>(itri_1)), 1.0, area_1/total_area});
           icell += 1;
         }
       }

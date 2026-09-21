@@ -6,7 +6,9 @@
 #include <bout/field_factory.hxx>
 #include <cmath>
 #include <cstddef>
+#include <cstdlib>
 #include <fmt/core.h>
+#include <fmt/format.h>
 #include <neso_particles.hpp>
 #include <neso_particles/compute_target.hpp>
 #include <neso_particles/containers/cell_data.hpp>
@@ -15,6 +17,7 @@
 #include <netcdf>
 #include <petscsystypes.h>
 #include <petscviewerhdf5.h>
+#include <vector>
 #include "../include/vantage_dmplex.hxx"
 
 #ifndef NESO_PARTICLES_PETSC
@@ -490,6 +493,101 @@ void create_dmplex_from_Bout_mesh(DM* dm, Mesh* bout_mesh, Options& mesh_options
 
   // PetscInterface::label_dmplex_edges(dm, PetscInterface::face_sets_label,
   //                                    vertex_starts, vertex_ends, edge_labels);
+}
+
+std::vector<REAL> get_triangle_vertices(){
+  // read data from netcdf for global vertices in mesh
+  // Open the NetCDF file in read-only mode
+  const std::string filename = Options::root()["mesh"]["file"];
+  netCDF::NcFile dataFile(filename, netCDF::NcFile::read);
+
+  // Get the vertices variable
+  // vertices is a global list of vertex coordinates
+  // std::string varName = "vertices";
+  netCDF::NcVar dataVar_vertices = dataFile.getVar("vertices");
+  NESOASSERT(!dataVar_vertices.isNull(), "vertices not found in file.");
+  std::vector<netCDF::NcDim> dims_vertices = dataVar_vertices.getDims();
+  size_t nvertices = dims_vertices[0].getSize();
+  size_t ncomp = dims_vertices[1].getSize();
+  // Read the data into a vector
+  std::vector<REAL> vertices(nvertices*ncomp);
+  dataVar_vertices.getVar(vertices.data());
+
+  // close the netcdf file
+  dataFile.close();
+
+  return vertices;
+}
+
+std::vector<int> get_triangle_cell_definition(){
+  // read data from netcdf for global vertices in mesh
+  // Open the NetCDF file in read-only mode
+  const std::string filename = Options::root()["mesh"]["file"];
+  netCDF::NcFile dataFile(filename, netCDF::NcFile::read);
+
+  // Get the tri_cell_vertices variable
+  // a list of integers defining each triangular cell
+  // in terms of indices that
+  // index the "vertices" list loaded above
+  // std::string varName_tri_cell = "tri_cell_vertices";
+  netCDF::NcVar dataVar_tri_cell = dataFile.getVar("tri_cell_vertices");
+  NESOASSERT(!dataVar_tri_cell.isNull(), "tri_cell_vertices not found in file.");
+  std::vector<netCDF::NcDim> dims_tri_cell = dataVar_tri_cell.getDims();
+  size_t ntriangle = dims_tri_cell[0].getSize();
+  size_t ntricorners = dims_tri_cell[1].getSize();
+  // Read the data into a vector
+  std::vector<int> tri_cell_vertices(ntriangle*ntricorners);
+  dataVar_tri_cell.getVar(tri_cell_vertices.data());
+  // close the netcdf file
+  dataFile.close();
+  // std::cout << "tri_cell_verticies" << "\n";
+  // for (size_t it=0; it < ntriangle; it++){
+  //   std::cout << fmt::format("local_cell.at({}): ",it);
+  //   for (size_t iv=0; iv < 3; iv++){
+  //     std::cout << " " << tri_cell_vertices.at((it*3) + iv) << ", ";
+  //   }
+  //   std::cout << "\n ";
+  // }
+  return tri_cell_vertices;
+}
+
+REAL get_triangle_area(size_t itriangle,
+  const std::vector<REAL>& vertices,
+  const std::vector<int>& tri_cell_vertices){
+  // compute the area for this triangle
+  // use result of vector product for area
+  // A = 1/2 | u x v |
+  // where u and v are vectors defining two sides of the triangle
+
+  // three vertices per triangle
+  const size_t ntri = 3;
+  std::vector<int> local_cell(ntri);
+  // obtain the global vertex integers which define the local triangular cell
+  for (size_t iv=0; iv < local_cell.size(); iv++){
+    local_cell.at(iv) = tri_cell_vertices.at((ntri*itriangle) + iv);
+    // std::cout << fmt::format("local_cell.at({}): ",iv) << local_cell.at(iv) << '\n';
+  }
+  // std::cout << "local_cell: " << local_cell.data() << '\n';
+  // expect two vector components per vertex, mesh is 2D
+  const size_t ncomp = 2;
+  std::vector<double> local_vertices(ntri*ncomp);
+  for (size_t iv=0; iv < local_cell.size(); iv++){
+    for (size_t ic=0; ic < ncomp; ic++){
+      const size_t jc = (iv*ncomp) + ic;
+      local_vertices.at(jc) = vertices.at((static_cast<size_t>(local_cell.at(iv))*ncomp) + ic);
+      // std::cout << fmt::format("local_vertices.at({}): ",jc) << local_vertices.at(jc) << '\n';
+    }
+  }
+  const size_t iv0 = 0;
+  const size_t iv1 = 1;
+  const size_t iv2 = 2;
+  const REAL ux = local_vertices.at(iv1*ncomp) - local_vertices.at(iv0);
+  const REAL uy = local_vertices.at((iv1*ncomp) + 1) - local_vertices.at(iv0 + 1);
+  const REAL vx = local_vertices.at(iv2*ncomp) - local_vertices.at(iv0);
+  const REAL vy = local_vertices.at((iv2*ncomp) + 1) - local_vertices.at(iv0 + 1);
+  const REAL area = 0.5*std::abs((ux*vy) - (uy*vx));
+  // std::cout << "area: " << area << '\n';
+  return area;
 }
 
 #endif
