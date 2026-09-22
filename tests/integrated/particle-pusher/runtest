@@ -13,8 +13,7 @@ verbose = False
 
 # Link to the executable
 shell("ln -s ../../../hermes-3 hermes-3")
-# make the run directory
-shell("mkdir particle-push-slab-test")
+
 
 def integrate_cellvalue(cellvalues, volumes):
     integrand = cellvalues*volumes
@@ -162,7 +161,7 @@ def load_particle_data(file_path):
 
 
 def test_particle_push(
-    file,
+    simdir,
     mode,
     nsteps=10,
     remove_threshold=0.0,
@@ -178,7 +177,7 @@ def test_particle_push(
     - ionisation: ionisation rate > 0, recombination rate = 0. Particle count should increase
     - recombination: ionisation rate = 0, recombination rate > 0. Particle count should decrease
     """
-
+    file = f"{simdir}/BOUT.inp"
     with open(file, "w") as file:
         file.write(
             particle_push_input(
@@ -194,13 +193,13 @@ def test_particle_push(
         )
 
     # Command to run
-    cmd = "./hermes-3 -d particle-push-slab-test"
+    cmd = f"./hermes-3 -d {simdir}"
     nproc = 1
     # Launch using MPI
     s, out = launch_safe(cmd, nproc=nproc, mthread=1, pipe=True)
 
     particle_positions_file_path = (
-        r"particle-push-slab-test/particle_trajectories.h5part"
+        rf"{simdir}/particle_trajectories.h5part"
     )
     particle_positions = load_particle_data(particle_positions_file_path)
     nsteps_out = len(particle_positions)
@@ -223,9 +222,9 @@ def test_particle_push(
         )
 
     # check the mass diagnostic
-    vtkhdf_file_path_time_0 = r"particle-push-slab-test/BOUT.dmp.vantage.particle.moments.istep.0.vtkhdf"
-    vtkhdf_file_path_time_end = rf"particle-push-slab-test/BOUT.dmp.vantage.particle.moments.istep.{nsteps}.vtkhdf"
-    ncfile_path = r"particle-push-slab-test/BOUT.dmp.vantage.0.nc"
+    vtkhdf_file_path_time_0 = rf"{simdir}/BOUT.dmp.vantage.particle.moments.istep.0.vtkhdf"
+    vtkhdf_file_path_time_end = rf"{simdir}/BOUT.dmp.vantage.particle.moments.istep.{nsteps}.vtkhdf"
+    ncfile_path = rf"{simdir}/BOUT.dmp.vantage.0.nc"
 
     total_neutral_mass_0 = get_neutral_mass(vtkhdf_file_path_time_0)
     total_neutral_mass_end = get_neutral_mass(vtkhdf_file_path_time_end)
@@ -288,11 +287,12 @@ def test_particle_push(
             err_msg="Neutral mass did not increase in recombination test",
         )
 
-
-file = "particle-push-slab-test/BOUT.inp"
+# make the run directory for the test on the BOUT++/quadrilaterals grid
+simdir = "particle-push-slab-test"
+shell(f"mkdir {simdir}")
 
 test_particle_push(
-    file,
+    simdir,
     "advection",
     nsteps=3,
     remove_threshold=1.0e-10,
@@ -304,7 +304,7 @@ if verbose:
     print("Advection test passed")
 
 test_particle_push(
-    file,
+    simdir,
     "ionisation",
     nsteps=3,
     remove_threshold=1.0e-10,
@@ -316,7 +316,7 @@ if verbose:
     print("Ionisation test passed")
 
 test_particle_push(
-    file,
+    simdir,
     "recombination",
     nsteps=3,
     remove_threshold=1.0e-10,
