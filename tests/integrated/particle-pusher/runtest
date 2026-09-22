@@ -64,8 +64,8 @@ def get_ionised_mass(ncfile_path):
 
 # A function to define the BOUT.inp file contents
 def particle_push_input(
-    nx=40,
-    ny=36,
+    nx=8,
+    ny=4,
     dt=0.005,
     nsteps=1,
     iz_rate=0.0,
@@ -81,8 +81,8 @@ def particle_push_input(
     [mesh]
     J = 1
 
-    nx = 40  # X grid size
-    ny = 36  # Y grid size
+    nx = {nx}  # X grid size
+    ny = {ny}  # Y grid size
 
     dx = 1.0/(nx-4)  # X mesh spacing
     dy = 2*pi/ny  # Y mesh spacing
@@ -350,8 +350,8 @@ def test_particle_push_bout_quad_kinetic_mesh(
     rec_rate=0.0,
 ):
     input_file_string = particle_push_input(
-        nx=40,
-        ny=36,
+        nx=8,
+        ny=4,
         dt=0.005,
         nsteps=nsteps,
         iz_rate=iz_rate,
