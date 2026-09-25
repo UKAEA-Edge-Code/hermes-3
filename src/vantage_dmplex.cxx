@@ -6,7 +6,9 @@
 #include <bout/field_factory.hxx>
 #include <cmath>
 #include <cstddef>
+#include <cstdlib>
 #include <fmt/core.h>
+#include <fmt/format.h>
 #include <neso_particles.hpp>
 #include <neso_particles/compute_target.hpp>
 #include <neso_particles/containers/cell_data.hpp>
@@ -15,6 +17,7 @@
 #include <netcdf>
 #include <petscsystypes.h>
 #include <petscviewerhdf5.h>
+#include <vector>
 #include "../include/vantage_dmplex.hxx"
 
 #ifndef NESO_PARTICLES_PETSC
@@ -192,27 +195,45 @@ std::vector<PetscInt> cells_definition_from_RZ_ivertex(
   return cells;
 }
 
-DM create_dmplex_from_Bout_mesh(Mesh* bout_mesh, Options& mesh_options,
-                                std::shared_ptr<SYCLTarget> sycl_target,
-                                std::string dmplex_h5_filename) {
+void write_dmplex_to_file(DM dm, std::string dmplex_name, std::string dmplex_h5_filename){
+  // save a HDF5 file containing the DM for diagnostics
+  PetscViewer viewer;
+  // Set a name for the DMPlex object (important for HDF5)
+  PetscObjectSetName(reinterpret_cast<PetscObject>(dm), dmplex_name.c_str());
+  // Create an HDF5 viewer
+  PetscViewerHDF5Open(BoutComm::get(), dmplex_h5_filename.c_str(), FILE_MODE_WRITE,
+                      &viewer);
+  // Set viewer format to PETSC_VIEWER_HDF5_PETSC for compatibility
+  PetscViewerPushFormat(viewer, PETSC_VIEWER_HDF5_PETSC);
+  // Save the DMPlex to the HDF5 file
+  DMView(dm, viewer);
+  // Clean up
+  PetscViewerDestroy(&viewer);
+  output << "Finished DMPlex diagnostic \n";
+}
+
+void create_dmplex_from_GMSH_msh(DM* dm, std::string msh_file){
+  PETSCCHK(DMPlexCreateGmshFromFile(BoutComm::get(), msh_file.c_str(),
+                                    static_cast<PetscBool>(1), dm));
+}
+
+void create_dmplex_from_Bout_mesh(DM* dm, Mesh* bout_mesh, Options& mesh_options,
+                                std::shared_ptr<SYCLTarget> sycl_target) {
 
   bool use_cxx_ivertex = mesh_options["use_cxx_ivertex"]
-                             .doc("Use C++ based DMPlex creation routine instead of "
+                            .doc("Use C++ based DMPlex creation routine instead of "
                                   "loading an external DMPlex? "
                                   "Default and recommendation is true.")
-                             .withDefault(true);
-  std::string dmplex_name = mesh_options["dmplex_name"]
-                                .doc("DMPlex object name.")
-                                .withDefault("hypnotoad_dmplex_mesh");
+                            .withDefault(true);
   // DMPlex vertex distance tolerance for duplicate Hypnotoad vertices
   const BoutReal dmplex_vertex_tolerance =
       mesh_options["dmplex_vertex_tolerance"]
           .doc("Tolerance for determining duplicate vertices when creating DMPlex from "
-               "BOUT++ mesh.")
+              "BOUT++ mesh.")
           .withDefault(1.0e-8);
 
   output << fmt::format("Using option use_cxx_ivertex = {}", use_cxx_ivertex)
-         << std::endl;
+        << std::endl;
   Field2D Rxy_lower_left_corners;
   Field2D Rxy_lower_right_corners;
   Field2D Rxy_upper_right_corners;
@@ -371,17 +392,17 @@ DM create_dmplex_from_Bout_mesh(Mesh* bout_mesh, Options& mesh_options,
   Field2D ivertex_upper_left_corners_cxx{-1, bout_mesh};
   // now fill ivertex_corners arrays
   RZ_to_ivertex_vector(ivertex_lower_left_corners_cxx, global_Z_vertices,
-                       global_R_vertices, dmplex_vertex_tolerance, bout_mesh, Rxy_lower_left_corners,
-                       Zxy_lower_left_corners);
+                      global_R_vertices, dmplex_vertex_tolerance, bout_mesh, Rxy_lower_left_corners,
+                      Zxy_lower_left_corners);
   RZ_to_ivertex_vector(ivertex_lower_right_corners_cxx, global_Z_vertices,
-                       global_R_vertices, dmplex_vertex_tolerance, bout_mesh, Rxy_lower_right_corners,
-                       Zxy_lower_right_corners);
+                      global_R_vertices, dmplex_vertex_tolerance, bout_mesh, Rxy_lower_right_corners,
+                      Zxy_lower_right_corners);
   RZ_to_ivertex_vector(ivertex_upper_right_corners_cxx, global_Z_vertices,
-                       global_R_vertices, dmplex_vertex_tolerance, bout_mesh, Rxy_upper_right_corners,
-                       Zxy_upper_right_corners);
+                      global_R_vertices, dmplex_vertex_tolerance, bout_mesh, Rxy_upper_right_corners,
+                      Zxy_upper_right_corners);
   RZ_to_ivertex_vector(ivertex_upper_left_corners_cxx, global_Z_vertices,
-                       global_R_vertices, dmplex_vertex_tolerance, bout_mesh, Rxy_upper_left_corners,
-                       Zxy_upper_left_corners);
+                      global_R_vertices, dmplex_vertex_tolerance, bout_mesh, Rxy_upper_left_corners,
+                      Zxy_upper_left_corners);
 
   // First we setup the topology of the mesh.
   PetscInt num_cells_owned = Nx * Ny;
@@ -427,18 +448,18 @@ DM create_dmplex_from_Bout_mesh(Mesh* bout_mesh, Options& mesh_options,
 //   int ivertex_minimum = mpi_rank * nvertex_per_process;
 //   int ivertex_maximum = mpi_rank * nvertex_per_process + nvertex_this_process - 1;
   /*
-   * Each rank owns a contiguous block of global indices. We label our indices
-   * lexicographically (row-wise). Sorting out the global vertex indexing is
-   * probably one of the more tedious parts.
-   */
+  * Each rank owns a contiguous block of global indices. We label our indices
+  * lexicographically (row-wise). Sorting out the global vertex indexing is
+  * probably one of the more tedious parts.
+  */
   PetscInt num_vertices_owned = nvertex_this_process;
 
   /*
-   * Create the coordinates for the block of vertices we pass to petsc. For an
-   * existing mesh in memory this step will probably involve some MPI
-   * communication to gather the blocks of coordinates on the ranks which pass
-   * them to PETSc.
-   */
+  * Create the coordinates for the block of vertices we pass to petsc. For an
+  * existing mesh in memory this step will probably involve some MPI
+  * communication to gather the blocks of coordinates on the ranks which pass
+  * them to PETSc.
+  */
   std::vector<PetscScalar> vertex_coords(static_cast<size_t>(num_vertices_owned * 2));
   // shift due to differing rank
   size_t ishift;
@@ -447,16 +468,13 @@ DM create_dmplex_from_Bout_mesh(Mesh* bout_mesh, Options& mesh_options,
     vertex_coords.at(iv * 2 + 0) = global_vertex_list_R[iv + ishift];
     vertex_coords.at(iv * 2 + 1) = global_vertex_list_Z[iv + ishift];
   }
-  // This DM will contain the DMPlex after we call the creation routine.
-  DM dm;
   // Create the DMPlex from the cells and coordinates.
   PETSCCHK(DMPlexCreateFromCellListParallelPetsc(
       BoutComm::get(), 2, num_cells_owned, num_vertices_owned, PETSC_DECIDE, 4,
-      PETSC_TRUE, cells.data(), 2, vertex_coords.data(), NULL, NULL, &dm));
-
+      PETSC_TRUE, cells.data(), 2, vertex_coords.data(), NULL, NULL, dm));
   // Label all of the boundary faces with 100 in the "Face Sets" label by using
   // the helper function label_all_dmplex_boundaries.
-  PetscInterface::label_all_dmplex_boundaries(dm, PetscInterface::face_sets_label, 100);
+  // PetscInterface::label_all_dmplex_boundaries(dm, PetscInterface::face_sets_label, 100);
 
   // // Label subsections of the boundary by specifing pairs of vertices and using
   // // the label_dmplex_edges helper function.
@@ -475,22 +493,101 @@ DM create_dmplex_from_Bout_mesh(Mesh* bout_mesh, Options& mesh_options,
 
   // PetscInterface::label_dmplex_edges(dm, PetscInterface::face_sets_label,
   //                                    vertex_starts, vertex_ends, edge_labels);
+}
 
-  // save a HDF5 file containing the DM for diagnostics
-  PetscViewer viewer;
-  // Set a name for the DMPlex object (important for HDF5)
-  PetscObjectSetName(reinterpret_cast<PetscObject>(dm), dmplex_name.c_str());
-  // Create an HDF5 viewer
-  PetscViewerHDF5Open(BoutComm::get(), dmplex_h5_filename.c_str(), FILE_MODE_WRITE,
-                      &viewer);
-  // Set viewer format to PETSC_VIEWER_HDF5_PETSC for compatibility
-  PetscViewerPushFormat(viewer, PETSC_VIEWER_HDF5_PETSC);
-  // Save the DMPlex to the HDF5 file
-  DMView(dm, viewer);
-  // Clean up
-  PetscViewerDestroy(&viewer);
-  output << "Finished DMPlex creation and diagnostic \n";
-  return dm;
+std::vector<REAL> get_triangle_vertices(){
+  // read data from netcdf for global vertices in mesh
+  // Open the NetCDF file in read-only mode
+  const std::string filename = Options::root()["mesh"]["file"];
+  netCDF::NcFile dataFile(filename, netCDF::NcFile::read);
+
+  // Get the vertices variable
+  // vertices is a global list of vertex coordinates
+  // std::string varName = "vertices";
+  netCDF::NcVar dataVar_vertices = dataFile.getVar("vertices");
+  NESOASSERT(!dataVar_vertices.isNull(), "vertices not found in file.");
+  std::vector<netCDF::NcDim> dims_vertices = dataVar_vertices.getDims();
+  size_t nvertices = dims_vertices[0].getSize();
+  size_t ncomp = dims_vertices[1].getSize();
+  // Read the data into a vector
+  std::vector<REAL> vertices(nvertices*ncomp);
+  dataVar_vertices.getVar(vertices.data());
+
+  // close the netcdf file
+  dataFile.close();
+
+  return vertices;
+}
+
+std::vector<int> get_triangle_cell_definition(){
+  // read data from netcdf for global vertices in mesh
+  // Open the NetCDF file in read-only mode
+  const std::string filename = Options::root()["mesh"]["file"];
+  netCDF::NcFile dataFile(filename, netCDF::NcFile::read);
+
+  // Get the tri_cell_vertices variable
+  // a list of integers defining each triangular cell
+  // in terms of indices that
+  // index the "vertices" list loaded above
+  // std::string varName_tri_cell = "tri_cell_vertices";
+  netCDF::NcVar dataVar_tri_cell = dataFile.getVar("tri_cell_vertices");
+  NESOASSERT(!dataVar_tri_cell.isNull(), "tri_cell_vertices not found in file.");
+  std::vector<netCDF::NcDim> dims_tri_cell = dataVar_tri_cell.getDims();
+  size_t ntriangle = dims_tri_cell[0].getSize();
+  size_t ntricorners = dims_tri_cell[1].getSize();
+  // Read the data into a vector
+  std::vector<int> tri_cell_vertices(ntriangle*ntricorners);
+  dataVar_tri_cell.getVar(tri_cell_vertices.data());
+  // close the netcdf file
+  dataFile.close();
+  // std::cout << "tri_cell_verticies" << "\n";
+  // for (size_t it=0; it < ntriangle; it++){
+  //   std::cout << fmt::format("local_cell.at({}): ",it);
+  //   for (size_t iv=0; iv < 3; iv++){
+  //     std::cout << " " << tri_cell_vertices.at((it*3) + iv) << ", ";
+  //   }
+  //   std::cout << "\n ";
+  // }
+  return tri_cell_vertices;
+}
+
+REAL get_triangle_area(size_t itriangle,
+  const std::vector<REAL>& vertices,
+  const std::vector<int>& tri_cell_vertices){
+  // compute the area for this triangle
+  // use result of vector product for area
+  // A = 1/2 | u x v |
+  // where u and v are vectors defining two sides of the triangle
+
+  // three vertices per triangle
+  const size_t ntri = 3;
+  std::vector<int> local_cell(ntri);
+  // obtain the global vertex integers which define the local triangular cell
+  for (size_t iv=0; iv < local_cell.size(); iv++){
+    local_cell.at(iv) = tri_cell_vertices.at((ntri*itriangle) + iv);
+    // std::cout << fmt::format("local_cell.at({}): ",iv) << local_cell.at(iv) << '\n';
+  }
+  // std::cout << "local_cell: " << local_cell.data() << '\n';
+  // expect two vector components per vertex, mesh is 2D
+  const size_t ncomp = 2;
+  std::vector<double> local_vertices(ntri*ncomp);
+  for (size_t iv=0; iv < local_cell.size(); iv++){
+    for (size_t ic=0; ic < ncomp; ic++){
+      const size_t jc = (iv*ncomp) + ic;
+      local_vertices.at(jc) = vertices.at((static_cast<size_t>(local_cell.at(iv))*ncomp) + ic);
+      // std::cout << fmt::format("local_vertices.at({}): ",jc) << local_vertices.at(jc) << '\n';
+    }
+  }
+  const size_t iv0 = 0;
+  const size_t iv1 = 1;
+  const size_t iv2 = 2;
+  const REAL ux = local_vertices.at(iv1*ncomp) - local_vertices.at(iv0);
+  const REAL uy = local_vertices.at((iv1*ncomp) + 1) - local_vertices.at(iv0 + 1);
+  const REAL vx = local_vertices.at(iv2*ncomp) - local_vertices.at(iv0);
+  const REAL vy = local_vertices.at((iv2*ncomp) + 1) - local_vertices.at(iv0 + 1);
+  const REAL area = 0.5*std::abs((ux*vy) - (uy*vx));
+  // std::cout << "area: " << area << '\n';
+  return area;
 }
 
 #endif
