@@ -119,74 +119,6 @@ ParticleSubGroupSharedPtr create_particle_sub_group_in_plasma_volume(
   return particle_group_in_plasma;
 }
 
-std::vector<REAL> get_cell_volumes_on_plasma_grid(
-    DM& dm, std::vector<PetscInt>& kinetic_mesh_map,
-    std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh, Mesh*& bout_mesh) {
-  // local number of BOUT++ x cells, excluding guards
-  const int Nx = bout_mesh->xend - bout_mesh->xstart + 1;
-  // local number of BOUT++ y cells, excluding guards
-  const int Ny = bout_mesh->yend - bout_mesh->ystart + 1;
-  // Get the number of cells in the bout (plasma) mesh owned on this process, excluding guard cells
-  const size_t num_cells_owned_bout_mesh = static_cast<size_t>(Nx * Ny);
-  // Get the number of cells in the kinetic (neutral) mesh owned on this process
-  const size_t num_cells_owned_kinetic_mesh =
-      static_cast<size_t>(neso_mesh->get_cell_count());
-  // neso_mesh cell volumes on BOUT++ mesh indices
-  std::vector<REAL> neso_cell_volumes_bmsh(num_cells_owned_bout_mesh);
-  // the checks
-  if (num_cells_owned_kinetic_mesh == num_cells_owned_bout_mesh) {
-    // zero the compound index
-    size_t ixy = 0;
-    for (PetscInt ix = bout_mesh->xstart; ix <= bout_mesh->xend; ix++) {
-      for (PetscInt iy = bout_mesh->ystart; iy <= bout_mesh->yend; iy++) {
-        neso_cell_volumes_bmsh.at(ixy) =
-            neso_mesh->dmh->get_cell_volume(static_cast<int>(ixy));
-        ixy++;
-      }
-    }
-  } else if (num_cells_owned_kinetic_mesh > num_cells_owned_bout_mesh) {
-    // assume that this corresponds to the case where the BOUT++ mesh is decomposed
-    // to triangles and there are also cells representing the region beyond the simulated plasma
-    // -------------------------------------------
-    // first, make a mesh_coupler_dg0 object with unit weights
-    std::vector<std::vector<PetscInterface::DMPlexMeshCouplerDG0MapEntry>> coupler_map(
-        static_cast<size_t>(num_cells_owned_bout_mesh));
-    Field2D map_RZ_to_itriangle_0;
-    Field2D map_RZ_to_itriangle_1;
-    bout_mesh->get(map_RZ_to_itriangle_0, "map_RZ_to_itriangle_0");
-    bout_mesh->get(map_RZ_to_itriangle_1, "map_RZ_to_itriangle_1");
-    int icell = 0;
-    for (int ix = bout_mesh->xstart; ix <= bout_mesh->xend; ix++) {
-      for (int iy = bout_mesh->ystart; iy <= bout_mesh->yend; iy++) {
-        // lower triangle
-        coupler_map.at(static_cast<size_t>(icell))
-            .push_back(
-                {kinetic_mesh_map.at(static_cast<size_t>(map_RZ_to_itriangle_0(ix, iy))),
-                 1.0, 1.0});
-        // upper triangle
-        coupler_map.at(static_cast<size_t>(icell))
-            .push_back(
-                {kinetic_mesh_map.at(static_cast<size_t>(map_RZ_to_itriangle_1(ix, iy))),
-                 1.0, 1.0});
-        icell += 1;
-      }
-    }
-    // object for transferring data between kinetic and bout mesh degree-of-freedom vectors
-    std::shared_ptr<PetscInterface::DMPlexMeshCouplerDG0> mesh_coupler_unit_weight =
-        std::make_shared<PetscInterface::DMPlexMeshCouplerDG0>(dm, coupler_map);
-    // obtain a list of kinetic mesh cell volumes
-    std::vector<double> neso_cell_volumes_kmsh(num_cells_owned_kinetic_mesh);
-    for (size_t ic = 0; ic < num_cells_owned_kinetic_mesh; ic++) {
-      neso_cell_volumes_kmsh.at(ic) =
-          neso_mesh->dmh->get_cell_volume(static_cast<int>(ic));
-    }
-    // move these cell volumes to the bout mesh
-    mesh_coupler_unit_weight->backward_transfer(neso_cell_volumes_kmsh, 1,
-                                                neso_cell_volumes_bmsh);
-  }
-  return neso_cell_volumes_bmsh;
-}
-
 size_t get_num_cells_owned_bout_mesh(Mesh*& bout_mesh) {
   // local number of BOUT++ x cells, excluding guards
   const int Nx = bout_mesh->xend - bout_mesh->xstart + 1;
@@ -230,15 +162,50 @@ get_mesh_coupler_constant_weights(DM& dm, std::vector<PetscInt>& kinetic_mesh_ma
   return mesh_coupler;
 }
 
+std::vector<REAL> get_cell_volumes_on_plasma_grid(
+    DM& dm, std::vector<PetscInt>& kinetic_mesh_map,
+    std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh, Mesh*& bout_mesh) {
+  const size_t num_cells_owned_bout_mesh = get_num_cells_owned_bout_mesh(bout_mesh);
+  // Get the number of cells in the kinetic (neutral) mesh owned on this process
+  const size_t num_cells_owned_kinetic_mesh =
+      static_cast<size_t>(neso_mesh->get_cell_count());
+  // neso_mesh cell volumes on BOUT++ mesh indices
+  std::vector<REAL> neso_cell_volumes_bmsh(num_cells_owned_bout_mesh);
+  // the checks
+  if (num_cells_owned_kinetic_mesh == num_cells_owned_bout_mesh) {
+    // zero the compound index
+    size_t ixy = 0;
+    for (PetscInt ix = bout_mesh->xstart; ix <= bout_mesh->xend; ix++) {
+      for (PetscInt iy = bout_mesh->ystart; iy <= bout_mesh->yend; iy++) {
+        neso_cell_volumes_bmsh.at(ixy) =
+            neso_mesh->dmh->get_cell_volume(static_cast<int>(ixy));
+        ixy++;
+      }
+    }
+  } else if (num_cells_owned_kinetic_mesh > num_cells_owned_bout_mesh) {
+    // assume that this corresponds to the case where the BOUT++ mesh is decomposed
+    // to triangles and there are also cells representing the region beyond the simulated plasma
+    // -------------------------------------------
+    // first, make a mesh_coupler_dg0 object with unit weights
+    const std::shared_ptr<PetscInterface::DMPlexMeshCouplerDG0> mesh_coupler_unit_weight =
+        get_mesh_coupler_constant_weights(dm, kinetic_mesh_map, bout_mesh, 1.0, 1.0);
+    // obtain a list of kinetic mesh cell volumes
+    std::vector<double> neso_cell_volumes_kmsh(num_cells_owned_kinetic_mesh);
+    for (size_t ic = 0; ic < num_cells_owned_kinetic_mesh; ic++) {
+      neso_cell_volumes_kmsh.at(ic) =
+          neso_mesh->dmh->get_cell_volume(static_cast<int>(ic));
+    }
+    // move these cell volumes to the bout mesh
+    mesh_coupler_unit_weight->backward_transfer(neso_cell_volumes_kmsh, 1,
+                                                neso_cell_volumes_bmsh);
+  }
+  return neso_cell_volumes_bmsh;
+}
+
 std::vector<REAL> get_cell_vertices_on_plasma_grid(
     DM& dm, std::vector<PetscInt>& kinetic_mesh_map,
     std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh, Mesh*& bout_mesh) {
-  // local number of BOUT++ x cells, excluding guards
-  const int Nx = bout_mesh->xend - bout_mesh->xstart + 1;
-  // local number of BOUT++ y cells, excluding guards
-  const int Ny = bout_mesh->yend - bout_mesh->ystart + 1;
-  // Get the number of cells in the bout (plasma) mesh owned on this process, excluding guard cells
-  const size_t num_cells_owned_bout_mesh = static_cast<size_t>(Nx * Ny);
+  const size_t num_cells_owned_bout_mesh = get_num_cells_owned_bout_mesh(bout_mesh);
   // Get the number of cells in the kinetic (neutral) mesh owned on this process
   const size_t num_cells_owned_kinetic_mesh =
       static_cast<size_t>(neso_mesh->get_cell_count());
@@ -276,11 +243,11 @@ std::vector<REAL> get_cell_vertices_on_plasma_grid(
     // -------------------------------------------
     // first, make a mesh_coupler_dg0 object with unit weights from the lower triangle, and zero weight
     // for the upper triangle
-    std::shared_ptr<PetscInterface::DMPlexMeshCouplerDG0> mesh_coupler_0 =
+    const std::shared_ptr<PetscInterface::DMPlexMeshCouplerDG0> mesh_coupler_0 =
         get_mesh_coupler_constant_weights(dm, kinetic_mesh_map, bout_mesh, 1.0, 0.0);
     // second, make a mesh_coupler_dg0 object with unit weights from the upper triangle, and zero weight
     // for the lower triangle
-    std::shared_ptr<PetscInterface::DMPlexMeshCouplerDG0> mesh_coupler_1 =
+    const std::shared_ptr<PetscInterface::DMPlexMeshCouplerDG0> mesh_coupler_1 =
         get_mesh_coupler_constant_weights(dm, kinetic_mesh_map, bout_mesh, 0.0, 1.0);
     // obtain the cell coordinates for lower and upper triangles on the kinetic mesh
     std::vector<std::vector<REAL>> cell_vertices;
@@ -364,12 +331,7 @@ void check_cell_volumes(std::vector<REAL> neso_cell_volumes_bmsh, Mesh*& bout_me
   Coordinates* coord = bout_mesh->getCoordinates();
   size_t ixy = 0;
   const REAL tolerance = 1.0e-12;
-  // local number of BOUT++ x cells, excluding guards
-  const int Nx = bout_mesh->xend - bout_mesh->xstart + 1;
-  // local number of BOUT++ y cells, excluding guards
-  const int Ny = bout_mesh->yend - bout_mesh->ystart + 1;
-  // Get the number of cells in the bout (plasma) mesh owned on this process, excluding guard cells
-  const size_t num_cells_owned_bout_mesh = static_cast<size_t>(Nx * Ny);
+  const size_t num_cells_owned_bout_mesh = get_num_cells_owned_bout_mesh(bout_mesh);
   // Get the number of cells in the kinetic (neutral) mesh owned on this process
   ASSERT1(neso_cell_volumes_bmsh.size() == num_cells_owned_bout_mesh);
   // dimensional units
@@ -497,7 +459,7 @@ void check_mass_conservation(REAL total_mass_final, REAL total_mass_initial) {
   NESOASSERT(mass_conserved,
              fmt::format("Initial total mass {} does not match "
                          "final total mass {} \n Ignore this message by "
-                         "setting [neso_particles] test_mass_conservation = false",
+                         "setting [vantage] test_mass_conservation = false",
                          total_mass_initial, total_mass_final));
 }
 
@@ -802,12 +764,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
     }
     // Add the new particles to the particle group
     A_particle_group->add_particles_local(initial_distribution);
-    // local number of x cells, excluding guards
-    const int Nx = bout_mesh->xend - bout_mesh->xstart + 1;
-    // local number of y cells, excluding guards
-    const int Ny = bout_mesh->yend - bout_mesh->ystart + 1;
-    // Get the number of cells in the bout (plasma) mesh owned on this process, excluding guard cells
-    const int num_cells_owned_bout_mesh = Nx * Ny;
+    const size_t num_cells_owned_bout_mesh = get_num_cells_owned_bout_mesh(bout_mesh);
     // Get the number of cells in the kinetic (neutral) mesh owned on this process
     const int num_cells_owned_kinetic_mesh = neso_mesh->get_cell_count();
     // allocate buffer vector for scalar projection/evaluation of NESO-Particles
