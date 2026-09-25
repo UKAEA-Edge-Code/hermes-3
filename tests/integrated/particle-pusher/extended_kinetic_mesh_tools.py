@@ -29,7 +29,7 @@ def extended_kinetic_mesh_test_input(
 
     [dmplex]
     test_dmplex_cell_volumes = true
-    test_dmplex_cell_centres = false
+    test_dmplex_cell_centres = true
     use_external_msh = true
     msh_file = "{msh_file}"
 

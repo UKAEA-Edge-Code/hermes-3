@@ -4,14 +4,14 @@
 #include "bout/output.hxx"
 #include "bout/petsclib.hxx"
 #include <bout/assert.hxx>
-#include <bout/field_factory.hxx>
 #include <bout/constants.hxx>
+#include <bout/field_factory.hxx>
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
-#include <map>
 #include <fmt/core.h>
 #include <iostream>
+#include <map>
 #include <memory>
 #include <neso_particles.hpp>
 #include <neso_particles/compute_target.hpp>
@@ -29,9 +29,9 @@
 // for reactions integration
 #include "../include/amjuel_data.hxx"
 #include "../include/vantage.hxx"
-#include "../include/vantage_dmplex.hxx"
-#include "../include/vantage_diagnostics.hxx"
 #include "../include/vantage_datatransfer.hxx"
+#include "../include/vantage_diagnostics.hxx"
+#include "../include/vantage_dmplex.hxx"
 #include <reactions/reactions.hpp>
 
 #ifndef NESO_PARTICLES_PETSC
@@ -70,12 +70,10 @@ std::string make_output_path(const std::string& filename, Options& alloptions) {
 }
 
 void set_initial_particle_weights(
-    BoutReal& initial_neutral_density,
-    std::shared_ptr<ParticleGroup>& A_particle_group,
+    BoutReal& initial_neutral_density, std::shared_ptr<ParticleGroup>& A_particle_group,
     std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh,
     std::vector<double>& dof_kinetic_mesh_scalar,
-    std::shared_ptr<VantageDataTransfer>& data_transfer,
-    BoutReal N_w) {
+    std::shared_ptr<VantageDataTransfer>& data_transfer, BoutReal N_w) {
   // set a constant density across the entire kinetic mesh
   const size_t ncell = dof_kinetic_mesh_scalar.size();
   for (size_t ic = 0; ic < ncell; ic++) {
@@ -84,77 +82,75 @@ void set_initial_particle_weights(
     // then divide by markers per cell to divide them between the requested markers,
     // then divide by N_w to get the weight of each marker.
     const REAL cell_volume = neso_mesh->dmh->get_cell_volume(static_cast<int>(ic));
-    const INT nmarkers_per_cell =
-        A_particle_group->get_npart_cell(static_cast<int>(ic));
+    const INT nmarkers_per_cell = A_particle_group->get_npart_cell(static_cast<int>(ic));
     const REAL particle_weights = initial_neutral_density * cell_volume
-                                  / static_cast<BoutReal>(nmarkers_per_cell)
-                                  / N_w;
+                                  / static_cast<BoutReal>(nmarkers_per_cell) / N_w;
     dof_kinetic_mesh_scalar.at(ic) = particle_weights;
   }
   // now copy the data to internal variables
-  data_transfer->transfer_scalar_to_particle_property(
-    dof_kinetic_mesh_scalar, A_particle_group, "WEIGHT");
+  data_transfer->transfer_scalar_to_particle_property(dof_kinetic_mesh_scalar,
+                                                      A_particle_group, "WEIGHT");
 }
 
 void update_particle_properties_from_plasma(
-  std::shared_ptr<VantageDataTransfer>& data_transfer,
-  std::shared_ptr<ParticleGroup>& A_particle_group,
-  Field2D& ion_density, Field2D& ion_temperature,
-  std::vector<Field2D>& ion_velocity,
-  Field2D& electron_density, Field2D& electron_temperature){
-  data_transfer->transfer_scalar_to_particle_property(ion_density, A_particle_group, "FLUID_DENSITY");
-  data_transfer->transfer_scalar_to_particle_property(ion_temperature, A_particle_group,  "FLUID_TEMPERATURE");
-  data_transfer->transfer_vector_to_particle_property(ion_velocity, A_particle_group, "FLUID_FLOW_SPEED");
-  data_transfer->transfer_scalar_to_particle_property(electron_density, A_particle_group, "ELECTRON_DENSITY");
-  data_transfer->transfer_scalar_to_particle_property(electron_temperature, A_particle_group, "ELECTRON_TEMPERATURE");
+    std::shared_ptr<VantageDataTransfer>& data_transfer,
+    std::shared_ptr<ParticleGroup>& A_particle_group, Field2D& ion_density,
+    Field2D& ion_temperature, std::vector<Field2D>& ion_velocity,
+    Field2D& electron_density, Field2D& electron_temperature) {
+  data_transfer->transfer_scalar_to_particle_property(ion_density, A_particle_group,
+                                                      "FLUID_DENSITY");
+  data_transfer->transfer_scalar_to_particle_property(ion_temperature, A_particle_group,
+                                                      "FLUID_TEMPERATURE");
+  data_transfer->transfer_vector_to_particle_property(ion_velocity, A_particle_group,
+                                                      "FLUID_FLOW_SPEED");
+  data_transfer->transfer_scalar_to_particle_property(electron_density, A_particle_group,
+                                                      "ELECTRON_DENSITY");
+  data_transfer->transfer_scalar_to_particle_property(
+      electron_temperature, A_particle_group, "ELECTRON_TEMPERATURE");
 }
 
 // Create a ParticleSubGroup from particles that are in a cell with nonzero electron_density.
 ParticleSubGroupSharedPtr create_particle_sub_group_in_plasma_volume(
-  std::shared_ptr<ParticleGroup>& A_particle_group,
-  const REAL electron_density_threshold
-) {
+    std::shared_ptr<ParticleGroup>& A_particle_group,
+    const REAL electron_density_threshold) {
   ParticleSubGroupSharedPtr particle_group_in_plasma = particle_sub_group(
-    A_particle_group,
-    [=](auto ne) {
-      return (ne[0] > electron_density_threshold);
-    },
-    Access::read(Sym<REAL>("ELECTRON_DENSITY"))
-  );
+      A_particle_group, [=](auto ne) { return (ne[0] > electron_density_threshold); },
+      Access::read(Sym<REAL>("ELECTRON_DENSITY")));
   return particle_group_in_plasma;
 }
 
-std::vector<REAL> get_cell_volumes_on_plasma_grid(DM& dm,
-          std::vector<PetscInt>& kinetic_mesh_map,
-          std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh,
-          Mesh*& bout_mesh){
+std::vector<REAL> get_cell_volumes_on_plasma_grid(
+    DM& dm, std::vector<PetscInt>& kinetic_mesh_map,
+    std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh, Mesh*& bout_mesh) {
   // local number of BOUT++ x cells, excluding guards
   const int Nx = bout_mesh->xend - bout_mesh->xstart + 1;
   // local number of BOUT++ y cells, excluding guards
   const int Ny = bout_mesh->yend - bout_mesh->ystart + 1;
   // Get the number of cells in the bout (plasma) mesh owned on this process, excluding guard cells
-  const size_t num_cells_owned_bout_mesh = static_cast<size_t>(Nx*Ny);
+  const size_t num_cells_owned_bout_mesh = static_cast<size_t>(Nx * Ny);
   // Get the number of cells in the kinetic (neutral) mesh owned on this process
-  const size_t num_cells_owned_kinetic_mesh = static_cast<size_t>(neso_mesh->get_cell_count());
+  const size_t num_cells_owned_kinetic_mesh =
+      static_cast<size_t>(neso_mesh->get_cell_count());
   // neso_mesh cell volumes on BOUT++ mesh indices
   std::vector<REAL> neso_cell_volumes_bmsh(num_cells_owned_bout_mesh);
   // the checks
-  if (num_cells_owned_kinetic_mesh == num_cells_owned_bout_mesh){
+  if (num_cells_owned_kinetic_mesh == num_cells_owned_bout_mesh) {
     // zero the compound index
     size_t ixy = 0;
     for (PetscInt ix = bout_mesh->xstart; ix <= bout_mesh->xend; ix++) {
-     for (PetscInt iy = bout_mesh->ystart; iy <= bout_mesh->yend; iy++) {
-      neso_cell_volumes_bmsh.at(ixy) = neso_mesh->dmh->get_cell_volume(static_cast<int>(ixy));
-      ixy++;
-     }
+      for (PetscInt iy = bout_mesh->ystart; iy <= bout_mesh->yend; iy++) {
+        neso_cell_volumes_bmsh.at(ixy) =
+            neso_mesh->dmh->get_cell_volume(static_cast<int>(ixy));
+        ixy++;
+      }
     }
   } else if (num_cells_owned_kinetic_mesh > num_cells_owned_bout_mesh) {
     // assume that this corresponds to the case where the BOUT++ mesh is decomposed
     // to triangles and there are also cells representing the region beyond the simulated plasma
     // -------------------------------------------
     // first, make a mesh_coupler_dg0 object with unit weights
-    std::vector<std::vector<PetscInterface::DMPlexMeshCouplerDG0MapEntry>>
-        coupler_map(static_cast<size_t>(num_cells_owned_bout_mesh));
+    std::vector<std::vector<PetscInterface::DMPlexMeshCouplerDG0MapEntry>> coupler_map(
+        static_cast<size_t>(num_cells_owned_bout_mesh));
     Field2D map_RZ_to_itriangle_0;
     Field2D map_RZ_to_itriangle_1;
     bout_mesh->get(map_RZ_to_itriangle_0, "map_RZ_to_itriangle_0");
@@ -163,38 +159,217 @@ std::vector<REAL> get_cell_volumes_on_plasma_grid(DM& dm,
     for (int ix = bout_mesh->xstart; ix <= bout_mesh->xend; ix++) {
       for (int iy = bout_mesh->ystart; iy <= bout_mesh->yend; iy++) {
         // lower triangle
-        coupler_map.at(static_cast<size_t>(icell)).push_back(
-          {kinetic_mesh_map.at(static_cast<size_t>(map_RZ_to_itriangle_0(ix,iy))), 1.0, 1.0});
+        coupler_map.at(static_cast<size_t>(icell))
+            .push_back(
+                {kinetic_mesh_map.at(static_cast<size_t>(map_RZ_to_itriangle_0(ix, iy))),
+                 1.0, 1.0});
         // upper triangle
-        coupler_map.at(static_cast<size_t>(icell)).push_back(
-          {kinetic_mesh_map.at(static_cast<size_t>(map_RZ_to_itriangle_1(ix,iy))), 1.0, 1.0});
+        coupler_map.at(static_cast<size_t>(icell))
+            .push_back(
+                {kinetic_mesh_map.at(static_cast<size_t>(map_RZ_to_itriangle_1(ix, iy))),
+                 1.0, 1.0});
         icell += 1;
       }
     }
     // object for transferring data between kinetic and bout mesh degree-of-freedom vectors
-    std::shared_ptr<PetscInterface::DMPlexMeshCouplerDG0> mesh_coupler_unit_weight = std::make_shared<PetscInterface::DMPlexMeshCouplerDG0>(dm, coupler_map);
+    std::shared_ptr<PetscInterface::DMPlexMeshCouplerDG0> mesh_coupler_unit_weight =
+        std::make_shared<PetscInterface::DMPlexMeshCouplerDG0>(dm, coupler_map);
     // obtain a list of kinetic mesh cell volumes
     std::vector<double> neso_cell_volumes_kmsh(num_cells_owned_kinetic_mesh);
-    for (size_t  ic=0; ic < num_cells_owned_kinetic_mesh; ic++){
-      neso_cell_volumes_kmsh.at(ic) = neso_mesh->dmh->get_cell_volume(static_cast<int>(ic));
+    for (size_t ic = 0; ic < num_cells_owned_kinetic_mesh; ic++) {
+      neso_cell_volumes_kmsh.at(ic) =
+          neso_mesh->dmh->get_cell_volume(static_cast<int>(ic));
     }
     // move these cell volumes to the bout mesh
-    mesh_coupler_unit_weight->backward_transfer(neso_cell_volumes_kmsh, 1, neso_cell_volumes_bmsh);
+    mesh_coupler_unit_weight->backward_transfer(neso_cell_volumes_kmsh, 1,
+                                                neso_cell_volumes_bmsh);
   }
   return neso_cell_volumes_bmsh;
 }
 
-void check_cell_volumes(std::vector<REAL> neso_cell_volumes_bmsh,
-                        Mesh*& bout_mesh, Options& alloptions) {
+size_t get_num_cells_owned_bout_mesh(Mesh*& bout_mesh) {
+  // local number of BOUT++ x cells, excluding guards
+  const int Nx = bout_mesh->xend - bout_mesh->xstart + 1;
+  // local number of BOUT++ y cells, excluding guards
+  const int Ny = bout_mesh->yend - bout_mesh->ystart + 1;
+  // Get the number of cells in the bout (plasma) mesh owned on this process, excluding guard cells
+  const size_t num_cells_owned_bout_mesh = static_cast<size_t>(Nx * Ny);
+  return num_cells_owned_bout_mesh;
+}
+
+std::shared_ptr<PetscInterface::DMPlexMeshCouplerDG0>
+get_mesh_coupler_constant_weights(DM& dm, std::vector<PetscInt>& kinetic_mesh_map,
+                                  Mesh*& bout_mesh, REAL backward_weight_0,
+                                  REAL backward_weight_1) {
+  const size_t num_cells_owned_bout_mesh = get_num_cells_owned_bout_mesh(bout_mesh);
+  std::vector<std::vector<PetscInterface::DMPlexMeshCouplerDG0MapEntry>> coupler_map_0(
+      static_cast<size_t>(num_cells_owned_bout_mesh));
+  Field2D map_RZ_to_itriangle_0;
+  Field2D map_RZ_to_itriangle_1;
+  bout_mesh->get(map_RZ_to_itriangle_0, "map_RZ_to_itriangle_0");
+  bout_mesh->get(map_RZ_to_itriangle_1, "map_RZ_to_itriangle_1");
+  int icell = 0;
+  for (int ix = bout_mesh->xstart; ix <= bout_mesh->xend; ix++) {
+    for (int iy = bout_mesh->ystart; iy <= bout_mesh->yend; iy++) {
+      // lower triangle
+      coupler_map_0.at(static_cast<size_t>(icell))
+          .push_back(
+              {kinetic_mesh_map.at(static_cast<size_t>(map_RZ_to_itriangle_0(ix, iy))),
+               1.0, backward_weight_0});
+      // upper triangle
+      coupler_map_0.at(static_cast<size_t>(icell))
+          .push_back(
+              {kinetic_mesh_map.at(static_cast<size_t>(map_RZ_to_itriangle_1(ix, iy))),
+               1.0, backward_weight_1});
+      icell += 1;
+    }
+  }
+  // object for transferring data between kinetic and bout mesh degree-of-freedom vectors
+  std::shared_ptr<PetscInterface::DMPlexMeshCouplerDG0> mesh_coupler =
+      std::make_shared<PetscInterface::DMPlexMeshCouplerDG0>(dm, coupler_map_0);
+  return mesh_coupler;
+}
+
+std::vector<REAL> get_cell_vertices_on_plasma_grid(
+    DM& dm, std::vector<PetscInt>& kinetic_mesh_map,
+    std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh, Mesh*& bout_mesh) {
+  // local number of BOUT++ x cells, excluding guards
+  const int Nx = bout_mesh->xend - bout_mesh->xstart + 1;
+  // local number of BOUT++ y cells, excluding guards
+  const int Ny = bout_mesh->yend - bout_mesh->ystart + 1;
+  // Get the number of cells in the bout (plasma) mesh owned on this process, excluding guard cells
+  const size_t num_cells_owned_bout_mesh = static_cast<size_t>(Nx * Ny);
+  // Get the number of cells in the kinetic (neutral) mesh owned on this process
+  const size_t num_cells_owned_kinetic_mesh =
+      static_cast<size_t>(neso_mesh->get_cell_count());
+  // neso_mesh cell volumes on BOUT++ mesh indices
+  const size_t nquad_vertices = 4;
+  const size_t ntri_vertices = 3;
+  const size_t ndim = 2; // number of position coordinates expected
+  std::vector<REAL> quad_cell_vertices_bmsh(nquad_vertices * ndim
+                                            * num_cells_owned_bout_mesh);
+  // get the cell vertices in flattened vectors,
+  // without attempting to respect anti-clockwise vertex ordering
+  if (num_cells_owned_kinetic_mesh == num_cells_owned_bout_mesh) {
+    std::vector<std::vector<REAL>> cell_vertices;
+    // zero the compound index
+    size_t ixy = 0;
+    for (PetscInt ix = bout_mesh->xstart; ix <= bout_mesh->xend; ix++) {
+      for (PetscInt iy = bout_mesh->ystart; iy <= bout_mesh->yend; iy++) {
+        neso_mesh->dmh->get_cell_vertices(static_cast<PetscInt>(ixy), cell_vertices);
+        for (size_t iv = 0; iv < nquad_vertices; iv++) {
+          for (size_t idim = 0; idim < ndim; idim++) {
+            const size_t jc = (ndim * ((nquad_vertices * ixy) + iv)) + idim;
+            quad_cell_vertices_bmsh.at(jc) = cell_vertices.at(iv).at(idim);
+          }
+        }
+        ixy++;
+      }
+    }
+  } else if (num_cells_owned_kinetic_mesh > num_cells_owned_bout_mesh) {
+    // assume that this corresponds to the case where the BOUT++ mesh is decomposed
+    // to triangles and there are also cells representing the region beyond the simulated plasma
+    // -------------------------------------------
+    // we need to get the triangular cell coordinates from each upper and lower triangle
+    // on to the local BOUT++ grid, then resolve which coordinates are unique to form
+    // the coordinates for the quadrilateral cell which the pair of triangles represent
+    // -------------------------------------------
+    // first, make a mesh_coupler_dg0 object with unit weights from the lower triangle, and zero weight
+    // for the upper triangle
+    std::shared_ptr<PetscInterface::DMPlexMeshCouplerDG0> mesh_coupler_0 =
+        get_mesh_coupler_constant_weights(dm, kinetic_mesh_map, bout_mesh, 1.0, 0.0);
+    // second, make a mesh_coupler_dg0 object with unit weights from the upper triangle, and zero weight
+    // for the lower triangle
+    std::shared_ptr<PetscInterface::DMPlexMeshCouplerDG0> mesh_coupler_1 =
+        get_mesh_coupler_constant_weights(dm, kinetic_mesh_map, bout_mesh, 0.0, 1.0);
+    // obtain the cell coordinates for lower and upper triangles on the kinetic mesh
+    std::vector<std::vector<REAL>> cell_vertices;
+    std::vector<REAL> tri_cell_vertices_kmsh(ntri_vertices * ndim
+                                             * num_cells_owned_kinetic_mesh);
+    for (size_t ic = 0; ic < num_cells_owned_kinetic_mesh; ic++) {
+      neso_mesh->dmh->get_cell_vertices(static_cast<PetscInt>(ic), cell_vertices);
+      // fill in results to flattened vector
+      for (size_t iv = 0; iv < ntri_vertices; iv++) {
+        for (size_t idim = 0; idim < ndim; idim++) {
+          const size_t jc = (ndim * ((ntri_vertices * ic) + iv)) + idim;
+          tri_cell_vertices_kmsh.at(jc) = cell_vertices.at(iv).at(idim);
+        }
+      }
+    }
+    // transfer these results to vectors for the lower and upper triangles
+    std::vector<REAL> tri_cell_vertices_0_bmsh(ntri_vertices * ndim
+                                               * num_cells_owned_bout_mesh);
+    std::vector<REAL> tri_cell_vertices_1_bmsh(ntri_vertices * ndim
+                                               * num_cells_owned_bout_mesh);
+    mesh_coupler_0->backward_transfer(tri_cell_vertices_kmsh, ntri_vertices * ndim,
+                                      tri_cell_vertices_0_bmsh);
+    mesh_coupler_1->backward_transfer(tri_cell_vertices_kmsh, ntri_vertices * ndim,
+                                      tri_cell_vertices_1_bmsh);
+    // fill in data for quad cell vertices
+    // no requirement for the cell centre check to list in anti-clockwise order
+    size_t ixy = 0;
+    for (PetscInt ix = bout_mesh->xstart; ix <= bout_mesh->xend; ix++) {
+      for (PetscInt iy = bout_mesh->ystart; iy <= bout_mesh->yend; iy++) {
+        // first three vertices from lower triangle are definitely unqiue vertices for the quad
+        // (though perhaps in an incorrect order)
+        for (size_t iv = 0; iv < ntri_vertices; iv++) {
+          for (size_t idim = 0; idim < ndim; idim++) {
+            const size_t jc_quad = (ndim * ((nquad_vertices * ixy) + iv)) + idim;
+            const size_t jc_tri = (ndim * ((ntri_vertices * ixy) + iv)) + idim;
+            quad_cell_vertices_bmsh.at(jc_quad) = tri_cell_vertices_0_bmsh.at(jc_tri);
+          }
+        }
+        // the final unique coordinate must be determined by checking for uniqueness
+        const size_t ivquad = 3;
+        const REAL atol = 1.0e-12;
+        std::vector<bool> unique(ntri_vertices);
+        for (size_t ivp = 0; ivp < ntri_vertices; ivp++) {
+          const size_t jcp_tri = (ndim * ((ntri_vertices * ixy) + ivp));
+          // initially presume that this index is unique
+          unique.at(ivp) = true;
+          for (size_t iv = 0; iv < ntri_vertices; iv++) {
+            const size_t jc_tri = (ndim * ((ntri_vertices * ixy) + iv));
+            REAL sumsqr = 0.0;
+            // sum the squared lengths measuring the distance of this vertex from another
+            for (size_t idim = 0; idim < ndim; idim++) {
+              sumsqr += std::pow(tri_cell_vertices_0_bmsh.at(jc_tri + idim)
+                                     - tri_cell_vertices_1_bmsh.at(jcp_tri + idim),
+                                 2);
+            }
+            const REAL l2norm = std::sqrt(sumsqr);
+            if (l2norm < atol) {
+              unique.at(ivp) = false;
+            }
+          }
+          if (unique.at(ivp)) {
+            // this vertex has proved to be unique by not matching any other vertex
+            for (size_t idim = 0; idim < ndim; idim++) {
+              const size_t jc_quad = (ndim * ((nquad_vertices * ixy) + ivquad)) + idim;
+              quad_cell_vertices_bmsh.at(jc_quad) =
+                  tri_cell_vertices_1_bmsh.at(jcp_tri + idim);
+            }
+            // only one vertex can be unique
+            break;
+          }
+        }
+        ixy++;
+      }
+    }
+  }
+  return quad_cell_vertices_bmsh;
+}
+
+void check_cell_volumes(std::vector<REAL> neso_cell_volumes_bmsh, Mesh*& bout_mesh,
+                        Options& alloptions) {
   Coordinates* coord = bout_mesh->getCoordinates();
-  size_t ixy=0;
+  size_t ixy = 0;
   const REAL tolerance = 1.0e-12;
   // local number of BOUT++ x cells, excluding guards
   const int Nx = bout_mesh->xend - bout_mesh->xstart + 1;
   // local number of BOUT++ y cells, excluding guards
   const int Ny = bout_mesh->yend - bout_mesh->ystart + 1;
   // Get the number of cells in the bout (plasma) mesh owned on this process, excluding guard cells
-  const size_t num_cells_owned_bout_mesh = static_cast<size_t>(Nx*Ny);
+  const size_t num_cells_owned_bout_mesh = static_cast<size_t>(Nx * Ny);
   // Get the number of cells in the kinetic (neutral) mesh owned on this process
   ASSERT1(neso_cell_volumes_bmsh.size() == num_cells_owned_bout_mesh);
   // dimensional units
@@ -215,10 +390,10 @@ void check_cell_volumes(std::vector<REAL> neso_cell_volumes_bmsh,
       const bool volumes_match = (abs(bout_cell_area - neso_cell_area) < tolerance);
       // exit if we fail to find a match
       NESOASSERT(volumes_match,
-                fmt::format("BOUT++ mesh volume {} does not match NESO-Particles mesh "
-                            "volume {} for ix = {} iy = {} \n Ignore this message by "
-                            "setting [dmplex] test_dmplex_cell_volumes = false",
-                            bout_cell_area, neso_cell_area, ix, iy));
+                 fmt::format("BOUT++ mesh volume {} does not match NESO-Particles mesh "
+                             "volume {} for ix = {} iy = {} \n Ignore this message by "
+                             "setting [dmplex] test_dmplex_cell_volumes = false",
+                             bout_cell_area, neso_cell_area, ix, iy));
       ixy++;
     }
   }
@@ -240,7 +415,8 @@ REAL cell_length(std::vector<std::vector<REAL>>& cell_vertices, std::size_t iv1,
   return length;
 }
 
-void check_cell_centres(Options& alloptions,
+void check_cell_centres(Options& alloptions, DM& dm,
+                        std::vector<PetscInt>& kinetic_mesh_map,
                         std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh,
                         Mesh*& bout_mesh, BoutReal absolute_tolerance,
                         BoutReal relative_tolerance) {
@@ -251,19 +427,32 @@ void check_cell_centres(Options& alloptions,
   bout_mesh->get(Zxy, "Zxy");
 
   BoutReal meters = get<BoutReal>(alloptions["units"]["meters"]);
-
+  std::vector<REAL> neso_cell_vertices_plasma_grid =
+      get_cell_vertices_on_plasma_grid(dm, kinetic_mesh_map, neso_mesh, bout_mesh);
+  // number of vertices per quad
+  const size_t nquad_vertices = 4;
+  // expected dimensionality
+  const size_t ndim = 2;
   // compare to cell centres calculated from cell corners
-  std::vector<std::vector<REAL>> cell_vertices;
+  std::vector<std::vector<REAL>> cell_vertices(nquad_vertices, std::vector<REAL>(ndim));
+
   PetscInt ixy = 0;
   for (PetscInt ix = bout_mesh->xstart; ix <= bout_mesh->xend; ix++) {
     for (PetscInt iy = bout_mesh->ystart; iy <= bout_mesh->yend; iy++) {
       const REAL bout_Rxy = Rxy(ix, iy);
       const REAL bout_Zxy = Zxy(ix, iy);
-      neso_mesh->dmh->get_cell_vertices(ixy, cell_vertices);
 
+      // fill in the vertices from the flattened vector
+      for (std::size_t iv = 0; iv < nquad_vertices; iv++) {
+        for (size_t idim = 0; idim < ndim; idim++) {
+          const size_t jc_quad =
+              (ndim * ((nquad_vertices * static_cast<size_t>(ixy)) + iv)) + idim;
+          cell_vertices.at(iv).at(idim) = neso_cell_vertices_plasma_grid.at(jc_quad);
+        }
+      }
       REAL neso_Rxy = 0.0;
       REAL neso_Zxy = 0.0;
-      for (std::size_t iv = 0; iv < 4; iv++) {
+      for (std::size_t iv = 0; iv < nquad_vertices; iv++) {
         // DMPlex is stored in normalised units, need conversion to [m]
         neso_Rxy += cell_vertices.at(iv).at(0) * meters;
         neso_Zxy += cell_vertices.at(iv).at(1) * meters;
@@ -283,15 +472,15 @@ void check_cell_centres(Options& alloptions,
       NESOASSERT(
           centres_match,
           fmt::format("Hypnotoad/BOUT++ cell centre (R, Z) ({}, {}) does not match "
-                      "NESO-Particles mesh "
+                      "NESO-Particles mesh inferred quad "
                       "cell centre ({}, {}) for ix = {} iy = {} \n"
                       "The cell height and width are {} {} \n"
                       "The displacements in R and Z are {} {} \n"
                       "Ignore this message by "
-                      "setting [neso_particles] test_cell_centres = false\n Relax the "
+                      "setting [dmplex] test_dmplex_cell_centres = false\n Relax the "
                       "tolerance used in this check by increasing\n"
-                      "[neso_particles] cell_centre_absolute_tolerance = {}\n"
-                      "[neso_particles] cell_centre_relative_tolerance = {}",
+                      "[dmplex] dmplex_cell_centre_absolute_tolerance = {}\n"
+                      "[dmplex] dmplex_cell_centre_relative_tolerance = {}",
                       bout_Rxy, bout_Zxy, neso_Rxy, neso_Zxy, ix, iy, cell_length_a,
                       cell_length_b, abs(neso_Rxy - bout_Rxy), abs(neso_Zxy - bout_Zxy),
                       absolute_tolerance, relative_tolerance));
@@ -336,7 +525,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
   Options& units = alloptions["units"];
   BoutReal inv_meters_cubed = get<BoutReal>(units["inv_meters_cubed"]);
   BoutReal eV = get<BoutReal>(units["eV"]);
-  BoutReal pascal = SI::qe*eV*inv_meters_cubed;
+  BoutReal pascal = SI::qe * eV * inv_meters_cubed;
   BoutReal meters = get<BoutReal>(units["meters"]);
   BoutReal seconds = get<BoutReal>(units["seconds"]);
 
@@ -345,10 +534,12 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
                  "unit weight. Default = 1.1 as a value close but different to unity"
                  "to make sure an incorrect implementation would show up in tests.")
             .withDefault<BoutReal>(1.1);
-  electron_density_threshold = options["electron_density_reaction_threshold"]
-            .doc("Parameter controlling the minimum (normalised) electron density "
-                 "at which the reactions between neutrals and charged plasma species are applied.")
-            .withDefault<BoutReal>(1.0e-12);
+  electron_density_threshold =
+      options["electron_density_reaction_threshold"]
+          .doc("Parameter controlling the minimum (normalised) electron density "
+               "at which the reactions between neutrals and charged plasma species are "
+               "applied.")
+          .withDefault<BoutReal>(1.0e-12);
 
   Options::root()["units"]["N_w"] = N_w;
   Options::root()["units"]["N_w"].setConditionallyUsed();
@@ -359,27 +550,31 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
   // keep dmplex_h5_filename in vantage.cxx to retain access to make_output_path()
   // which should presumably not need to exist within the hermes-3 library
   std::string dmplex_name = mesh_options["dmplex_name"]
-                                  .doc("DMPlex object name.")
-                                  .withDefault("hypnotoad_dmplex_mesh");
+                                .doc("DMPlex object name.")
+                                .withDefault("hypnotoad_dmplex_mesh");
   std::string dmplex_h5_filename = mesh_options["dmplex_h5_filename"]
                                        .doc("Filename to use for saving the DMPlex mesh")
                                        .withDefault("hypnotoad_dmplex_mesh_output.h5");
-  bool use_external_msh = mesh_options["use_external_msh"]
-                             .doc("Use an externally generated .msh file for the kinetic mesh. "
-                                  "Not default and recommendation is false.")
-                             .withDefault(false);
+  bool use_external_msh =
+      mesh_options["use_external_msh"]
+          .doc("Use an externally generated .msh file for the kinetic mesh. "
+               "Not default and recommendation is false.")
+          .withDefault(false);
   // Create and save DMPlex
   // DM dm; // pointer to DMPlex, initialised below
   // This DM is created in SI units without boundary labels
   if (use_external_msh) {
-    std::string msh_file = mesh_options["msh_file"]
-                             .doc("Path to an externally generated .msh file for the kinetic mesh. ")
-                             .withDefault("kinetic.msh");
+    std::string msh_file =
+        mesh_options["msh_file"]
+            .doc("Path to an externally generated .msh file for the kinetic mesh. ")
+            .withDefault("kinetic.msh");
     // create a DMPlex in serial
     create_dmplex_from_GMSH_msh(&dm, msh_file);
-    PetscSF sf_kinetic_mesh; // Petsc variable that records map of vertices from original vector to distributed vector indices
+    PetscSF
+        sf_kinetic_mesh; // Petsc variable that records map of vertices from original vector to distributed vector indices
     PetscInterface::generic_distribute(&dm, BoutComm::get(), 1, &sf_kinetic_mesh);
-    kinetic_mesh_map = PetscInterface::get_global_distributed_points_map(dm, sf_kinetic_mesh);
+    kinetic_mesh_map =
+        PetscInterface::get_global_distributed_points_map(dm, sf_kinetic_mesh);
   } else {
     create_dmplex_from_Bout_mesh(&dm, bout_mesh, mesh_options, sycl_target);
   }
@@ -426,12 +621,8 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
 
     // Normalisations
     // Charge for ionised species in IZ reaction and mass of ion and neutral
-    charge = options["charge"]
-                            .doc("Particle charge. electrons = -1")
-                            .withDefault(1.0);
-    AA = options["AA"]
-                        .doc("Particle atomic mass. Proton = 1")
-                        .withDefault(1.0);
+    charge = options["charge"].doc("Particle charge. electrons = -1").withDefault(1.0);
+    AA = options["AA"].doc("Particle atomic mass. Proton = 1").withDefault(1.0);
     // check mass positive
     ASSERT1(AA > 0.0);
     // Initial neutral parameters
@@ -440,20 +631,21 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
             .doc(
                 "Initial neutral pressure for VANTAGE kinetic neutrals [Pa], default = 1")
             .withDefault(1.0)
-            / pascal;
+        / pascal;
     const BoutReal initial_neutral_temperature =
         options["initial_neutral_temperature"]
-            .doc(
-                "Initial neutral temperature for VANTAGE kinetic neutrals [eV], default = 1")
+            .doc("Initial neutral temperature for VANTAGE kinetic neutrals [eV], default "
+                 "= 1")
             .withDefault(1.0)
-            / eV;
+        / eV;
     // check initial neutral pressure is greater than or equal to zero
     ASSERT1(initial_neutral_pressure >= 0.0);
     // checking initial temperature greater than zero before division
     ASSERT1(initial_neutral_temperature > 0.0);
     initial_neutral_density = initial_neutral_pressure / initial_neutral_temperature;
     // standard deviation (thermal speed) from initial condition
-    const BoutReal initial_neutral_thermal_speed = std::sqrt(initial_neutral_temperature/AA);
+    const BoutReal initial_neutral_thermal_speed =
+        std::sqrt(initial_neutral_temperature / AA);
     const int npart_per_cell = options["npart_per_cell"]
                                    .doc("Number of VANTAGE kinetic neutral particles per "
                                         "cell during initialisation")
@@ -510,7 +702,8 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
     // Create a domain from the neso_mesh and the mapper.
     auto domain = std::make_shared<Domain>(neso_mesh, mapper);
     // get the cell volumes from neso_mesh on the plasma grid, in the compound index
-    neso_mesh_cell_volumes_on_plasma_grid = get_cell_volumes_on_plasma_grid(dm, kinetic_mesh_map, neso_mesh, bout_mesh);
+    neso_mesh_cell_volumes_on_plasma_grid =
+        get_cell_volumes_on_plasma_grid(dm, kinetic_mesh_map, neso_mesh, bout_mesh);
     // if requested, check that neso_mesh cell volumes are identical
     // to bout_mesh cell volumes, otherwise, exit.
     if (mesh_options["test_dmplex_cell_volumes"].withDefault(true)) {
@@ -518,7 +711,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
     }
     if (mesh_options["test_dmplex_cell_centres"].withDefault(true)) {
       check_cell_centres(
-          alloptions, neso_mesh, bout_mesh,
+          alloptions, dm, kinetic_mesh_map, neso_mesh, bout_mesh,
           mesh_options["dmplex_cell_centre_absolute_tolerance"].withDefault(1.0e-12),
           mesh_options["dmplex_cell_centre_relative_tolerance"].withDefault(0.0));
     }
@@ -537,14 +730,15 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
         Properties<REAL>(fluid_species,
                          std::vector<int>{default_properties.source_momentum}),
         ndim);
-    ParticleSpec additional_props{ParticleProp(Sym<REAL>("TSP"), 2),
-                                  ParticleProp(Sym<REAL>("FLUID_DENSITY"), 1),
-                                  ParticleProp(Sym<REAL>("FLUID_FLOW_SPEED"), ndim),
-                                  ParticleProp(Sym<REAL>("FLUID_TEMPERATURE"), 1),
-                                  ParticleProp(Sym<INT>("N_CELL"), 1),
-                                  ParticleProp(Sym<REAL>("WEIGHT_V2"), 1),
-                                  ParticleProp(Sym<REAL>("WEIGHT_V"), ndim),
-                                };
+    ParticleSpec additional_props{
+        ParticleProp(Sym<REAL>("TSP"), 2),
+        ParticleProp(Sym<REAL>("FLUID_DENSITY"), 1),
+        ParticleProp(Sym<REAL>("FLUID_FLOW_SPEED"), ndim),
+        ParticleProp(Sym<REAL>("FLUID_TEMPERATURE"), 1),
+        ParticleProp(Sym<INT>("N_CELL"), 1),
+        ParticleProp(Sym<REAL>("WEIGHT_V2"), 1),
+        ParticleProp(Sym<REAL>("WEIGHT_V"), ndim),
+    };
 
     particle_spec_builder.add_particle_spec(additional_props);
     ParticleSpec particle_spec = particle_spec_builder.get_particle_spec();
@@ -565,8 +759,8 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
 
     const int N_actual = static_cast<int>(particle_cell_ids.size());
     // use the 3D definition of sigma here, but note ndim = 2 for now
-    auto velocities =
-        NESO::Particles::normal_distribution(N_actual, 2, 0.0, initial_neutral_thermal_speed, rng_vel);
+    auto velocities = NESO::Particles::normal_distribution(
+        N_actual, 2, 0.0, initial_neutral_thermal_speed, rng_vel);
 
     int id_offset = 0;
     MPICHK(MPI_Exscan(&N_actual, &id_offset, 1, MPI_INT, MPI_SUM,
@@ -613,21 +807,23 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
     // local number of y cells, excluding guards
     const int Ny = bout_mesh->yend - bout_mesh->ystart + 1;
     // Get the number of cells in the bout (plasma) mesh owned on this process, excluding guard cells
-    const int num_cells_owned_bout_mesh = Nx*Ny;
+    const int num_cells_owned_bout_mesh = Nx * Ny;
     // Get the number of cells in the kinetic (neutral) mesh owned on this process
     const int num_cells_owned_kinetic_mesh = neso_mesh->get_cell_count();
     // allocate buffer vector for scalar projection/evaluation of NESO-Particles
     // properties on to the kinetic mesh
-    dof_kinetic_mesh_scalar = std::vector<REAL>(static_cast<size_t>(num_cells_owned_kinetic_mesh));
+    dof_kinetic_mesh_scalar =
+        std::vector<REAL>(static_cast<size_t>(num_cells_owned_kinetic_mesh));
     // allocate buffer vector for scalar projection/evaluation of NESO-Particles
     // properties on to the bout mesh
-    dof_bout_mesh_scalar = std::vector<REAL>(static_cast<size_t>(num_cells_owned_bout_mesh));
+    dof_bout_mesh_scalar =
+        std::vector<REAL>(static_cast<size_t>(num_cells_owned_bout_mesh));
     // make pointer to projection object
     if (use_external_msh) {
       // create the dg0 variable using a constructor that
       // respects the kinetic mesh external definition
-      std::vector<std::vector<PetscInterface::DMPlexMeshCouplerDG0MapEntry>>
-        coupler_map(static_cast<size_t>(num_cells_owned_bout_mesh));
+      std::vector<std::vector<PetscInterface::DMPlexMeshCouplerDG0MapEntry>> coupler_map(
+          static_cast<size_t>(num_cells_owned_bout_mesh));
       Field2D map_RZ_to_itriangle_0;
       Field2D map_RZ_to_itriangle_1;
       bout_mesh->get(map_RZ_to_itriangle_0, "map_RZ_to_itriangle_0");
@@ -639,25 +835,29 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
       for (int ix = bout_mesh->xstart; ix <= bout_mesh->xend; ix++) {
         for (int iy = bout_mesh->ystart; iy <= bout_mesh->yend; iy++) {
           // get triangle areas, and total area for ratio in the backward weights
-          const int itri_0 = static_cast<int>(map_RZ_to_itriangle_0(ix,iy));
-          const REAL area_0 = get_triangle_area(static_cast<size_t>(itri_0), vertices, tri_cell_vertices);
-          const int itri_1 = static_cast<int>(map_RZ_to_itriangle_1(ix,iy));
-          const REAL area_1 = get_triangle_area(static_cast<size_t>(itri_1), vertices, tri_cell_vertices);
+          const int itri_0 = static_cast<int>(map_RZ_to_itriangle_0(ix, iy));
+          const REAL area_0 =
+              get_triangle_area(static_cast<size_t>(itri_0), vertices, tri_cell_vertices);
+          const int itri_1 = static_cast<int>(map_RZ_to_itriangle_1(ix, iy));
+          const REAL area_1 =
+              get_triangle_area(static_cast<size_t>(itri_1), vertices, tri_cell_vertices);
           const REAL total_area = area_0 + area_1;
           // std::cout << "total area: " << total_area << " area_0: " << area_0 << " area_1: " << area_1 << " area_0/total_area: " << area_0/total_area << " area_1/total_area: " << area_1/total_area <<'\n';
           ASSERT1(total_area > 0.0);
           // lower triangle
-          coupler_map.at(static_cast<size_t>(icell)).push_back(
-            {kinetic_mesh_map.at(static_cast<size_t>(itri_0)), 1.0, area_0/total_area});
+          coupler_map.at(static_cast<size_t>(icell))
+              .push_back({kinetic_mesh_map.at(static_cast<size_t>(itri_0)), 1.0,
+                          area_0 / total_area});
           // upper triangle
-          coupler_map.at(static_cast<size_t>(icell)).push_back(
-            {kinetic_mesh_map.at(static_cast<size_t>(itri_1)), 1.0, area_1/total_area});
+          coupler_map.at(static_cast<size_t>(icell))
+              .push_back({kinetic_mesh_map.at(static_cast<size_t>(itri_1)), 1.0,
+                          area_1 / total_area});
           icell += 1;
         }
       }
       // object for transferring data between kinetic and bout mesh degree-of-freedom vectors
-      mesh_coupler_dg0 = std::make_shared<PetscInterface::DMPlexMeshCouplerDG0>(
-        dm, coupler_map);
+      mesh_coupler_dg0 =
+          std::make_shared<PetscInterface::DMPlexMeshCouplerDG0>(dm, coupler_map);
     }
     // if (mesh_coupler_dg0 == nullptr){
     //   output << "mesh_coupler_dg0 is a nullptr" << std::endl;
@@ -665,15 +865,17 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
     // object for evaluating/projecting particle properties
     // between the kinetic mesh degree-of-freedom vector and particles
     project_eval_dg0 = std::make_shared<PetscInterface::DMPlexProjectEvaluateDG>(
-      neso_mesh, sycl_target, "DG", 0);
+        neso_mesh, sycl_target, "DG", 0);
 
     // Object for transferring data between BOUT++ and NESO-Particles data formats
     this->data_transfer = std::make_shared<VantageDataTransfer>(
-      neso_mesh, project_eval_dg0, mesh_coupler_dg0, bout_mesh, ndim);
+        neso_mesh, project_eval_dg0, mesh_coupler_dg0, bout_mesh, ndim);
 
     // vectors for storing an ion density on the kinetic mesh
-    ion_density_kmsh = std::vector<REAL>(static_cast<size_t>(num_cells_owned_kinetic_mesh), background_ion_density);
-    total_density = std::vector<REAL>(static_cast<size_t>(num_cells_owned_kinetic_mesh), 0.0);
+    ion_density_kmsh = std::vector<REAL>(
+        static_cast<size_t>(num_cells_owned_kinetic_mesh), background_ion_density);
+    total_density =
+        std::vector<REAL>(static_cast<size_t>(num_cells_owned_kinetic_mesh), 0.0);
     // Field2D for storing plasma data coming from the plasma grid
     // that will be evaluated on to the particle properties
     ion_density = Field2D{background_ion_density, bout_mesh};
@@ -681,7 +883,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
     ion_temperature = Field2D{background_ion_temperature, bout_mesh};
     electron_temperature = Field2D{background_electron_temperature, bout_mesh};
     ion_velocity = std::vector<Field2D>{Field2D{background_ion_Vx, bout_mesh},
-     Field2D{background_ion_Vy, bout_mesh}};
+                                        Field2D{background_ion_Vy, bout_mesh}};
     // RNG kernel
     // Used for sampling from velocity distribution for REC/CX
     // ------------------------------------------------------------------------------
@@ -705,17 +907,18 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
     // use the same standard deviation for markers as in the initial distribution of velocities
     // we should consider if marker distribution should evolve with time to track the neutral/ion temperature
     // we should consider if marker distrubution should be initialised using Field2D information
-    const REAL initial_ion_thermal_speed = std::sqrt(background_ion_temperature/AA);
+    const REAL initial_ion_thermal_speed = std::sqrt(background_ion_temperature / AA);
     ParticleSet maxwellian_markers = uniform_cellwise_maxwellian<ndim>(
-        sycl_target, neso_mesh, particle_spec, rec_markers_per_cell, 1.0, initial_ion_thermal_speed, -1);
+        sycl_target, neso_mesh, particle_spec, rec_markers_per_cell, 1.0,
+        initial_ion_thermal_speed, -1);
 
     marker_group->add_particles_local(maxwellian_markers);
 
     // Give particle group initial fluid values:
     // markers will contain background plasma properties
-    update_particle_properties_from_plasma(data_transfer, marker_group,
-        ion_density, ion_temperature, ion_velocity,
-        electron_density, electron_temperature);
+    update_particle_properties_from_plasma(data_transfer, marker_group, ion_density,
+                                           ion_temperature, ion_velocity,
+                                           electron_density, electron_temperature);
 
     // Calculate marker weights
 
@@ -752,9 +955,8 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
     // Wrappers & controllers
     // ------------------------------------------------------------------------------
 
-    this->source_manager =
-        std::make_shared<VantageSourceManager>(neso_mesh,
-        data_transfer, bout_mesh, units);
+    this->source_manager = std::make_shared<VantageSourceManager>(
+        neso_mesh, data_transfer, bout_mesh, units);
     // extract the units for the sources below
     const BoutReal Nnorm = get<BoutReal>(units["inv_meters_cubed"]);
     const BoutReal Omega_ci = 1 / get<BoutReal>(units["seconds"]);
@@ -794,15 +996,10 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
     this->reaction_controller =
         std::make_unique<ReactionController>(parent_transforms_iz, child_transforms);
 
-    this->source_manager->add_source("Siz",
-                                    "ION_SOURCE_DENSITY",
-                                    "m^-3 s^-1",
-                                    Nnorm * Omega_ci,
-                                    "Density source",
-                                    "Ionisation density source",
-                                    accumulator_transform_iz,
-                                    A_particle_group,
-                                    ion_source_density_zeroer);
+    this->source_manager->add_source(
+        "Siz", "ION_SOURCE_DENSITY", "m^-3 s^-1", Nnorm * Omega_ci, "Density source",
+        "Ionisation density source", accumulator_transform_iz, A_particle_group,
+        ion_source_density_zeroer);
 
     // Recombination transforms and controller
 
@@ -818,15 +1015,10 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
     this->recombination_controller =
         std::make_unique<ReactionController>(parent_transforms_rec, child_transforms);
 
-    this->source_manager->add_source("Srec",
-                                    "ION_SOURCE_DENSITY",
-                                    "m^-3 s^-1",
-                                    Nnorm * Omega_ci,
-                                    "Density source",
-                                    "Recombination density source",
-                                    accumulator_transform_rec,
-                                    marker_group,
-                                    ion_source_density_zeroer);
+    this->source_manager->add_source(
+        "Srec", "ION_SOURCE_DENSITY", "m^-3 s^-1", Nnorm * Omega_ci, "Density source",
+        "Recombination density source", accumulator_transform_rec, marker_group,
+        ion_source_density_zeroer);
 
     // Ionisation reaction
     // ------------------------------------------------------------------------------
@@ -970,19 +1162,17 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
   // Initialisation
   // ------------------------------------------------------------------------------
   // set weights from a constant initial density
-  set_initial_particle_weights(initial_neutral_density,
-        A_particle_group, neso_mesh,
-        dof_kinetic_mesh_scalar, data_transfer, N_w);
+  set_initial_particle_weights(initial_neutral_density, A_particle_group, neso_mesh,
+                               dof_kinetic_mesh_scalar, data_transfer, N_w);
   // update particle properties from the plasma
-  update_particle_properties_from_plasma(data_transfer, A_particle_group,
-        ion_density, ion_temperature, ion_velocity,
-        electron_density, electron_temperature);
+  update_particle_properties_from_plasma(data_transfer, A_particle_group, ion_density,
+                                         ion_temperature, ion_velocity, electron_density,
+                                         electron_temperature);
   // write velocity moment diagnostics
   diagnostics_manager = std::make_unique<VantageDiagnosticsManager>(
-    make_output_path("BOUT.dmp.vantage.particle.moments", alloptions),
-    neso_mesh, neso_mesh_cell_volumes_on_plasma_grid,
-    A_particle_group, data_transfer, this->source_manager,
-    N_w, AA, bout_mesh, units, vantage_dump_filepath);
+      make_output_path("BOUT.dmp.vantage.particle.moments", alloptions), neso_mesh,
+      neso_mesh_cell_volumes_on_plasma_grid, A_particle_group, data_transfer,
+      this->source_manager, N_w, AA, bout_mesh, units, vantage_dump_filepath);
   diagnostics_manager->update_kinetic_velocity_moments();
   diagnostics_manager->write_kinetic_velocity_moment_diagnostics(0, ion_density_kmsh);
   diagnostics_manager->transfer_moments_to_plasma_grid();
@@ -1001,7 +1191,8 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
   //   total_density.at(ic) = neutral_density.at(ic) + ion_density_kmsh.at(ic);
   // }
   total_mass_initial = calculate_total_mass(neutral_density, neso_mesh);
-  total_mass_initial += calculate_total_mass(ion_density, this->neso_mesh_cell_volumes_on_plasma_grid);
+  total_mass_initial +=
+      calculate_total_mass(ion_density, this->neso_mesh_cell_volumes_on_plasma_grid);
 
   // Initialise particle time
   particle_time = 0.0;
@@ -1097,8 +1288,12 @@ int Vantage::advance_vantage(BoutReal UNUSED(time)) {
   // Create a ParticleSubGroup from particles that are in a cell with nonzero electron_density.
   // This makes sure reactions are only applied where the neutrals are within the plasma volume
   const REAL electron_density_threshold = this->electron_density_threshold;
-  ParticleSubGroupSharedPtr marker_group_in_plasma = create_particle_sub_group_in_plasma_volume(marker_group,electron_density_threshold);
-  ParticleSubGroupSharedPtr A_particle_group_in_plasma = create_particle_sub_group_in_plasma_volume(A_particle_group,electron_density_threshold);
+  ParticleSubGroupSharedPtr marker_group_in_plasma =
+      create_particle_sub_group_in_plasma_volume(marker_group,
+                                                 electron_density_threshold);
+  ParticleSubGroupSharedPtr A_particle_group_in_plasma =
+      create_particle_sub_group_in_plasma_volume(A_particle_group,
+                                                 electron_density_threshold);
 
   // begin timestepping
   output << "\nBegin VANTAGE iterations \n";
@@ -1110,21 +1305,23 @@ int Vantage::advance_vantage(BoutReal UNUSED(time)) {
     A_particle_group->cell_move();
     lambda_apply_timestep(static_particle_sub_group(A_particle_group));
     // update plasma properties on particles based on their new locations
-    update_particle_properties_from_plasma(data_transfer, A_particle_group,
-      ion_density, ion_temperature, ion_velocity,
-      electron_density, electron_temperature);
-    update_particle_properties_from_plasma(data_transfer, marker_group,
-      ion_density, ion_temperature, ion_velocity,
-      electron_density, electron_temperature);
+    update_particle_properties_from_plasma(data_transfer, A_particle_group, ion_density,
+                                           ion_temperature, ion_velocity,
+                                           electron_density, electron_temperature);
+    update_particle_properties_from_plasma(data_transfer, marker_group, ion_density,
+                                           ion_temperature, ion_velocity,
+                                           electron_density, electron_temperature);
     // apply reactions to particles with a non-zero electron density property (those neutrals in the plasma)
-    reaction_controller->apply(A_particle_group_in_plasma, dt, ControllerMode::standard_mode);
+    reaction_controller->apply(A_particle_group_in_plasma, dt,
+                               ControllerMode::standard_mode);
     recombination_controller->apply(marker_group_in_plasma, dt, A_particle_group);
 
     this->source_manager->update_all_sources(dt);
     Field2D Siz = this->source_manager->get_plasma_grid_data("Siz");
     Field2D Srec = this->source_manager->get_plasma_grid_data("Srec");
     const std::vector<REAL> Siz_kmsh = this->source_manager->get_kinetic_mesh_data("Siz");
-    const std::vector<REAL> Srec_kmsh = this->source_manager->get_kinetic_mesh_data("Srec");
+    const std::vector<REAL> Srec_kmsh =
+        this->source_manager->get_kinetic_mesh_data("Srec");
 
     // "Solve" density
     // Sources are in normalised m^-3 s^-1, so need to multiply by dt
@@ -1135,7 +1332,8 @@ int Vantage::advance_vantage(BoutReal UNUSED(time)) {
     // }
 
     diagnostics_manager->update_kinetic_velocity_moments();
-    diagnostics_manager->write_kinetic_velocity_moment_diagnostics(stepx+1, ion_density_kmsh);
+    diagnostics_manager->write_kinetic_velocity_moment_diagnostics(stepx + 1,
+                                                                   ion_density_kmsh);
     diagnostics_manager->transfer_moments_to_plasma_grid();
     // Write to VANTAGE dump files
     // data_transfer->transfer_scalar_to_plasma_grid(ion_density_kmsh, ion_density);
@@ -1151,7 +1349,8 @@ int Vantage::advance_vantage(BoutReal UNUSED(time)) {
   // mass for conservation check
   neutral_density = diagnostics_manager->get_density_kinetic_mesh();
   REAL total_mass_final = calculate_total_mass(neutral_density, neso_mesh);
-  total_mass_final += calculate_total_mass(ion_density, this->neso_mesh_cell_volumes_on_plasma_grid);
+  total_mass_final +=
+      calculate_total_mass(ion_density, this->neso_mesh_cell_volumes_on_plasma_grid);
   if (test_mass_conservation) {
     check_mass_conservation(total_mass_final, total_mass_initial);
   }
