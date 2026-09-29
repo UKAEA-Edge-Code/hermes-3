@@ -315,6 +315,35 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
     const int rec_markers_per_cell = options["rec_markers_per_cell"].withDefault(1000);
 
     // Other settings
+    neutral_species =
+        options["neutral_species"].doc("Name of the neutral species to use in VANTAGE");
+
+    // Note we're using Options& to avoid copying the Options
+    Options& ion_species_opt =
+        options["ion_species"].doc("Name of the ion correspondng to the VANTAGE neutral "
+                                   "species. If unset, no plasma is read from the state");
+
+    // Read plasma only if ions set.
+    // ion_species is the option content from ion_species_opt.
+    has_plasma = ion_species_opt.isSet();
+    if (has_plasma) {
+      ion_species = ion_species_opt.as<std::string>();
+      output_info.write("\tVANTAGE: reading plasma of ion species '{:s}'\n", ion_species);
+    } else {
+      output_info.write("\tVANTAGE: no ion_species set, no plasma is read\n");
+    }
+
+    two_way_coupling =
+        options["two_way_coupling"]
+            .doc("If true, enable VANTAGE sources to the Hermes-3 plasma. "
+                 "If false, the plasma is read-only. Needs ion_species to be set.")
+            .withDefault(false);
+    if (two_way_coupling and not has_plasma) {
+      throw BoutException("VANTAGE: two_way_coupling = true needs ion_species to be set");
+    }
+    output_info.write("\tVANTAGE: two-way coupling {:s}\n",
+                      two_way_coupling ? "enabled" : "disabled");
+
     const int ndim = 2;
     dt = options["dt"]
              .doc("Timestep to use for VANTAGE kinetic neutrals (normalised units)")
@@ -944,7 +973,13 @@ int Vantage::advance_vantage(BoutReal UNUSED(time)) {
 
 void Vantage::transform_impl(GuardedOptions& UNUSED(state)) {}
 
-void Vantage::finally(const Options& UNUSED(state)) {}
+void Vantage::finally(const Options& state) {
+
+  // Do not read from state if VANTAGE running standalone
+  if (!has_plasma) {
+    return;
+  }
+}
 
 void Vantage::outputVars(Options& UNUSED(state)) {}
 

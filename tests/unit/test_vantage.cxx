@@ -103,6 +103,8 @@ Options MakeOptions() {
   alloptions["vantage"]["npart_per_cell"] = 1;
   alloptions["vantage"]["nsteps"] = 0;
   alloptions["vantage"]["dt"] = 0.001;
+
+  alloptions["vantage"]["neutral_species"] = "d";
   return alloptions;
 }
 
@@ -112,5 +114,5 @@ Options MakeOptions() {
 TEST_F(VantageTest, CreateComponent) {
 
   Options alloptions = MakeOptions();
-  Vantage const component("vantage", alloptions, nullptr);
+  const Vantage component("vantage", alloptions, nullptr);
 }

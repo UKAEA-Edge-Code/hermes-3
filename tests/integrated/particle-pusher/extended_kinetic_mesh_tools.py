@@ -58,6 +58,8 @@ def extended_kinetic_mesh_test_input(
     [vantage]
     dt = {dt}
     nsteps = {nsteps}
+    ion_species = d+
+    neutral_species = d
     test_mass_conservation = true
     initial_neutral_pressure = 1
     initial_neutral_temperature = 1
@@ -137,6 +139,7 @@ def generate_BOUT_grid_data(base_grid_dir, kinetic_nc_file_path, verbose=True):
 
     [vantage]
     nsteps = 0
+    neutral_species = d
     test_mass_conservation = true
     npart_per_cell = 1
     """

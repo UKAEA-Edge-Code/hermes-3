@@ -51,7 +51,6 @@ struct Vantage : public Component {
 
 private:
   bool test_mass_conservation;
-  BoutReal particle_time;
   BoutReal N_w;
   REAL dt;
   BoutReal charge;
@@ -80,8 +79,15 @@ private:
   // x and y cells in the BOUT++ mesh (excluding guards)
   std::vector<REAL> neso_mesh_cell_volumes_on_plasma_grid;
 
+  // Physics
+  BoutReal particle_time;
+  std::string neutral_species; // Neutral species to simulate with VANTAGE
+  std::string ion_species;
+  bool has_plasma;       // Whether to read plasma fields from the state (ion_species set)
+  bool two_way_coupling; // Whether VANTAGE sources are also sent to the Hermes-3 plasma
   PetscLib petsc_lib; // Ensures PETSc is initialized for the lifetime of this component
 
+  // DMPLex/VANTAGE stuff
   DM dm;
   std::shared_ptr<PetscInterface::DMPlexInterface> neso_mesh;
   std::shared_ptr<SYCLTarget> sycl_target;
