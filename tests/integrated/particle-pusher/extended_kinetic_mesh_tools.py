@@ -16,6 +16,7 @@ def extended_kinetic_mesh_test_input(
     input_file_string = f"""
     nout = 1
     timestep = 1
+    MZ = 1
 
     [mesh]
     file="{bout_grid_file}"
@@ -81,6 +82,7 @@ def generate_BOUT_grid_data(base_grid_dir, kinetic_nc_file_path, verbose=True):
     input_file_string = """
     nout = 0
     timestep = 1
+    MZ = 1
 
     [mesh]
     J = 1

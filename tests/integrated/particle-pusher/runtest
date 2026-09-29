@@ -75,6 +75,7 @@ def particle_push_input(
 
     nout = 1
     timestep = 1
+    MZ = 1
 
     [mesh]
     J = 1
