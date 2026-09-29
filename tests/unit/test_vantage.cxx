@@ -103,6 +103,7 @@ Options MakeOptions() {
   alloptions["vantage"]["nsteps"] = 0;
   alloptions["vantage"]["dt"] = 0.001;
   alloptions["vantage"]["N_w"] = 1.0;
+  alloptions["vantage"]["neutral_species"] = "d";
   return alloptions;
 }
 

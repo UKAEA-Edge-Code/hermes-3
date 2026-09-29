@@ -126,6 +126,8 @@ def particle_push_input(
     [vantage]
     dt = {dt}
     nsteps = {nsteps}
+    ion_species = d+
+    neutral_species = d
     test_mass_conservation = true
     initial_neutral_pressure = 1
     initial_neutral_temperature = 1
