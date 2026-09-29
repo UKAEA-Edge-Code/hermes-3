@@ -17,6 +17,53 @@ size_t get_num_cells_owned_bout_mesh(Mesh*& bout_mesh) {
   return num_cells_owned_bout_mesh;
 }
 
+// initialise a DMPlexMeshCouplerDG0 for coupling the kinetic mesh to the BOUT++ mesh
+std::shared_ptr<PetscInterface::DMPlexMeshCouplerDG0>
+get_mesh_coupler(DM& dm, std::vector<PetscInt>& kinetic_mesh_map,
+                 VantageBasicMeshData& basic_mesh_data, Mesh*& bout_mesh) {
+  const size_t num_cells_owned_bout_mesh = get_num_cells_owned_bout_mesh(bout_mesh);
+  // map the defines the coupling backward and forward transfers
+  std::vector<std::vector<PetscInterface::DMPlexMeshCouplerDG0MapEntry>> coupler_map(
+      static_cast<size_t>(num_cells_owned_bout_mesh));
+  // maps that define which triangles are present at a given (R,Z) cell
+  Field2D map_RZ_to_itriangle_0 = basic_mesh_data.map_RZ_to_itriangle_0;
+  Field2D map_RZ_to_itriangle_1 = basic_mesh_data.map_RZ_to_itriangle_1;
+  // get data which defines the vertex coordinates
+  const std::vector<REAL> vertices = basic_mesh_data.vertices_data.vertices;
+  // get data that defines triangular cells
+  const std::vector<int> tri_cell_vertices =
+      basic_mesh_data.cell_definition.tri_cell_vertices;
+  int icell = 0;
+  for (int ix = bout_mesh->xstart; ix <= bout_mesh->xend; ix++) {
+    for (int iy = bout_mesh->ystart; iy <= bout_mesh->yend; iy++) {
+      // get triangle areas, and total area for ratio in the backward weights
+      const int itri_0 = static_cast<int>(map_RZ_to_itriangle_0(ix, iy));
+      const REAL area_0 =
+          get_triangle_area(static_cast<size_t>(itri_0), vertices, tri_cell_vertices);
+      const int itri_1 = static_cast<int>(map_RZ_to_itriangle_1(ix, iy));
+      const REAL area_1 =
+          get_triangle_area(static_cast<size_t>(itri_1), vertices, tri_cell_vertices);
+      const REAL total_area = area_0 + area_1;
+      // std::cout << "total area: " << total_area << " area_0: " << area_0 << " area_1: " << area_1 << " area_0/total_area: " << area_0/total_area << " area_1/total_area: " << area_1/total_area <<'\n';
+      ASSERT1(total_area > 0.0);
+      // lower triangle
+      coupler_map.at(static_cast<size_t>(icell))
+          .push_back({kinetic_mesh_map.at(static_cast<size_t>(itri_0)), 1.0,
+                      area_0 / total_area});
+      // upper triangle
+      coupler_map.at(static_cast<size_t>(icell))
+          .push_back({kinetic_mesh_map.at(static_cast<size_t>(itri_1)), 1.0,
+                      area_1 / total_area});
+      icell += 1;
+    }
+  }
+  // object for transferring data between kinetic and bout mesh degree-of-freedom vectors
+  return std::make_shared<PetscInterface::DMPlexMeshCouplerDG0>(dm, coupler_map);
+}
+
+// initialise a DMPlexMeshCouplerDG0 for coupling the kinetic mesh to the BOUT++ mesh
+// in the special case where the backward weights are known constants
+// useful for checks and diagnostics
 std::shared_ptr<PetscInterface::DMPlexMeshCouplerDG0>
 get_mesh_coupler_constant_weights(DM& dm, std::vector<PetscInt>& kinetic_mesh_map,
                                   VantageBasicMeshData& basic_mesh_data, Mesh*& bout_mesh,

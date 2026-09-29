@@ -437,44 +437,8 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
     // properties on to the bout mesh
     dof_bout_mesh_scalar =
         std::vector<REAL>(static_cast<size_t>(num_cells_owned_bout_mesh));
-    // make pointer to projection object
-    // create the dg0 variable using a constructor that
-    // respects the kinetic mesh external definition
-    std::vector<std::vector<PetscInterface::DMPlexMeshCouplerDG0MapEntry>> coupler_map(
-        static_cast<size_t>(num_cells_owned_bout_mesh));
-    Field2D map_RZ_to_itriangle_0 = basic_mesh_data.map_RZ_to_itriangle_0;
-    Field2D map_RZ_to_itriangle_1 = basic_mesh_data.map_RZ_to_itriangle_1;
-    // get data that defines triangular cells
-    const std::vector<REAL> vertices = basic_mesh_data.vertices_data.vertices;
-    const std::vector<int> tri_cell_vertices =
-        basic_mesh_data.cell_definition.tri_cell_vertices;
-    int icell = 0;
-    for (int ix = bout_mesh->xstart; ix <= bout_mesh->xend; ix++) {
-      for (int iy = bout_mesh->ystart; iy <= bout_mesh->yend; iy++) {
-        // get triangle areas, and total area for ratio in the backward weights
-        const int itri_0 = static_cast<int>(map_RZ_to_itriangle_0(ix, iy));
-        const REAL area_0 =
-            get_triangle_area(static_cast<size_t>(itri_0), vertices, tri_cell_vertices);
-        const int itri_1 = static_cast<int>(map_RZ_to_itriangle_1(ix, iy));
-        const REAL area_1 =
-            get_triangle_area(static_cast<size_t>(itri_1), vertices, tri_cell_vertices);
-        const REAL total_area = area_0 + area_1;
-        // std::cout << "total area: " << total_area << " area_0: " << area_0 << " area_1: " << area_1 << " area_0/total_area: " << area_0/total_area << " area_1/total_area: " << area_1/total_area <<'\n';
-        ASSERT1(total_area > 0.0);
-        // lower triangle
-        coupler_map.at(static_cast<size_t>(icell))
-            .push_back({kinetic_mesh_map.at(static_cast<size_t>(itri_0)), 1.0,
-                        area_0 / total_area});
-        // upper triangle
-        coupler_map.at(static_cast<size_t>(icell))
-            .push_back({kinetic_mesh_map.at(static_cast<size_t>(itri_1)), 1.0,
-                        area_1 / total_area});
-        icell += 1;
-      }
-    }
     // object for transferring data between kinetic and bout mesh degree-of-freedom vectors
-    mesh_coupler_dg0 =
-        std::make_shared<PetscInterface::DMPlexMeshCouplerDG0>(dm, coupler_map);
+    mesh_coupler_dg0 = get_mesh_coupler(dm, kinetic_mesh_map, basic_mesh_data, bout_mesh);
     // object for evaluating/projecting particle properties
     // between the kinetic mesh degree-of-freedom vector and particles
     project_eval_dg0 = std::make_shared<PetscInterface::DMPlexProjectEvaluateDG>(

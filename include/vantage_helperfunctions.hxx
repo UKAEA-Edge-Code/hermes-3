@@ -9,6 +9,11 @@ using namespace NESO::Particles;
 // BOUT++ mesh, excluding guard cells
 size_t get_num_cells_owned_bout_mesh(Mesh*& bout_mesh);
 
+// initialise a DMPlexMeshCouplerDG0 for coupling the kinetic mesh to the BOUT++ mesh
+std::shared_ptr<PetscInterface::DMPlexMeshCouplerDG0>
+get_mesh_coupler(DM& dm, std::vector<PetscInt>& kinetic_mesh_map,
+                 VantageBasicMeshData& basic_mesh_data, Mesh*& bout_mesh);
+
 // get the cell volumes from the NESO-Particles mesh
 // onto the same degrees of freedom owned by the local BOUT++ mesh
 std::vector<REAL> get_cell_volumes_on_plasma_grid(
