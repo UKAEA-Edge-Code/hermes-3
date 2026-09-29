@@ -1,4 +1,5 @@
 #pragma once
+#include "../include/vantage_dmplex.hxx"
 #include "bout/bout.hxx"
 #include <neso_particles.hpp>
 
@@ -12,6 +13,7 @@ size_t get_num_cells_owned_bout_mesh(Mesh*& bout_mesh);
 // onto the same degrees of freedom owned by the local BOUT++ mesh
 std::vector<REAL> get_cell_volumes_on_plasma_grid(
     DM& dm, std::vector<PetscInt>& kinetic_mesh_map,
+    VantageBasicMeshData& basic_mesh_data,
     std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh, Mesh*& bout_mesh);
 
 // functions used for checks of the DMPlex
@@ -25,6 +27,7 @@ void check_cell_volumes(std::vector<REAL> neso_cell_volumes_bmsh, Mesh*& bout_me
 // inferred quad cell centres from the NESO-Particles mesh
 void check_cell_centres(Options& alloptions, DM& dm,
                         std::vector<PetscInt>& kinetic_mesh_map,
+                        VantageBasicMeshData& basic_mesh_data,
                         std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh,
                         Mesh*& bout_mesh, BoutReal absolute_tolerance,
                         BoutReal relative_tolerance);
