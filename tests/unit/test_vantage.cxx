@@ -20,11 +20,14 @@ extern Mesh* mesh;
 // The unit tests use the global mesh
 using namespace bout::globals;
 
+// Create a FakeMeshFixture in 2D only
+using AxisymmetricMeshFixture = FakeMeshFixture_tmpl<3, 5, 1>;
+
 // Constructor for VantageTest which inherits from FakeMeshFixture.
 // Construct a blank options and add fields to the mesh.
-class VantageTest : public FakeMeshFixture {
+class VantageTest : public AxisymmetricMeshFixture {
 public:
-  VantageTest() : FakeMeshFixture() {}
+  VantageTest() : AxisymmetricMeshFixture() {}
   Options alloptions;
 
 protected:

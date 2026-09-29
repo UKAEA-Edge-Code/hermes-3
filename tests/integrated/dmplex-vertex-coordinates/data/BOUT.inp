@@ -1,5 +1,6 @@
 nout = 1
 timestep = 1
+MZ = 1
 
 [mesh]
 file = example_usn.grd.nc
