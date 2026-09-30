@@ -29,32 +29,36 @@ using namespace NESO::Particles;
 
 // data recording the global vertex coordinates for the DMPlex mesh
 struct VerticesData {
-  std::vector<REAL>
-      vertices;            // global, flattened list of vertices coordinates in the mesh
-  size_t nvertices_global; // total number of vertices in the mesh
-  size_t ndim;             // number of dimensions in the mesh
+  // global, flattened list of vertices coordinates in the mesh
+  std::vector<REAL> vertices;
+  // total number of vertices in the mesh
+  size_t nvertices_global;
+  // number of dimensions in the mesh
+  size_t ndim;
 };
 
 // data recording the definition of triangular DMPlex cells in the mesh
 struct TrianglesDefinitionData {
-  std::vector<int>
-      tri_cell_vertices; // flattened vector of integers defining the triangular cells in the mesh, with the indices defined by "vertices" above
-  size_t ntriangles_global; // total number of triangular cells in the mesh
-  size_t ncorners;          // number of corners in each cell in the mesh
+  // flattened vector of integers defining the triangular cells in the mesh, with the indices defined by "vertices" above
+  std::vector<int> tri_cell_vertices;
+  // total number of triangular cells in the mesh
+  size_t ntriangles_global;
+  // number of corners in each cell in the mesh
+  size_t ncorners;
 };
 
 // auxiliary information needed to create the
 // mesh coupler object and perform other initialisation steps
 // with the NESO-Particles kinetic mesh
 struct VantageBasicMeshData {
-  Field2D
-      map_RZ_to_itriangle_0; // map from R,Z (x,y) to the triangle "0" in a given BOUT++ cell
-  Field2D
-      map_RZ_to_itriangle_1; // map from R,Z (x,y) to the triangle "1" in a given BOUT++ cell
-  VerticesData
-      vertices_data; // global, flattened list of vertices coordinates in the mesh
-  TrianglesDefinitionData
-      cell_definition; // flattened vector of integers defining the triangular cells in the mesh, with the indices defined by "vertices" above
+  // map from R,Z (x,y) to the triangle "0" in a given BOUT++ cell
+  Field2D map_RZ_to_itriangle_0;
+  // map from R,Z (x,y) to the triangle "1" in a given BOUT++ cell
+  Field2D map_RZ_to_itriangle_1;
+  // vertex coordinates in the mesh
+  VerticesData vertices_data;
+  // data defining the triangular cells in the mesh
+  TrianglesDefinitionData cell_definition;
 };
 
 VantageBasicMeshData cells_definition_from_RZ_ivertex(
