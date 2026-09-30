@@ -325,13 +325,13 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
         std::make_shared<PetscInterface::DMPlexLocalMapper>(sycl_target, neso_mesh);
     // Create a domain from the neso_mesh and the mapper.
     auto domain = std::make_shared<Domain>(neso_mesh, mapper);
-    // get the cell volumes from neso_mesh on the plasma grid, in the compound index
-    neso_mesh_cell_volumes_on_plasma_grid = get_cell_volumes_on_plasma_grid(
+    // get the cell volumes from neso_mesh on the plasma mesh, in the compound index
+    neso_mesh_cell_volumes_on_plasma_mesh = get_cell_volumes_on_plasma_mesh(
         dm, kinetic_mesh_map, basic_mesh_data, neso_mesh, bout_mesh);
     // if requested, check that neso_mesh cell volumes are identical
     // to bout_mesh cell volumes, otherwise, exit.
     if (mesh_options["test_dmplex_cell_volumes"].withDefault(true)) {
-      check_cell_volumes(neso_mesh_cell_volumes_on_plasma_grid, bout_mesh, alloptions);
+      check_cell_volumes(neso_mesh_cell_volumes_on_plasma_mesh, bout_mesh, alloptions);
     }
     if (mesh_options["test_dmplex_cell_centres"].withDefault(true)) {
       check_cell_centres(
@@ -453,7 +453,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
         static_cast<size_t>(num_cells_owned_kinetic_mesh), background_ion_density);
     total_density =
         std::vector<REAL>(static_cast<size_t>(num_cells_owned_kinetic_mesh), 0.0);
-    // Field2D for storing plasma data coming from the plasma grid
+    // Field2D for storing plasma data coming from the plasma mesh
     // that will be evaluated on to the particle properties
     ion_density = Field2D{background_ion_density, bout_mesh};
     electron_density = Field2D{background_electron_density, bout_mesh};
@@ -748,11 +748,11 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
   // write velocity moment diagnostics
   diagnostics_manager = std::make_unique<VantageDiagnosticsManager>(
       make_output_path("BOUT.dmp.vantage.particle.moments", alloptions), neso_mesh,
-      neso_mesh_cell_volumes_on_plasma_grid, A_particle_group, data_transfer,
+      neso_mesh_cell_volumes_on_plasma_mesh, A_particle_group, data_transfer,
       this->source_manager, N_w, AA, bout_mesh, units, vantage_dump_filepath);
   diagnostics_manager->update_kinetic_velocity_moments();
   diagnostics_manager->write_kinetic_velocity_moment_diagnostics(0, ion_density_kmsh);
-  diagnostics_manager->transfer_moments_to_plasma_grid();
+  diagnostics_manager->transfer_moments_to_plasma_mesh();
 
   this->source_manager->update_all_sources(dt);
   // Object for particle_trajectories.h5part file.
@@ -769,7 +769,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
   // }
   total_mass_initial = calculate_total_mass(neutral_density, neso_mesh);
   total_mass_initial +=
-      calculate_total_mass(ion_density, this->neso_mesh_cell_volumes_on_plasma_grid);
+      calculate_total_mass(ion_density, this->neso_mesh_cell_volumes_on_plasma_mesh);
 
   // Initialise particle time
   particle_time = 0.0;
@@ -894,8 +894,8 @@ int Vantage::advance_vantage(BoutReal UNUSED(time)) {
     recombination_controller->apply(marker_group_in_plasma, dt, A_particle_group);
 
     this->source_manager->update_all_sources(dt);
-    Field2D Siz = this->source_manager->get_plasma_grid_data("Siz");
-    Field2D Srec = this->source_manager->get_plasma_grid_data("Srec");
+    Field2D Siz = this->source_manager->get_plasma_mesh_data("Siz");
+    Field2D Srec = this->source_manager->get_plasma_mesh_data("Srec");
     const std::vector<REAL> Siz_kmsh = this->source_manager->get_kinetic_mesh_data("Siz");
     const std::vector<REAL> Srec_kmsh =
         this->source_manager->get_kinetic_mesh_data("Srec");
@@ -911,9 +911,9 @@ int Vantage::advance_vantage(BoutReal UNUSED(time)) {
     diagnostics_manager->update_kinetic_velocity_moments();
     diagnostics_manager->write_kinetic_velocity_moment_diagnostics(stepx + 1,
                                                                    ion_density_kmsh);
-    diagnostics_manager->transfer_moments_to_plasma_grid();
+    diagnostics_manager->transfer_moments_to_plasma_mesh();
     // Write to VANTAGE dump files
-    // data_transfer->transfer_scalar_to_plasma_grid(ion_density_kmsh, ion_density);
+    // data_transfer->transfer_scalar_to_plasma_mesh(ion_density_kmsh, ion_density);
     diagnostics_manager->write_bout_diagnostics(ion_density, particle_time);
     // Write to particle_trajectories file
     h5part->write();
@@ -927,7 +927,7 @@ int Vantage::advance_vantage(BoutReal UNUSED(time)) {
   neutral_density = diagnostics_manager->get_density_kinetic_mesh();
   REAL total_mass_final = calculate_total_mass(neutral_density, neso_mesh);
   total_mass_final +=
-      calculate_total_mass(ion_density, this->neso_mesh_cell_volumes_on_plasma_grid);
+      calculate_total_mass(ion_density, this->neso_mesh_cell_volumes_on_plasma_mesh);
   if (test_mass_conservation) {
     check_mass_conservation(total_mass_final, total_mass_initial);
   }

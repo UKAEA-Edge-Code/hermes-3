@@ -28,40 +28,40 @@ VantageDataTransfer::VantageDataTransfer(
   // local number of BOUT++ y cells, excluding guards
   const int Ny = bout_mesh->yend - bout_mesh->ystart + 1;
   // Get the number of cells in the bout (plasma) mesh owned on this process, excluding guard cells
-  num_cells_owned_bout_grid = static_cast<size_t>(Nx * Ny);
+  num_cells_owned_bout_mesh = static_cast<size_t>(Nx * Ny);
   // a vector used to receive scalar BOUT++ data from the kinetic mesh
-  dof_bout_grid_scalar = std::vector<REAL>(num_cells_owned_bout_grid);
-  dof_bout_grid_vector = std::vector<REAL>(num_cells_owned_bout_grid * ndim_vector);
+  dof_bout_mesh_scalar = std::vector<REAL>(num_cells_owned_bout_mesh);
+  dof_bout_mesh_vector = std::vector<REAL>(num_cells_owned_bout_mesh * ndim_vector);
 }
 
-void VantageDataTransfer::transfer_scalar_to_plasma_grid(
-    std::vector<REAL>& scalar_kinetic_mesh, Field2D& scalar_plasma_grid) {
+void VantageDataTransfer::transfer_scalar_to_plasma_mesh(
+    std::vector<REAL>& scalar_kinetic_mesh, Field2D& scalar_plasma_mesh) {
   // some ASSERT required here to check bout_mesh the same
   ASSERT1(scalar_kinetic_mesh.size()
           == static_cast<size_t>(this->neso_mesh->get_cell_count()));
   // we need to port data from the kinetic mesh dofs to the dofs expected by BOUT++ in the loop below
-  this->mesh_coupler->backward_transfer(scalar_kinetic_mesh, 1, dof_bout_grid_scalar);
+  this->mesh_coupler->backward_transfer(scalar_kinetic_mesh, 1, dof_bout_mesh_scalar);
   std::size_t ic = 0;
   for (PetscInt ix = bout_mesh->xstart; ix <= bout_mesh->xend; ix++) {
     for (PetscInt iy = bout_mesh->ystart; iy <= bout_mesh->yend; iy++) {
-      scalar_plasma_grid(ix, iy) = this->dof_bout_grid_scalar.at(ic);
+      scalar_plasma_mesh(ix, iy) = this->dof_bout_mesh_scalar.at(ic);
       ic++;
     }
   }
   // this fills internal guards
-  this->bout_mesh->communicate(scalar_plasma_grid);
+  this->bout_mesh->communicate(scalar_plasma_mesh);
   // apply boundary conditions to fill external guards
-  // scalar_field_plasma_grid.applyBoundary();
+  // scalar_field_plasma_mesh.applyBoundary();
   // extrapolate -> Neumann
 }
 
 void VantageDataTransfer::transfer_scalar_to_kinetic_mesh(
-    Field2D& scalar_plasma_grid, std::vector<REAL>& scalar_kinetic_mesh) {
-  // get scalar from plasma grid into the dummy vector
+    Field2D& scalar_plasma_mesh, std::vector<REAL>& scalar_kinetic_mesh) {
+  // get scalar from plasma mesh into the dummy vector
   std::size_t ic = 0;
   for (PetscInt ix = bout_mesh->xstart; ix <= bout_mesh->xend; ix++) {
     for (PetscInt iy = bout_mesh->ystart; iy <= bout_mesh->yend; iy++) {
-      this->dof_bout_grid_scalar.at(ic) = scalar_plasma_grid(ix, iy);
+      this->dof_bout_mesh_scalar.at(ic) = scalar_plasma_mesh(ix, iy);
       ic++;
     }
   }
@@ -69,7 +69,7 @@ void VantageDataTransfer::transfer_scalar_to_kinetic_mesh(
   ASSERT1(scalar_kinetic_mesh.size()
           == static_cast<size_t>(this->neso_mesh->get_cell_count()));
   // we need to port data from the kinetic mesh dofs to the dofs expected by BOUT++ in the loop below
-  this->mesh_coupler->forward_transfer(dof_bout_grid_scalar, 1, scalar_kinetic_mesh);
+  this->mesh_coupler->forward_transfer(dof_bout_mesh_scalar, 1, scalar_kinetic_mesh);
 }
 
 void VantageDataTransfer::transfer_scalar_to_particle_property(
@@ -87,11 +87,11 @@ void VantageDataTransfer::transfer_scalar_to_particle_property(
 }
 
 void VantageDataTransfer::transfer_scalar_to_particle_property(
-    Field2D& scalar_plasma_grid, std::shared_ptr<ParticleGroup>& A_particle_group,
+    Field2D& scalar_plasma_mesh, std::shared_ptr<ParticleGroup>& A_particle_group,
     std::string particle_property) {
   // check dimensions
   // need some ASSERT to check bout_mesh is the same variables
-  this->transfer_scalar_to_kinetic_mesh(scalar_plasma_grid,
+  this->transfer_scalar_to_kinetic_mesh(scalar_plasma_mesh,
                                         this->dof_kinetic_mesh_scalar);
   this->transfer_scalar_to_particle_property(this->dof_kinetic_mesh_scalar,
                                              A_particle_group, particle_property);
@@ -145,15 +145,15 @@ void VantageDataTransfer::transfer_vector_to_particle_property(
 }
 
 void VantageDataTransfer::transfer_vector_to_kinetic_mesh(
-    std::vector<Field2D>& vector_plasma_grid, std::vector<REAL>& vector_kinetic_mesh) {
+    std::vector<Field2D>& vector_plasma_mesh, std::vector<REAL>& vector_kinetic_mesh) {
   // check dimensions
-  ASSERT1(vector_plasma_grid.size() == this->ndim_vector);
+  ASSERT1(vector_plasma_mesh.size() == this->ndim_vector);
   std::size_t ic = 0;
   for (PetscInt ix = bout_mesh->xstart; ix <= bout_mesh->xend; ix++) {
     for (PetscInt iy = bout_mesh->ystart; iy <= bout_mesh->yend; iy++) {
       for (size_t idim = 0; idim < this->ndim_vector; idim++) {
         const size_t jc = ic * this->ndim_vector + idim;
-        this->dof_bout_grid_vector.at(jc) = (vector_plasma_grid.at(idim))(ix, iy);
+        this->dof_bout_mesh_vector.at(jc) = (vector_plasma_mesh.at(idim))(ix, iy);
       }
       ic++;
     }
@@ -162,14 +162,14 @@ void VantageDataTransfer::transfer_vector_to_kinetic_mesh(
   ASSERT1(vector_kinetic_mesh.size()
           == ndim_vector * static_cast<size_t>(this->neso_mesh->get_cell_count()));
   // we need to port data from the kinetic mesh dofs to the dofs expected by BOUT++ in the loop below
-  this->mesh_coupler->forward_transfer(this->dof_bout_grid_vector,
+  this->mesh_coupler->forward_transfer(this->dof_bout_mesh_vector,
                                        static_cast<int>(this->ndim_vector),
                                        vector_kinetic_mesh);
 }
 void VantageDataTransfer::transfer_vector_to_particle_property(
-    std::vector<Field2D>& vector_plasma_grid,
+    std::vector<Field2D>& vector_plasma_mesh,
     std::shared_ptr<ParticleGroup>& A_particle_group, std::string particle_property) {
-  this->transfer_vector_to_kinetic_mesh(vector_plasma_grid,
+  this->transfer_vector_to_kinetic_mesh(vector_plasma_mesh,
                                         this->dof_kinetic_mesh_vector);
   this->transfer_vector_to_particle_property(this->dof_kinetic_mesh_vector,
                                              A_particle_group, particle_property);

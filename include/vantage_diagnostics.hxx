@@ -34,12 +34,11 @@ public:
   // write kinetic diagnostics to a vtkhdf file
   void write_kinetic_velocity_moment_diagnostics(int istep,
                                                  std::vector<REAL>& ion_density);
-  // transfer kinetic moments to BOUT++ grid
-  void transfer_moments_to_plasma_grid();
-  // write BOUT++ style diagnostics on the BOUT++ grid
+  // transfer kinetic moments to BOUT++ mesh
+  void transfer_moments_to_plasma_mesh();
+  // write BOUT++ style diagnostics on the BOUT++ mesh
   void write_bout_diagnostics(Field2D& ion_density, BoutReal particle_time);
   std::vector<REAL> get_density_kinetic_mesh();
-  // Field2D transfer_scalar_to_plasma_grid(std::vector<REAL>& scalar_field);
 
 private:
   // internal variables needed for diagnostics
@@ -73,10 +72,10 @@ private:
 
   // variables used to store the moments of the
   // neutral distribution function projected on
-  // to the BOUT++ grid
-  Field2D density_plasma_grid;
-  Field2D energy_plasma_grid;
-  Field2D pressure_plasma_grid;
-  Field2D temperature_plasma_grid;
+  // to the BOUT++ mesh
+  Field2D density_plasma_mesh;
+  Field2D energy_plasma_mesh;
+  Field2D pressure_plasma_mesh;
+  Field2D temperature_plasma_mesh;
   // n.b. only treat scalar variables for now
 };

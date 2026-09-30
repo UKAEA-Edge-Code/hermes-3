@@ -16,7 +16,7 @@ get_mesh_coupler(DM& dm, std::vector<PetscInt>& kinetic_mesh_map,
 
 // get the cell volumes from the NESO-Particles mesh
 // onto the same degrees of freedom owned by the local BOUT++ mesh
-std::vector<REAL> get_cell_volumes_on_plasma_grid(
+std::vector<REAL> get_cell_volumes_on_plasma_mesh(
     DM& dm, std::vector<PetscInt>& kinetic_mesh_map,
     VantageBasicMeshData& basic_mesh_data,
     std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh, Mesh*& bout_mesh);

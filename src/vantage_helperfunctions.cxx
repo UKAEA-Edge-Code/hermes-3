@@ -95,7 +95,7 @@ get_mesh_coupler_constant_weights(DM& dm, std::vector<PetscInt>& kinetic_mesh_ma
   return mesh_coupler;
 }
 
-std::vector<REAL> get_cell_volumes_on_plasma_grid(
+std::vector<REAL> get_cell_volumes_on_plasma_mesh(
     DM& dm, std::vector<PetscInt>& kinetic_mesh_map,
     VantageBasicMeshData& basic_mesh_data,
     std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh, Mesh*& bout_mesh) {
@@ -120,7 +120,7 @@ std::vector<REAL> get_cell_volumes_on_plasma_grid(
   return neso_cell_volumes_bmsh;
 }
 
-std::vector<REAL> get_cell_vertices_on_plasma_grid(
+std::vector<REAL> get_cell_vertices_on_plasma_mesh(
     DM& dm, std::vector<PetscInt>& kinetic_mesh_map,
     VantageBasicMeshData& basic_mesh_data,
     std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh, Mesh*& bout_mesh) {
@@ -138,7 +138,7 @@ std::vector<REAL> get_cell_vertices_on_plasma_grid(
   // without attempting to respect anti-clockwise vertex ordering
   // -------------------------------------------
   // we need to get the triangular cell coordinates from each upper and lower triangle
-  // on to the local BOUT++ grid, then resolve which coordinates are unique to form
+  // on to the local BOUT++ mesh, then resolve which coordinates are unique to form
   // the coordinates for the quadrilateral cell which the pair of triangles represent
   // -------------------------------------------
   // first, make a mesh_coupler_dg0 object with unit weights from the lower triangle, and zero weight
@@ -248,7 +248,7 @@ void check_cell_volumes(std::vector<REAL> neso_cell_volumes_bmsh, Mesh*& bout_me
       // so J * dx * dy = m^3, technically per radian toroidal angle due to missing dz
       const BoutReal bout_cell_area =
           coord->J(ix, iy) * coord->dx(ix, iy) * coord->dy(ix, iy) * meters_cubed;
-      // neso_mesh is a 2D grid, needs m^2
+      // neso_mesh is a 2D mesh, needs m^2
       const REAL neso_cell_area = neso_cell_volumes_bmsh.at(ixy) * meters_squared;
       const bool volumes_match = (abs(bout_cell_area - neso_cell_area) < tolerance);
       // exit if we fail to find a match
@@ -284,14 +284,14 @@ void check_cell_centres(Options& alloptions, DM& dm,
                         std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh,
                         Mesh*& bout_mesh, BoutReal absolute_tolerance,
                         BoutReal relative_tolerance) {
-  // get (R,Z) of cell centres in Hypnotoad grid
+  // get (R,Z) of cell centres in Hypnotoad mesh
   Field2D Rxy;
   Field2D Zxy;
   bout_mesh->get(Rxy, "Rxy");
   bout_mesh->get(Zxy, "Zxy");
 
   BoutReal meters = get<BoutReal>(alloptions["units"]["meters"]);
-  std::vector<REAL> neso_cell_vertices_plasma_grid = get_cell_vertices_on_plasma_grid(
+  std::vector<REAL> neso_cell_vertices_plasma_mesh = get_cell_vertices_on_plasma_mesh(
       dm, kinetic_mesh_map, basic_mesh_data, neso_mesh, bout_mesh);
   // number of vertices per quad
   const size_t nquad_vertices = 4;
@@ -311,7 +311,7 @@ void check_cell_centres(Options& alloptions, DM& dm,
         for (size_t idim = 0; idim < ndim; idim++) {
           const size_t jc_quad =
               (ndim * ((nquad_vertices * static_cast<size_t>(ixy)) + iv)) + idim;
-          cell_vertices.at(iv).at(idim) = neso_cell_vertices_plasma_grid.at(jc_quad);
+          cell_vertices.at(iv).at(idim) = neso_cell_vertices_plasma_mesh.at(jc_quad);
         }
       }
       REAL neso_Rxy = 0.0;

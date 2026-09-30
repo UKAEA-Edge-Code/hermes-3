@@ -1,4 +1,5 @@
 #pragma once
+#include "../include/vantage_datatransfer.hxx"
 #include "bout/bout.hxx"
 #include <bout/bout_types.hxx>
 #include <map>
@@ -8,7 +9,6 @@
 #include <reactions_lib/transformation_wrapper.hpp>
 #include <string>
 #include <vector>
-#include "../include/vantage_datatransfer.hxx"
 
 using namespace NESO::Particles;
 using namespace VANTAGE::Reactions;
@@ -32,7 +32,7 @@ struct VantageSource {
   std::shared_ptr<CellwiseAccumulator<REAL>> accumulator;
   std::shared_ptr<ParticleGroup> particle_group;
   std::shared_ptr<TransformationStrategy> zeroer;
-  Field2D source_data_plasma_grid;
+  Field2D source_data_plasma_mesh;
   std::vector<REAL> source_data_kinetic_mesh;
 };
 
@@ -43,8 +43,8 @@ struct VantageSource {
 class VantageSourceManager {
 public:
   VantageSourceManager(std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh,
-                      std::shared_ptr<VantageDataTransfer>& data_transfer,
-                      Mesh* bout_mesh, Options& units);
+                       std::shared_ptr<VantageDataTransfer>& data_transfer,
+                       Mesh* bout_mesh, Options& units);
 
   Mesh* bout_mesh;
 
@@ -81,8 +81,8 @@ public:
   // Return diagnostic units data
   std::string get_long_name(const std::string& hermes_source_name);
 
-  // Return data for a given Hermes-3 source name on the plasma grid
-  Field2D get_plasma_grid_data(const std::string& hermes_source_name);
+  // Return data for a given Hermes-3 source name on the plasma mesh
+  Field2D get_plasma_mesh_data(const std::string& hermes_source_name);
 
   // Return data for a given Hermes-3 source name on the kinetic mesh
   std::vector<REAL> get_kinetic_mesh_data(const std::string& hermes_source_name);

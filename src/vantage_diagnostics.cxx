@@ -37,7 +37,7 @@ REAL calculate_total_mass(Field2D& density,
   const size_t num_cells_owned_bout_mesh = get_num_cells_owned_bout_mesh(bout_mesh);
   // Get the number of cells in the kinetic (neutral) mesh owned on this process
   ASSERT1(neso_cell_volume_on_bout_mesh.size() == num_cells_owned_bout_mesh);
-  // sum over the density on the BOUT++ grid, using NESO-Particles cell volumes
+  // sum over the density on the BOUT++ mesh, using NESO-Particles cell volumes
   REAL local_mass = 0.0;
   REAL total_mass = 0.0;
   // sum over the ion density on the plasma mesh
@@ -54,8 +54,8 @@ REAL calculate_total_mass(Field2D& density,
   return total_mass;
 }
 
-// helper function to initialise the plasma grid (BOUT++ mesh) diagnostics
-Options initialise_plasma_grid_diagnostics(Options& units, Mesh* bout_mesh,
+// helper function to initialise the plasma mesh (BOUT++ mesh) diagnostics
+Options initialise_plasma_mesh_diagnostics(Options& units, Mesh* bout_mesh,
                                            std::vector<REAL>& neso_cell_volumes,
                                            std::string vantage_dump_filepath) {
 
@@ -245,13 +245,13 @@ VantageDiagnosticsManager::VantageDiagnosticsManager(
   // Object for VANTAGE dump files
   vantage_dump_writer =
       bout::OptionsIO::create({{"file", vantage_dump_filepath}, {"append", true}});
-  bout_output_data = initialise_plasma_grid_diagnostics(
+  bout_output_data = initialise_plasma_mesh_diagnostics(
       units, bout_mesh, neso_cell_volumes, vantage_dump_filepath);
-  // initialise plasma grid variables
-  density_plasma_grid = Field2D(0.0, bout_mesh);
-  energy_plasma_grid = Field2D(0.0, bout_mesh);
-  pressure_plasma_grid = Field2D(0.0, bout_mesh);
-  temperature_plasma_grid = Field2D(0.0, bout_mesh);
+  // initialise plasma mesh variables
+  density_plasma_mesh = Field2D(0.0, bout_mesh);
+  energy_plasma_mesh = Field2D(0.0, bout_mesh);
+  pressure_plasma_mesh = Field2D(0.0, bout_mesh);
+  temperature_plasma_mesh = Field2D(0.0, bout_mesh);
 }
 
 // Functions for diagnostics on the kinetic mesh
@@ -416,15 +416,15 @@ void VantageDiagnosticsManager::write_kinetic_velocity_moment_diagnostics(
   vtk_writer.close();
 }
 
-void VantageDiagnosticsManager::transfer_moments_to_plasma_grid() {
-  this->data_transfer->transfer_scalar_to_plasma_grid(this->density,
-                                                      this->density_plasma_grid);
-  this->data_transfer->transfer_scalar_to_plasma_grid(this->energy,
-                                                      this->energy_plasma_grid);
-  this->data_transfer->transfer_scalar_to_plasma_grid(this->pressure,
-                                                      this->pressure_plasma_grid);
-  this->data_transfer->transfer_scalar_to_plasma_grid(this->temperature,
-                                                      this->temperature_plasma_grid);
+void VantageDiagnosticsManager::transfer_moments_to_plasma_mesh() {
+  this->data_transfer->transfer_scalar_to_plasma_mesh(this->density,
+                                                      this->density_plasma_mesh);
+  this->data_transfer->transfer_scalar_to_plasma_mesh(this->energy,
+                                                      this->energy_plasma_mesh);
+  this->data_transfer->transfer_scalar_to_plasma_mesh(this->pressure,
+                                                      this->pressure_plasma_mesh);
+  this->data_transfer->transfer_scalar_to_plasma_mesh(this->temperature,
+                                                      this->temperature_plasma_mesh);
 }
 
 void VantageDiagnosticsManager::write_bout_diagnostics(Field2D& ion_density,
@@ -438,7 +438,7 @@ void VantageDiagnosticsManager::write_bout_diagnostics(Field2D& ion_density,
   // const BoutReal Bnorm = get<BoutReal>(units["Tesla"]);
   // const BoutReal Cs0 = get<BoutReal>(units["meters"])
   //            / get<BoutReal>(units["seconds"]);
-  Field2D neutral_density = this->density_plasma_grid;
+  Field2D neutral_density = this->density_plasma_mesh;
   set_with_attrs(this->bout_output_data["neutral_density"], neutral_density,
                  {{"time_dimension", "t"}});
 
@@ -457,7 +457,7 @@ void VantageDiagnosticsManager::write_bout_diagnostics(Field2D& ion_density,
   const std::vector<std::string> source_names = this->source_manager->get_source_names();
   for (size_t is = 0; is < source_names.size(); is++) {
     const Field2D source =
-        this->source_manager->get_plasma_grid_data(source_names.at(is));
+        this->source_manager->get_plasma_mesh_data(source_names.at(is));
     const std::string units_description =
         this->source_manager->get_units(source_names.at(is));
     const BoutReal conversion = this->source_manager->get_conversion(source_names.at(is));

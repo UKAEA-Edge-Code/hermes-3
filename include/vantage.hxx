@@ -65,7 +65,7 @@ private:
   // Diagnostic variables on the kinetic mesh, for testing
   std::vector<REAL> neutral_density, total_density;
   std::vector<REAL> ion_density_kmsh;
-  // Field2D for storing plasma data coming from the plasma grid, that will be evaluated
+  // Field2D for storing plasma data coming from the plasma mesh, that will be evaluated
   // on to the kinetic mesh, and then on to the particles themselves.
   Field2D electron_density, electron_temperature;
   Field2D ion_density, ion_temperature;
@@ -78,7 +78,7 @@ private:
   // volumes of neso_mesh cells (from neso_mesh->dmh->get_cell_volume())
   // in a vector of size of Nx*Ny, where Nx and Ny are the number of local
   // x and y cells in the BOUT++ mesh (excluding guards)
-  std::vector<REAL> neso_mesh_cell_volumes_on_plasma_grid;
+  std::vector<REAL> neso_mesh_cell_volumes_on_plasma_mesh;
 
   PetscLib petsc_lib; // Ensures PETSc is initialized for the lifetime of this component
 
