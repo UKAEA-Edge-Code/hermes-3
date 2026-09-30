@@ -78,6 +78,8 @@ void VantageDataTransfer::transfer_scalar_to_particle_property(
   // check dimensions
   ASSERT1(scalar_kinetic_mesh.size()
           == static_cast<size_t>(this->neso_mesh->get_cell_count()))
+  // check the particle property exists with the expected number of dimensions
+  ASSERT1(A_particle_group->contains_dat(Sym<REAL>(particle_property), 1));
   // set the kinetic mesh property to NESO-Particles internal variables
   this->project_eval_dg0->set_dofs(1, scalar_kinetic_mesh);
   // set the data from internal variables into the weights
@@ -101,6 +103,8 @@ void VantageDataTransfer::transfer_particle_property_to_scalar(
   // check dimensions
   ASSERT1(scalar_kinetic_mesh.size()
           == static_cast<size_t>(this->neso_mesh->get_cell_count()))
+  // check the particle property exists with the expected number of dimensions
+  ASSERT1(A_particle_group->contains_dat(Sym<REAL>(particle_property), 1));
   // set the particle property to NESO-Particles internal variables
   // some ASSERT to check particle property corresponds to a scalar?
   this->project_eval_dg0->project(A_particle_group, Sym<REAL>(particle_property));
@@ -114,6 +118,9 @@ void VantageDataTransfer::transfer_particle_property_to_vector(
   // check dimensions
   ASSERT1(vector_kinetic_mesh.size()
           == this->ndim_vector * static_cast<size_t>(this->neso_mesh->get_cell_count()))
+  // check the particle property exists with the expected number of dimensions
+  ASSERT1(A_particle_group->contains_dat(Sym<REAL>(particle_property),
+                                         static_cast<int>(this->ndim_vector)));
   // set the particle property to NESO-Particles internal variables
   // some ASSERT to check particle property corresponds to a vector?
   this->project_eval_dg0->project(A_particle_group, Sym<REAL>(particle_property));
@@ -127,6 +134,9 @@ void VantageDataTransfer::transfer_vector_to_particle_property(
   // check dimensions
   ASSERT1(vector_kinetic_mesh.size()
           == this->ndim_vector * static_cast<size_t>(this->neso_mesh->get_cell_count()))
+  // check the particle property exists with the expected number of dimensions
+  ASSERT1(A_particle_group->contains_dat(Sym<REAL>(particle_property),
+                                         static_cast<int>(this->ndim_vector)));
   // set the kinetic mesh property to NESO-Particles internal variables
   this->project_eval_dg0->set_dofs(static_cast<int>(this->ndim_vector),
                                    vector_kinetic_mesh);
