@@ -104,17 +104,32 @@ Options initialise_plasma_grid_diagnostics(Options& units, Mesh* bout_mesh,
   Field2D Zxy_lower_right_corners;
   Field2D Zxy_upper_right_corners;
   Field2D Zxy_upper_left_corners;
-  // mesh->get(ivertex, "ivertex_lower_left_corners");
-  bout_mesh->get(Rxy, "Rxy");
-  bout_mesh->get(Rxy_corners, "Rxy_corners");
-  bout_mesh->get(Rxy_lower_right_corners, "Rxy_lower_right_corners");
-  bout_mesh->get(Rxy_upper_right_corners, "Rxy_upper_right_corners");
-  bout_mesh->get(Rxy_upper_left_corners, "Rxy_upper_left_corners");
-  bout_mesh->get(Zxy, "Zxy");
-  bout_mesh->get(Zxy_corners, "Zxy_corners");
-  bout_mesh->get(Zxy_lower_right_corners, "Zxy_lower_right_corners");
-  bout_mesh->get(Zxy_upper_right_corners, "Zxy_upper_right_corners");
-  bout_mesh->get(Zxy_upper_left_corners, "Zxy_upper_left_corners");
+  const int read_status_Rxy = bout_mesh->get(Rxy, "Rxy");
+  ASSERT1(read_status_Rxy == 0);
+  const int read_status_Rxy_ll = bout_mesh->get(Rxy_corners, "Rxy_corners");
+  ASSERT1(read_status_Rxy_ll == 0);
+  const int read_status_Rxy_lr =
+      bout_mesh->get(Rxy_lower_right_corners, "Rxy_lower_right_corners");
+  ASSERT1(read_status_Rxy_lr == 0);
+  const int read_status_Rxy_ur =
+      bout_mesh->get(Rxy_upper_right_corners, "Rxy_upper_right_corners");
+  ASSERT1(read_status_Rxy_ur == 0);
+  const int read_status_Rxy_ul =
+      bout_mesh->get(Rxy_upper_left_corners, "Rxy_upper_left_corners");
+  ASSERT1(read_status_Rxy_ul == 0);
+  const int read_status_Zxy = bout_mesh->get(Zxy, "Zxy");
+  ASSERT1(read_status_Zxy == 0);
+  const int read_status_Zxy_ll = bout_mesh->get(Zxy_corners, "Zxy_corners");
+  ASSERT1(read_status_Zxy_ll == 0);
+  const int read_status_Zxy_lr =
+      bout_mesh->get(Zxy_lower_right_corners, "Zxy_lower_right_corners");
+  ASSERT1(read_status_Zxy_lr == 0);
+  const int read_status_Zxy_ur =
+      bout_mesh->get(Zxy_upper_right_corners, "Zxy_upper_right_corners");
+  ASSERT1(read_status_Zxy_ur == 0);
+  const int read_status_Zxy_ul =
+      bout_mesh->get(Zxy_upper_left_corners, "Zxy_upper_left_corners");
+  ASSERT1(read_status_Zxy_ul == 0);
   set_with_attrs(bout_output_data["Rxy"], Rxy,
                  {
                      {"units", "m"},
@@ -168,7 +183,7 @@ Options initialise_plasma_grid_diagnostics(Options& units, Mesh* bout_mesh,
   set_with_attrs(bout_output_data["neso_cell_areas"], neso_cell_areas,
                  {
                      {"units", "m^2"},
-                     {"conversion", rho_s0 * rho_s0}, // Already in SI units
+                     {"conversion", rho_s0 * rho_s0}, // In normalised units
                  });
   set_with_attrs(bout_output_data["y_boundary_guards"], 2,
                  {{"source", "vantage -- should be provided by BOUT++"}});
