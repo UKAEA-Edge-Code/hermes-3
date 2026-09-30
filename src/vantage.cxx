@@ -946,6 +946,7 @@ Vantage::~Vantage() {
   neso_mesh->free();        // DMPlex interface
   PETSCCHK(DMDestroy(&dm)); // DMPlex mesh
   sycl_target->free();      // VANTAGE compute target
+  mesh_coupler_dg0->free();
 }
 
 #endif
