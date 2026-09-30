@@ -66,7 +66,7 @@ private:
   const size_t ndimv = 2; // number of velocity dimensions
   std::vector<REAL> density;
   std::vector<REAL> energy;
-  std::vector<REAL> gamma;
+  std::vector<REAL> particle_flux;
   std::vector<REAL> uvector;
   std::vector<REAL> pressure;
   std::vector<REAL> temperature;

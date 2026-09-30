@@ -237,7 +237,7 @@ VantageDiagnosticsManager::VantageDiagnosticsManager(
       static_cast<size_t>(neso_mesh->get_cell_count());
   density = std::vector<REAL>(num_cells_owned_kinetic_mesh);
   energy = std::vector<REAL>(num_cells_owned_kinetic_mesh);
-  gamma = std::vector<REAL>(ndimv * num_cells_owned_kinetic_mesh);
+  particle_flux = std::vector<REAL>(ndimv * num_cells_owned_kinetic_mesh);
   uvector = std::vector<REAL>(ndimv * num_cells_owned_kinetic_mesh);
   pressure = std::vector<REAL>(num_cells_owned_kinetic_mesh);
   temperature = std::vector<REAL>(num_cells_owned_kinetic_mesh);
@@ -268,7 +268,7 @@ void VantageDiagnosticsManager::update_kinetic_velocity_moments() {
   // use references here since we want to update the members
   std::vector<REAL>& density = this->density;
   std::vector<REAL>& energy = this->energy;
-  std::vector<REAL>& gamma = this->gamma;
+  std::vector<REAL>& particle_flux = this->particle_flux;
   std::vector<REAL>& uvector = this->uvector;
   std::vector<REAL>& pressure = this->pressure;
   std::vector<REAL>& temperature = this->temperature;
@@ -306,9 +306,9 @@ void VantageDiagnosticsManager::update_kinetic_velocity_moments() {
   // energy
   this->data_transfer->transfer_particle_property_to_scalar(A_particle_group, "WEIGHT_V2",
                                                             energy);
-  // mean flow Gamma = nu
+  // mean flow particle_flux = n * u = density * mean flow
   this->data_transfer->transfer_particle_property_to_vector(A_particle_group, "WEIGHT_V",
-                                                            gamma);
+                                                            particle_flux);
   // scalar variables
   for (size_t ic = 0; ic < num_cells_owned_kinetic_mesh; ic++) {
     // multiply by any factors not handled in the project step
@@ -322,12 +322,12 @@ void VantageDiagnosticsManager::update_kinetic_velocity_moments() {
       const size_t jc =
           ic * ndimv + dim; // compound index covering all cells and dimensions
       // multiply by any factors not handled in the project step
-      gamma.at(jc) *= N_w;
+      particle_flux.at(jc) *= N_w;
       // obtain the derived quantity uvector
       if (density.at(ic) > density_floor) {
-        uvector.at(jc) = gamma.at(jc) / density.at(ic);
+        uvector.at(jc) = particle_flux.at(jc) / density.at(ic);
       } else {
-        // zero weight here, so mean flow u = gamma / n is zero.
+        // zero weight here, so mean flow u = particle_flux / n is zero.
         uvector.at(jc) = 0.0;
       }
     }
@@ -367,7 +367,7 @@ void VantageDiagnosticsManager::write_kinetic_velocity_moment_diagnostics(
   // vectors to hold the diagnosed moments
   std::vector<REAL> density = this->density;
   std::vector<REAL> energy = this->energy;
-  std::vector<REAL> gamma = this->gamma;
+  std::vector<REAL> particle_flux = this->particle_flux;
   std::vector<REAL> uvector = this->uvector;
   std::vector<REAL> pressure = this->pressure;
   std::vector<REAL> temperature = this->temperature;
@@ -393,7 +393,8 @@ void VantageDiagnosticsManager::write_kinetic_velocity_moment_diagnostics(
       const size_t jc =
           ic * ndimv + dim; // compound index covering all cells and dimensions
       // insert a map entry at this ic
-      cell_data.at(ic).insert({fmt::format("gamma_{}", dim), gamma.at(jc)});
+      cell_data.at(ic).insert(
+          {fmt::format("particle_flux_{}", dim), particle_flux.at(jc)});
       cell_data.at(ic).insert({fmt::format("uvector_{}", dim), uvector.at(jc)});
     }
   }
