@@ -261,6 +261,8 @@ void VantageDiagnosticsManager::update_kinetic_velocity_moments() {
   std::shared_ptr<ParticleGroup> A_particle_group = this->A_particle_group;
   BoutReal N_w = this->N_w;
   BoutReal mass = this->mass;
+  // density at which we zero derived moments involving a division
+  const REAL density_floor = 1.0e-13;
   // get the necessary private diagnostic variables
   // vectors to hold the diagnosed moments
   // use references here since we want to update the members
@@ -322,7 +324,12 @@ void VantageDiagnosticsManager::update_kinetic_velocity_moments() {
       // multiply by any factors not handled in the project step
       gamma.at(jc) *= N_w;
       // obtain the derived quantity uvector
-      uvector.at(jc) = gamma.at(jc) / density.at(ic);
+      if (density.at(ic) > density_floor) {
+        uvector.at(jc) = gamma.at(jc) / density.at(ic);
+      } else {
+        // zero weight here, so mean flow u = gamma / n is zero.
+        uvector.at(jc) = 0.0;
+      }
     }
   }
   // derived scalar variables
@@ -334,7 +341,12 @@ void VantageDiagnosticsManager::update_kinetic_velocity_moments() {
       pressure.at(ic) -= mass * density.at(ic) * uvector.at(jc) * uvector.at(jc);
     }
     pressure.at(ic) /= static_cast<REAL>(ndimv);
-    temperature.at(ic) = pressure.at(ic) / density.at(ic);
+    if (density.at(ic) > density_floor) {
+      temperature.at(ic) = pressure.at(ic) / density.at(ic);
+    } else {
+      // zero density here, so zero temperature
+      temperature.at(ic) = 0.0;
+    }
   }
 }
 
