@@ -451,7 +451,7 @@ void VantageDiagnosticsManager::write_bout_diagnostics(Field2D& ion_density,
     const std::string long_name =
         this->source_manager->get_long_name(source_names.at(is));
     const std::string standard_name =
-        this->source_manager->get_long_name(source_names.at(is));
+        this->source_manager->get_standard_name(source_names.at(is));
     set_with_attrs(this->bout_output_data[source_names.at(is)], source,
                    {{"time_dimension", "t"},
                     {"units", units_description},
