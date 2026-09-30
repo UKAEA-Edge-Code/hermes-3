@@ -74,10 +74,10 @@ std::string make_output_path(const std::string& filename, Options& alloptions) {
 void set_initial_particle_weights(
     BoutReal& initial_neutral_density, std::shared_ptr<ParticleGroup>& A_particle_group,
     std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh,
-    std::vector<double>& dof_kinetic_mesh_scalar,
+    std::vector<double>& scalar_dof_kinetic_mesh,
     std::shared_ptr<VantageDataTransfer>& data_transfer, BoutReal N_w) {
   // set a constant density across the entire kinetic mesh
-  const size_t ncell = dof_kinetic_mesh_scalar.size();
+  const size_t ncell = scalar_dof_kinetic_mesh.size();
   for (size_t ic = 0; ic < ncell; ic++) {
     // particle_weights are copied to all particles in this cell.
     // we multiply the initial density by the volume to get particle number,
@@ -87,10 +87,10 @@ void set_initial_particle_weights(
     const INT nmarkers_per_cell = A_particle_group->get_npart_cell(static_cast<int>(ic));
     const REAL particle_weights = initial_neutral_density * cell_volume
                                   / static_cast<BoutReal>(nmarkers_per_cell) / N_w;
-    dof_kinetic_mesh_scalar.at(ic) = particle_weights;
+    scalar_dof_kinetic_mesh.at(ic) = particle_weights;
   }
   // now copy the data to internal variables
-  data_transfer->transfer_scalar_to_particle_property(dof_kinetic_mesh_scalar,
+  data_transfer->transfer_scalar_to_particle_property(scalar_dof_kinetic_mesh,
                                                       A_particle_group, "WEIGHT");
 }
 
@@ -426,17 +426,12 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
     }
     // Add the new particles to the particle group
     A_particle_group->add_particles_local(initial_distribution);
-    const size_t num_cells_owned_bout_mesh = get_num_cells_owned_bout_mesh(bout_mesh);
     // Get the number of cells in the kinetic (neutral) mesh owned on this process
     const int num_cells_owned_kinetic_mesh = neso_mesh->get_cell_count();
     // allocate buffer vector for scalar projection/evaluation of NESO-Particles
     // properties on to the kinetic mesh
-    dof_kinetic_mesh_scalar =
+    scalar_dof_kinetic_mesh =
         std::vector<REAL>(static_cast<size_t>(num_cells_owned_kinetic_mesh));
-    // allocate buffer vector for scalar projection/evaluation of NESO-Particles
-    // properties on to the bout mesh
-    dof_bout_mesh_scalar =
-        std::vector<REAL>(static_cast<size_t>(num_cells_owned_bout_mesh));
     // object for transferring data between kinetic and bout mesh degree-of-freedom vectors
     mesh_coupler_dg0 = get_mesh_coupler(dm, kinetic_mesh_map, basic_mesh_data, bout_mesh);
     // object for evaluating/projecting particle properties
@@ -740,7 +735,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
   // ------------------------------------------------------------------------------
   // set weights from a constant initial density
   set_initial_particle_weights(initial_neutral_density, A_particle_group, neso_mesh,
-                               dof_kinetic_mesh_scalar, data_transfer, N_w);
+                               scalar_dof_kinetic_mesh, data_transfer, N_w);
   // update particle properties from the plasma
   update_particle_properties_from_plasma(data_transfer, A_particle_group, ion_density,
                                          ion_temperature, ion_velocity, electron_density,

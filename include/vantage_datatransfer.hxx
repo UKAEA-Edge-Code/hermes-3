@@ -61,10 +61,10 @@ private:
   // variable used to transfer dofs from kinetic
   // to BOUT++ meshes
   size_t num_cells_owned_bout_mesh;
-  std::vector<REAL> dof_bout_mesh_scalar;
-  std::vector<REAL> dof_kinetic_mesh_scalar;
+  std::vector<REAL> scalar_dof_bout_mesh;
+  std::vector<REAL> scalar_dof_kinetic_mesh;
   // number of physics vector components
   size_t ndim_vector;
-  std::vector<REAL> dof_bout_mesh_vector;
-  std::vector<REAL> dof_kinetic_mesh_vector;
+  std::vector<REAL> vector_dof_bout_mesh;
+  std::vector<REAL> vector_dof_kinetic_mesh;
 };

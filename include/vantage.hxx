@@ -88,8 +88,7 @@ private:
   std::shared_ptr<PetscInterface::BoundaryInteraction2D> b2d;
   std::shared_ptr<PetscInterface::DMPlexProjectEvaluateDG> project_eval_dg0;
   std::shared_ptr<PetscInterface::DMPlexMeshCouplerDG0> mesh_coupler_dg0;
-  std::vector<REAL> dof_kinetic_mesh_scalar;
-  std::vector<REAL> dof_bout_mesh_scalar;
+  std::vector<REAL> scalar_dof_kinetic_mesh;
   std::vector<PetscInt>
       kinetic_mesh_map; // variable for recording the map from serial to parallelised DMPlex cells in terms of a vector of integers
   VantageBasicMeshData basic_mesh_data;
