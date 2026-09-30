@@ -110,7 +110,6 @@ def generate_BOUT_grid_data(base_grid_dir, kinetic_nc_file_path, verbose=True):
     Zxy_upper_right_corners = y + 0.5*dy
 
     [dmplex]
-    use_cxx_ivertex=true
     test_dmplex_cell_volumes = true
     test_dmplex_cell_centres = true
 

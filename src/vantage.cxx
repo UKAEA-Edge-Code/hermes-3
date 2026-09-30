@@ -183,21 +183,25 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
   // Create and save DMPlex
   // DM dm; // pointer to DMPlex, initialised below
   // This DM is created in SI units without boundary labels
+  // create a DMPlex in serial, either from an externally supplied
+  // GMSH file and associated data, or directly from the BOUT++ mesh
   if (use_external_msh) {
     std::string msh_file =
         mesh_options["msh_file"]
             .doc("Path to an externally generated .msh file for the kinetic mesh. ")
             .withDefault("kinetic.msh");
-    // create a DMPlex in serial
-    create_dmplex_from_GMSH_msh(&dm, msh_file);
-    PetscSF
-        sf_kinetic_mesh; // Petsc variable that records map of vertices from original vector to distributed vector indices
-    PetscInterface::generic_distribute(&dm, BoutComm::get(), 1, &sf_kinetic_mesh);
-    kinetic_mesh_map =
-        PetscInterface::get_global_distributed_points_map(dm, sf_kinetic_mesh);
+    basic_mesh_data = create_dmplex_from_GMSH_msh(dm, bout_mesh, msh_file);
   } else {
-    create_dmplex_from_Bout_mesh(&dm, bout_mesh, mesh_options, sycl_target);
+    basic_mesh_data = create_dmplex_from_Bout_mesh(dm, bout_mesh, mesh_options);
   }
+  // distribute DMPlex across cores
+  PetscSF
+      sf_kinetic_mesh; // Petsc variable that records map of vertices from original vector to distributed vector indices
+  PetscInterface::generic_distribute(&dm, BoutComm::get(), 1, &sf_kinetic_mesh);
+  // get NESO-Particles map derived from sf_kinetic_mesh
+  // necessary to construct the coupler_map and hence the mesh_coupler_dg0 object
+  kinetic_mesh_map =
+      PetscInterface::get_global_distributed_points_map(dm, sf_kinetic_mesh);
   // label DMPlex boundaries
   PetscInterface::label_all_dmplex_boundaries(dm, PetscInterface::face_sets_label, 100);
   // diagnose the DMPlex by writing to file
@@ -322,8 +326,8 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
     // Create a domain from the neso_mesh and the mapper.
     auto domain = std::make_shared<Domain>(neso_mesh, mapper);
     // get the cell volumes from neso_mesh on the plasma grid, in the compound index
-    neso_mesh_cell_volumes_on_plasma_grid =
-        get_cell_volumes_on_plasma_grid(dm, kinetic_mesh_map, neso_mesh, bout_mesh);
+    neso_mesh_cell_volumes_on_plasma_grid = get_cell_volumes_on_plasma_grid(
+        dm, kinetic_mesh_map, basic_mesh_data, neso_mesh, bout_mesh);
     // if requested, check that neso_mesh cell volumes are identical
     // to bout_mesh cell volumes, otherwise, exit.
     if (mesh_options["test_dmplex_cell_volumes"].withDefault(true)) {
@@ -331,7 +335,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
     }
     if (mesh_options["test_dmplex_cell_centres"].withDefault(true)) {
       check_cell_centres(
-          alloptions, dm, kinetic_mesh_map, neso_mesh, bout_mesh,
+          alloptions, dm, kinetic_mesh_map, basic_mesh_data, neso_mesh, bout_mesh,
           mesh_options["dmplex_cell_centre_absolute_tolerance"].withDefault(1.0e-12),
           mesh_options["dmplex_cell_centre_relative_tolerance"].withDefault(0.0));
     }
@@ -433,50 +437,8 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
     // properties on to the bout mesh
     dof_bout_mesh_scalar =
         std::vector<REAL>(static_cast<size_t>(num_cells_owned_bout_mesh));
-    // make pointer to projection object
-    if (use_external_msh) {
-      // create the dg0 variable using a constructor that
-      // respects the kinetic mesh external definition
-      std::vector<std::vector<PetscInterface::DMPlexMeshCouplerDG0MapEntry>> coupler_map(
-          static_cast<size_t>(num_cells_owned_bout_mesh));
-      Field2D map_RZ_to_itriangle_0;
-      Field2D map_RZ_to_itriangle_1;
-      bout_mesh->get(map_RZ_to_itriangle_0, "map_RZ_to_itriangle_0");
-      bout_mesh->get(map_RZ_to_itriangle_1, "map_RZ_to_itriangle_1");
-      // get data that defines triangular cells
-      const std::vector<REAL> vertices = get_triangle_vertices();
-      const std::vector<int> tri_cell_vertices = get_triangle_cell_definition();
-      int icell = 0;
-      for (int ix = bout_mesh->xstart; ix <= bout_mesh->xend; ix++) {
-        for (int iy = bout_mesh->ystart; iy <= bout_mesh->yend; iy++) {
-          // get triangle areas, and total area for ratio in the backward weights
-          const int itri_0 = static_cast<int>(map_RZ_to_itriangle_0(ix, iy));
-          const REAL area_0 =
-              get_triangle_area(static_cast<size_t>(itri_0), vertices, tri_cell_vertices);
-          const int itri_1 = static_cast<int>(map_RZ_to_itriangle_1(ix, iy));
-          const REAL area_1 =
-              get_triangle_area(static_cast<size_t>(itri_1), vertices, tri_cell_vertices);
-          const REAL total_area = area_0 + area_1;
-          // std::cout << "total area: " << total_area << " area_0: " << area_0 << " area_1: " << area_1 << " area_0/total_area: " << area_0/total_area << " area_1/total_area: " << area_1/total_area <<'\n';
-          ASSERT1(total_area > 0.0);
-          // lower triangle
-          coupler_map.at(static_cast<size_t>(icell))
-              .push_back({kinetic_mesh_map.at(static_cast<size_t>(itri_0)), 1.0,
-                          area_0 / total_area});
-          // upper triangle
-          coupler_map.at(static_cast<size_t>(icell))
-              .push_back({kinetic_mesh_map.at(static_cast<size_t>(itri_1)), 1.0,
-                          area_1 / total_area});
-          icell += 1;
-        }
-      }
-      // object for transferring data between kinetic and bout mesh degree-of-freedom vectors
-      mesh_coupler_dg0 =
-          std::make_shared<PetscInterface::DMPlexMeshCouplerDG0>(dm, coupler_map);
-    }
-    // if (mesh_coupler_dg0 == nullptr){
-    //   output << "mesh_coupler_dg0 is a nullptr" << std::endl;
-    // }
+    // object for transferring data between kinetic and bout mesh degree-of-freedom vectors
+    mesh_coupler_dg0 = get_mesh_coupler(dm, kinetic_mesh_map, basic_mesh_data, bout_mesh);
     // object for evaluating/projecting particle properties
     // between the kinetic mesh degree-of-freedom vector and particles
     project_eval_dg0 = std::make_shared<PetscInterface::DMPlexProjectEvaluateDG>(

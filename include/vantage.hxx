@@ -1,5 +1,9 @@
 #pragma once
 #include "../include/component.hxx"
+#include "../include/vantage_diagnostics.hxx"
+#include "../include/vantage_dmplex.hxx"
+#include "../include/vantage_sources.hxx"
+#include "vantage_datatransfer.hxx"
 #include "bout/bout.hxx"
 #include "bout/petsclib.hxx"
 #include <bout/bout_types.hxx>
@@ -9,9 +13,6 @@
 #include <neso_rng_toolkit.hpp>
 #include <reactions/reactions.hpp>
 #include <vector>
-#include "../include/vantage_diagnostics.hxx"
-#include "../include/vantage_sources.hxx"
-#include "vantage_datatransfer.hxx"
 
 using namespace NESO::Particles;
 using namespace VANTAGE::Reactions;
@@ -79,7 +80,6 @@ private:
   // x and y cells in the BOUT++ mesh (excluding guards)
   std::vector<REAL> neso_mesh_cell_volumes_on_plasma_grid;
 
-
   PetscLib petsc_lib; // Ensures PETSc is initialized for the lifetime of this component
 
   DM dm;
@@ -90,8 +90,10 @@ private:
   std::shared_ptr<PetscInterface::DMPlexMeshCouplerDG0> mesh_coupler_dg0;
   std::vector<REAL> dof_kinetic_mesh_scalar;
   std::vector<REAL> dof_bout_mesh_scalar;
-  std::vector<PetscInt> kinetic_mesh_map; // variable for recording the map from serial to parallelised DMPlex cells in terms of a vector of integers
-  std::shared_ptr<H5Part> h5part; // HDF5 particle output object
+  std::vector<PetscInt>
+      kinetic_mesh_map; // variable for recording the map from serial to parallelised DMPlex cells in terms of a vector of integers
+  VantageBasicMeshData basic_mesh_data;
+  std::shared_ptr<H5Part> h5part;                  // HDF5 particle output object
   std::shared_ptr<ParticleGroup> A_particle_group; // Particle group for main neutrals
   std::shared_ptr<ParticleGroup> marker_group;     // Particle group for rec markers
 
@@ -101,9 +103,9 @@ private:
 
   std::shared_ptr<VantageDataTransfer> data_transfer; // Manager for VANTAGE data transfer
   std::unique_ptr<VantageDiagnosticsManager>
-      diagnostics_manager;           // Manager for VANTAGE diagnostics
+      diagnostics_manager; // Manager for VANTAGE diagnostics
   std::shared_ptr<VantageSourceManager>
-      source_manager;           // Manager for VANTAGE reaction sources
+      source_manager; // Manager for VANTAGE reaction sources
   // These classes don't have a default constructor so need to be initialised as a unique_ptr
   VantageMonitor monitor{this}; // Output monitor to schedule VANTAGE iterations
 

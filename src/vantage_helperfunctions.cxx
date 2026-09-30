@@ -1,5 +1,6 @@
 #include "../include/vantage_helperfunctions.hxx"
 #include "../include/component.hxx"
+#include "vantage_dmplex.hxx"
 #include "bout/bout.hxx"
 #include "bout/bout_types.hxx"
 #include <neso_particles.hpp>
@@ -16,17 +17,62 @@ size_t get_num_cells_owned_bout_mesh(Mesh*& bout_mesh) {
   return num_cells_owned_bout_mesh;
 }
 
+// initialise a DMPlexMeshCouplerDG0 for coupling the kinetic mesh to the BOUT++ mesh
+std::shared_ptr<PetscInterface::DMPlexMeshCouplerDG0>
+get_mesh_coupler(DM& dm, std::vector<PetscInt>& kinetic_mesh_map,
+                 VantageBasicMeshData& basic_mesh_data, Mesh*& bout_mesh) {
+  const size_t num_cells_owned_bout_mesh = get_num_cells_owned_bout_mesh(bout_mesh);
+  // map the defines the coupling backward and forward transfers
+  std::vector<std::vector<PetscInterface::DMPlexMeshCouplerDG0MapEntry>> coupler_map(
+      static_cast<size_t>(num_cells_owned_bout_mesh));
+  // maps that define which triangles are present at a given (R,Z) cell
+  Field2D map_RZ_to_itriangle_0 = basic_mesh_data.map_RZ_to_itriangle_0;
+  Field2D map_RZ_to_itriangle_1 = basic_mesh_data.map_RZ_to_itriangle_1;
+  // get data which defines the vertex coordinates
+  const std::vector<REAL> vertices = basic_mesh_data.vertices_data.vertices;
+  // get data that defines triangular cells
+  const std::vector<int> tri_cell_vertices =
+      basic_mesh_data.cell_definition.tri_cell_vertices;
+  int icell = 0;
+  for (int ix = bout_mesh->xstart; ix <= bout_mesh->xend; ix++) {
+    for (int iy = bout_mesh->ystart; iy <= bout_mesh->yend; iy++) {
+      // get triangle areas, and total area for ratio in the backward weights
+      const int itri_0 = static_cast<int>(map_RZ_to_itriangle_0(ix, iy));
+      const REAL area_0 =
+          get_triangle_area(static_cast<size_t>(itri_0), vertices, tri_cell_vertices);
+      const int itri_1 = static_cast<int>(map_RZ_to_itriangle_1(ix, iy));
+      const REAL area_1 =
+          get_triangle_area(static_cast<size_t>(itri_1), vertices, tri_cell_vertices);
+      const REAL total_area = area_0 + area_1;
+      // std::cout << "total area: " << total_area << " area_0: " << area_0 << " area_1: " << area_1 << " area_0/total_area: " << area_0/total_area << " area_1/total_area: " << area_1/total_area <<'\n';
+      ASSERT1(total_area > 0.0);
+      // lower triangle
+      coupler_map.at(static_cast<size_t>(icell))
+          .push_back({kinetic_mesh_map.at(static_cast<size_t>(itri_0)), 1.0,
+                      area_0 / total_area});
+      // upper triangle
+      coupler_map.at(static_cast<size_t>(icell))
+          .push_back({kinetic_mesh_map.at(static_cast<size_t>(itri_1)), 1.0,
+                      area_1 / total_area});
+      icell += 1;
+    }
+  }
+  // object for transferring data between kinetic and bout mesh degree-of-freedom vectors
+  return std::make_shared<PetscInterface::DMPlexMeshCouplerDG0>(dm, coupler_map);
+}
+
+// initialise a DMPlexMeshCouplerDG0 for coupling the kinetic mesh to the BOUT++ mesh
+// in the special case where the backward weights are known constants
+// useful for checks and diagnostics
 std::shared_ptr<PetscInterface::DMPlexMeshCouplerDG0>
 get_mesh_coupler_constant_weights(DM& dm, std::vector<PetscInt>& kinetic_mesh_map,
-                                  Mesh*& bout_mesh, REAL backward_weight_0,
-                                  REAL backward_weight_1) {
+                                  VantageBasicMeshData& basic_mesh_data, Mesh*& bout_mesh,
+                                  REAL backward_weight_0, REAL backward_weight_1) {
   const size_t num_cells_owned_bout_mesh = get_num_cells_owned_bout_mesh(bout_mesh);
   std::vector<std::vector<PetscInterface::DMPlexMeshCouplerDG0MapEntry>> coupler_map_0(
       static_cast<size_t>(num_cells_owned_bout_mesh));
-  Field2D map_RZ_to_itriangle_0;
-  Field2D map_RZ_to_itriangle_1;
-  bout_mesh->get(map_RZ_to_itriangle_0, "map_RZ_to_itriangle_0");
-  bout_mesh->get(map_RZ_to_itriangle_1, "map_RZ_to_itriangle_1");
+  const Field2D map_RZ_to_itriangle_0 = basic_mesh_data.map_RZ_to_itriangle_0;
+  const Field2D map_RZ_to_itriangle_1 = basic_mesh_data.map_RZ_to_itriangle_1;
   int icell = 0;
   for (int ix = bout_mesh->xstart; ix <= bout_mesh->xend; ix++) {
     for (int iy = bout_mesh->ystart; iy <= bout_mesh->yend; iy++) {
@@ -51,6 +97,7 @@ get_mesh_coupler_constant_weights(DM& dm, std::vector<PetscInt>& kinetic_mesh_ma
 
 std::vector<REAL> get_cell_volumes_on_plasma_grid(
     DM& dm, std::vector<PetscInt>& kinetic_mesh_map,
+    VantageBasicMeshData& basic_mesh_data,
     std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh, Mesh*& bout_mesh) {
   const size_t num_cells_owned_bout_mesh = get_num_cells_owned_bout_mesh(bout_mesh);
   // Get the number of cells in the kinetic (neutral) mesh owned on this process
@@ -58,39 +105,24 @@ std::vector<REAL> get_cell_volumes_on_plasma_grid(
       static_cast<size_t>(neso_mesh->get_cell_count());
   // neso_mesh cell volumes on BOUT++ mesh indices
   std::vector<REAL> neso_cell_volumes_bmsh(num_cells_owned_bout_mesh);
-  // the checks
-  if (num_cells_owned_kinetic_mesh == num_cells_owned_bout_mesh) {
-    // zero the compound index
-    size_t ixy = 0;
-    for (PetscInt ix = bout_mesh->xstart; ix <= bout_mesh->xend; ix++) {
-      for (PetscInt iy = bout_mesh->ystart; iy <= bout_mesh->yend; iy++) {
-        neso_cell_volumes_bmsh.at(ixy) =
-            neso_mesh->dmh->get_cell_volume(static_cast<int>(ixy));
-        ixy++;
-      }
-    }
-  } else if (num_cells_owned_kinetic_mesh > num_cells_owned_bout_mesh) {
-    // assume that this corresponds to the case where the BOUT++ mesh is decomposed
-    // to triangles and there are also cells representing the region beyond the simulated plasma
-    // -------------------------------------------
-    // first, make a mesh_coupler_dg0 object with unit weights
-    const std::shared_ptr<PetscInterface::DMPlexMeshCouplerDG0> mesh_coupler_unit_weight =
-        get_mesh_coupler_constant_weights(dm, kinetic_mesh_map, bout_mesh, 1.0, 1.0);
-    // obtain a list of kinetic mesh cell volumes
-    std::vector<double> neso_cell_volumes_kmsh(num_cells_owned_kinetic_mesh);
-    for (size_t ic = 0; ic < num_cells_owned_kinetic_mesh; ic++) {
-      neso_cell_volumes_kmsh.at(ic) =
-          neso_mesh->dmh->get_cell_volume(static_cast<int>(ic));
-    }
-    // move these cell volumes to the bout mesh
-    mesh_coupler_unit_weight->backward_transfer(neso_cell_volumes_kmsh, 1,
-                                                neso_cell_volumes_bmsh);
+  // first, make a mesh_coupler_dg0 object with unit weights
+  const std::shared_ptr<PetscInterface::DMPlexMeshCouplerDG0> mesh_coupler_unit_weight =
+      get_mesh_coupler_constant_weights(dm, kinetic_mesh_map, basic_mesh_data, bout_mesh,
+                                        1.0, 1.0);
+  // obtain a list of kinetic mesh cell volumes
+  std::vector<double> neso_cell_volumes_kmsh(num_cells_owned_kinetic_mesh);
+  for (size_t ic = 0; ic < num_cells_owned_kinetic_mesh; ic++) {
+    neso_cell_volumes_kmsh.at(ic) = neso_mesh->dmh->get_cell_volume(static_cast<int>(ic));
   }
+  // move these cell volumes to the bout mesh
+  mesh_coupler_unit_weight->backward_transfer(neso_cell_volumes_kmsh, 1,
+                                              neso_cell_volumes_bmsh);
   return neso_cell_volumes_bmsh;
 }
 
 std::vector<REAL> get_cell_vertices_on_plasma_grid(
     DM& dm, std::vector<PetscInt>& kinetic_mesh_map,
+    VantageBasicMeshData& basic_mesh_data,
     std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh, Mesh*& bout_mesh) {
   const size_t num_cells_owned_bout_mesh = get_num_cells_owned_bout_mesh(bout_mesh);
   // Get the number of cells in the kinetic (neutral) mesh owned on this process
@@ -104,110 +136,92 @@ std::vector<REAL> get_cell_vertices_on_plasma_grid(
                                             * num_cells_owned_bout_mesh);
   // get the cell vertices in flattened vectors,
   // without attempting to respect anti-clockwise vertex ordering
-  if (num_cells_owned_kinetic_mesh == num_cells_owned_bout_mesh) {
-    std::vector<std::vector<REAL>> cell_vertices;
-    // zero the compound index
-    size_t ixy = 0;
-    for (PetscInt ix = bout_mesh->xstart; ix <= bout_mesh->xend; ix++) {
-      for (PetscInt iy = bout_mesh->ystart; iy <= bout_mesh->yend; iy++) {
-        neso_mesh->dmh->get_cell_vertices(static_cast<PetscInt>(ixy), cell_vertices);
-        for (size_t iv = 0; iv < nquad_vertices; iv++) {
-          for (size_t idim = 0; idim < ndim; idim++) {
-            const size_t jc = (ndim * ((nquad_vertices * ixy) + iv)) + idim;
-            quad_cell_vertices_bmsh.at(jc) = cell_vertices.at(iv).at(idim);
-          }
-        }
-        ixy++;
+  // -------------------------------------------
+  // we need to get the triangular cell coordinates from each upper and lower triangle
+  // on to the local BOUT++ grid, then resolve which coordinates are unique to form
+  // the coordinates for the quadrilateral cell which the pair of triangles represent
+  // -------------------------------------------
+  // first, make a mesh_coupler_dg0 object with unit weights from the lower triangle, and zero weight
+  // for the upper triangle
+  const std::shared_ptr<PetscInterface::DMPlexMeshCouplerDG0> mesh_coupler_0 =
+      get_mesh_coupler_constant_weights(dm, kinetic_mesh_map, basic_mesh_data, bout_mesh,
+                                        1.0, 0.0);
+  // second, make a mesh_coupler_dg0 object with unit weights from the upper triangle, and zero weight
+  // for the lower triangle
+  const std::shared_ptr<PetscInterface::DMPlexMeshCouplerDG0> mesh_coupler_1 =
+      get_mesh_coupler_constant_weights(dm, kinetic_mesh_map, basic_mesh_data, bout_mesh,
+                                        0.0, 1.0);
+  // obtain the cell coordinates for lower and upper triangles on the kinetic mesh
+  std::vector<std::vector<REAL>> cell_vertices;
+  std::vector<REAL> tri_cell_vertices_kmsh(ntri_vertices * ndim
+                                           * num_cells_owned_kinetic_mesh);
+  for (size_t ic = 0; ic < num_cells_owned_kinetic_mesh; ic++) {
+    neso_mesh->dmh->get_cell_vertices(static_cast<PetscInt>(ic), cell_vertices);
+    // fill in results to flattened vector
+    for (size_t iv = 0; iv < ntri_vertices; iv++) {
+      for (size_t idim = 0; idim < ndim; idim++) {
+        const size_t jc = (ndim * ((ntri_vertices * ic) + iv)) + idim;
+        tri_cell_vertices_kmsh.at(jc) = cell_vertices.at(iv).at(idim);
       }
     }
-  } else if (num_cells_owned_kinetic_mesh > num_cells_owned_bout_mesh) {
-    // assume that this corresponds to the case where the BOUT++ mesh is decomposed
-    // to triangles and there are also cells representing the region beyond the simulated plasma
-    // -------------------------------------------
-    // we need to get the triangular cell coordinates from each upper and lower triangle
-    // on to the local BOUT++ grid, then resolve which coordinates are unique to form
-    // the coordinates for the quadrilateral cell which the pair of triangles represent
-    // -------------------------------------------
-    // first, make a mesh_coupler_dg0 object with unit weights from the lower triangle, and zero weight
-    // for the upper triangle
-    const std::shared_ptr<PetscInterface::DMPlexMeshCouplerDG0> mesh_coupler_0 =
-        get_mesh_coupler_constant_weights(dm, kinetic_mesh_map, bout_mesh, 1.0, 0.0);
-    // second, make a mesh_coupler_dg0 object with unit weights from the upper triangle, and zero weight
-    // for the lower triangle
-    const std::shared_ptr<PetscInterface::DMPlexMeshCouplerDG0> mesh_coupler_1 =
-        get_mesh_coupler_constant_weights(dm, kinetic_mesh_map, bout_mesh, 0.0, 1.0);
-    // obtain the cell coordinates for lower and upper triangles on the kinetic mesh
-    std::vector<std::vector<REAL>> cell_vertices;
-    std::vector<REAL> tri_cell_vertices_kmsh(ntri_vertices * ndim
-                                             * num_cells_owned_kinetic_mesh);
-    for (size_t ic = 0; ic < num_cells_owned_kinetic_mesh; ic++) {
-      neso_mesh->dmh->get_cell_vertices(static_cast<PetscInt>(ic), cell_vertices);
-      // fill in results to flattened vector
+  }
+  // transfer these results to vectors for the lower and upper triangles
+  std::vector<REAL> tri_cell_vertices_0_bmsh(ntri_vertices * ndim
+                                             * num_cells_owned_bout_mesh);
+  std::vector<REAL> tri_cell_vertices_1_bmsh(ntri_vertices * ndim
+                                             * num_cells_owned_bout_mesh);
+  mesh_coupler_0->backward_transfer(tri_cell_vertices_kmsh, ntri_vertices * ndim,
+                                    tri_cell_vertices_0_bmsh);
+  mesh_coupler_1->backward_transfer(tri_cell_vertices_kmsh, ntri_vertices * ndim,
+                                    tri_cell_vertices_1_bmsh);
+  // fill in data for quad cell vertices
+  // no requirement for the cell centre check to list in anti-clockwise order
+  size_t ixy = 0;
+  for (PetscInt ix = bout_mesh->xstart; ix <= bout_mesh->xend; ix++) {
+    for (PetscInt iy = bout_mesh->ystart; iy <= bout_mesh->yend; iy++) {
+      // first three vertices from lower triangle are definitely unqiue vertices for the quad
+      // (though perhaps in an incorrect order)
       for (size_t iv = 0; iv < ntri_vertices; iv++) {
         for (size_t idim = 0; idim < ndim; idim++) {
-          const size_t jc = (ndim * ((ntri_vertices * ic) + iv)) + idim;
-          tri_cell_vertices_kmsh.at(jc) = cell_vertices.at(iv).at(idim);
+          const size_t jc_quad = (ndim * ((nquad_vertices * ixy) + iv)) + idim;
+          const size_t jc_tri = (ndim * ((ntri_vertices * ixy) + iv)) + idim;
+          quad_cell_vertices_bmsh.at(jc_quad) = tri_cell_vertices_0_bmsh.at(jc_tri);
         }
       }
-    }
-    // transfer these results to vectors for the lower and upper triangles
-    std::vector<REAL> tri_cell_vertices_0_bmsh(ntri_vertices * ndim
-                                               * num_cells_owned_bout_mesh);
-    std::vector<REAL> tri_cell_vertices_1_bmsh(ntri_vertices * ndim
-                                               * num_cells_owned_bout_mesh);
-    mesh_coupler_0->backward_transfer(tri_cell_vertices_kmsh, ntri_vertices * ndim,
-                                      tri_cell_vertices_0_bmsh);
-    mesh_coupler_1->backward_transfer(tri_cell_vertices_kmsh, ntri_vertices * ndim,
-                                      tri_cell_vertices_1_bmsh);
-    // fill in data for quad cell vertices
-    // no requirement for the cell centre check to list in anti-clockwise order
-    size_t ixy = 0;
-    for (PetscInt ix = bout_mesh->xstart; ix <= bout_mesh->xend; ix++) {
-      for (PetscInt iy = bout_mesh->ystart; iy <= bout_mesh->yend; iy++) {
-        // first three vertices from lower triangle are definitely unqiue vertices for the quad
-        // (though perhaps in an incorrect order)
+      // the final unique coordinate must be determined by checking for uniqueness
+      const size_t ivquad = 3;
+      const REAL atol = 1.0e-12;
+      std::vector<bool> unique(ntri_vertices);
+      for (size_t ivp = 0; ivp < ntri_vertices; ivp++) {
+        const size_t jcp_tri = (ndim * ((ntri_vertices * ixy) + ivp));
+        // initially presume that this index is unique
+        unique.at(ivp) = true;
         for (size_t iv = 0; iv < ntri_vertices; iv++) {
+          const size_t jc_tri = (ndim * ((ntri_vertices * ixy) + iv));
+          REAL sumsqr = 0.0;
+          // sum the squared lengths measuring the distance of this vertex from another
           for (size_t idim = 0; idim < ndim; idim++) {
-            const size_t jc_quad = (ndim * ((nquad_vertices * ixy) + iv)) + idim;
-            const size_t jc_tri = (ndim * ((ntri_vertices * ixy) + iv)) + idim;
-            quad_cell_vertices_bmsh.at(jc_quad) = tri_cell_vertices_0_bmsh.at(jc_tri);
+            sumsqr += std::pow(tri_cell_vertices_0_bmsh.at(jc_tri + idim)
+                                   - tri_cell_vertices_1_bmsh.at(jcp_tri + idim),
+                               2);
+          }
+          const REAL l2norm = std::sqrt(sumsqr);
+          if (l2norm < atol) {
+            unique.at(ivp) = false;
           }
         }
-        // the final unique coordinate must be determined by checking for uniqueness
-        const size_t ivquad = 3;
-        const REAL atol = 1.0e-12;
-        std::vector<bool> unique(ntri_vertices);
-        for (size_t ivp = 0; ivp < ntri_vertices; ivp++) {
-          const size_t jcp_tri = (ndim * ((ntri_vertices * ixy) + ivp));
-          // initially presume that this index is unique
-          unique.at(ivp) = true;
-          for (size_t iv = 0; iv < ntri_vertices; iv++) {
-            const size_t jc_tri = (ndim * ((ntri_vertices * ixy) + iv));
-            REAL sumsqr = 0.0;
-            // sum the squared lengths measuring the distance of this vertex from another
-            for (size_t idim = 0; idim < ndim; idim++) {
-              sumsqr += std::pow(tri_cell_vertices_0_bmsh.at(jc_tri + idim)
-                                     - tri_cell_vertices_1_bmsh.at(jcp_tri + idim),
-                                 2);
-            }
-            const REAL l2norm = std::sqrt(sumsqr);
-            if (l2norm < atol) {
-              unique.at(ivp) = false;
-            }
+        if (unique.at(ivp)) {
+          // this vertex has proved to be unique by not matching any other vertex
+          for (size_t idim = 0; idim < ndim; idim++) {
+            const size_t jc_quad = (ndim * ((nquad_vertices * ixy) + ivquad)) + idim;
+            quad_cell_vertices_bmsh.at(jc_quad) =
+                tri_cell_vertices_1_bmsh.at(jcp_tri + idim);
           }
-          if (unique.at(ivp)) {
-            // this vertex has proved to be unique by not matching any other vertex
-            for (size_t idim = 0; idim < ndim; idim++) {
-              const size_t jc_quad = (ndim * ((nquad_vertices * ixy) + ivquad)) + idim;
-              quad_cell_vertices_bmsh.at(jc_quad) =
-                  tri_cell_vertices_1_bmsh.at(jcp_tri + idim);
-            }
-            // only one vertex can be unique
-            break;
-          }
+          // only one vertex can be unique
+          break;
         }
-        ixy++;
       }
+      ixy++;
     }
   }
   return quad_cell_vertices_bmsh;
@@ -266,6 +280,7 @@ REAL cell_length(std::vector<std::vector<REAL>>& cell_vertices, std::size_t iv1,
 
 void check_cell_centres(Options& alloptions, DM& dm,
                         std::vector<PetscInt>& kinetic_mesh_map,
+                        VantageBasicMeshData& basic_mesh_data,
                         std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh,
                         Mesh*& bout_mesh, BoutReal absolute_tolerance,
                         BoutReal relative_tolerance) {
@@ -276,8 +291,8 @@ void check_cell_centres(Options& alloptions, DM& dm,
   bout_mesh->get(Zxy, "Zxy");
 
   BoutReal meters = get<BoutReal>(alloptions["units"]["meters"]);
-  std::vector<REAL> neso_cell_vertices_plasma_grid =
-      get_cell_vertices_on_plasma_grid(dm, kinetic_mesh_map, neso_mesh, bout_mesh);
+  std::vector<REAL> neso_cell_vertices_plasma_grid = get_cell_vertices_on_plasma_grid(
+      dm, kinetic_mesh_map, basic_mesh_data, neso_mesh, bout_mesh);
   // number of vertices per quad
   const size_t nquad_vertices = 4;
   // expected dimensionality
