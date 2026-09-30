@@ -111,6 +111,37 @@ void update_particle_properties_from_plasma(
       electron_temperature, A_particle_group, "ELECTRON_TEMPERATURE");
 }
 
+// Calculate rec marker weights so that they correspond to local ion density.
+// Reads ion density from FLUID_DENSITY so that must be kept up to date.
+void set_recombination_marker_weights(
+    std::shared_ptr<ParticleGroup>& marker_group,
+    std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh,
+    std::vector<double>& dof_kinetic_mesh_scalar,
+    std::shared_ptr<VantageDataTransfer>& data_transfer, BoutReal N_w) {
+
+  // Weight of one marker per unit density
+  const size_t ncell = dof_kinetic_mesh_scalar.size();
+  for (size_t ic = 0; ic < ncell; ic++) {
+    const REAL cell_volume = neso_mesh->dmh->get_cell_volume(static_cast<int>(ic));
+    const INT nmarkers_per_cell = marker_group->get_npart_cell(static_cast<int>(ic));
+    dof_kinetic_mesh_scalar.at(ic) =
+        cell_volume / static_cast<BoutReal>(nmarkers_per_cell) / N_w;
+  }
+  // Upload to device as "WEIGHT" property
+  data_transfer->transfer_scalar_to_particle_property(dof_kinetic_mesh_scalar,
+                                                      marker_group, "WEIGHT");
+
+  // Multiply by ion density on-device:
+  // - Weight of one marker per unit density * ion density = actual marker weight
+  particle_loop(
+      "Update weight of ions", marker_group,
+      [=](auto ion_dens_prop, auto weight_prop) {
+        weight_prop.at(0) *= ion_dens_prop.at(0);
+      },
+      Access::read(Sym<REAL>("FLUID_DENSITY")), Access::write(Sym<REAL>("WEIGHT")))
+      ->execute();
+}
+
 // Create a ParticleSubGroup from particles that are in a cell with nonzero electron_density.
 ParticleSubGroupSharedPtr create_particle_sub_group_in_plasma_volume(
     std::shared_ptr<ParticleGroup>& A_particle_group,
@@ -396,7 +427,6 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
         ParticleProp(Sym<REAL>("FLUID_DENSITY"), 1),
         ParticleProp(Sym<REAL>("FLUID_FLOW_SPEED"), ndim),
         ParticleProp(Sym<REAL>("FLUID_TEMPERATURE"), 1),
-        ParticleProp(Sym<INT>("N_CELL"), 1),
         ParticleProp(Sym<REAL>("WEIGHT_V2"), 1),
         ParticleProp(Sym<REAL>("WEIGHT_V"), ndim),
     };
@@ -527,44 +557,6 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
         initial_ion_thermal_speed, -1);
 
     marker_group->add_particles_local(maxwellian_markers);
-
-    // Give particle group initial fluid values:
-    // markers will contain background plasma properties
-    update_particle_properties_from_plasma(data_transfer, marker_group, ion_density,
-                                           ion_temperature, ion_velocity,
-                                           electron_density, electron_temperature);
-
-    // Calculate marker weights
-
-    // Add particle property: number of particles in the local cell
-    // From demo app: "distribute_n_part_cell"
-    for (int ic = 0; ic < marker_group->domain->mesh->get_cell_count(); ic++) {
-      INT n_part_cell = marker_group->get_npart_cell(ic);
-      particle_loop(
-          "Update N_CELL prop", marker_group,
-          [=](auto n_cell_prop) { n_cell_prop.at(0) = n_part_cell; },
-          Access::write(Sym<INT>("N_CELL")))
-          ->execute(ic);
-    }
-
-    const INT num_cells = marker_group->domain->mesh->get_cell_count();
-    const BoutReal N_w_local = this->N_w;
-
-    // Calculate weight for each marker particle
-    // based on FLUID_DENSITY and N_CELL properties contained in same particle.
-    for (int ic = 0; ic < num_cells; ic++) {
-      REAL V_cell = neso_mesh->dmh->get_cell_volume(ic);
-      particle_loop(
-          "Update weight of ions", marker_group,
-          [N_w_local, V_cell](auto n_cell_prop, auto ion_dens_prop, auto weight_prop) {
-            const BoutReal n_cell = static_cast<BoutReal>(n_cell_prop.at(0));
-            auto updated_weight = (ion_dens_prop.at(0) * V_cell) / (N_w_local * n_cell);
-            weight_prop.at(0) = updated_weight;
-          },
-          Access::read(Sym<INT>("N_CELL")), Access::read(Sym<REAL>("FLUID_DENSITY")),
-          Access::write(Sym<REAL>("WEIGHT")))
-          ->execute(ic);
-    }
 
     // Wrappers & controllers
     // ------------------------------------------------------------------------------
@@ -842,6 +834,16 @@ int VantageMonitor::call(Solver* UNUSED(solver), BoutReal time, int iter,
 
 // Function called by the Monitor to advance kinetic neutrals for some number of VANTAGE timesteps
 int Vantage::advance_vantage(BoutReal UNUSED(time)) {
+
+  // Send plasma data to recombination markers
+  update_particle_properties_from_plasma(data_transfer, marker_group, ion_density,
+                                         ion_temperature, ion_velocity, electron_density,
+                                         electron_temperature);
+  // Calculate rec marker weight which becomes kinetic representation of ion density.
+  // Reads the FLUID_DENSITY just sent to the markers.
+  set_recombination_marker_weights(marker_group, neso_mesh, dof_kinetic_mesh_scalar,
+                                   data_transfer, N_w);
+
   // Advection & rest of code
   // ------------------------------------------------------------------------------
 
