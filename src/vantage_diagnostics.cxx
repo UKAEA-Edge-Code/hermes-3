@@ -6,6 +6,7 @@
 
 #include "../include/vantage_datatransfer.hxx"
 #include "../include/vantage_diagnostics.hxx"
+#include "../include/vantage_helperfunctions.hxx"
 #include "../include/vantage_sources.hxx"
 #include <cstddef>
 #include <memory>
@@ -32,12 +33,8 @@ REAL calculate_total_mass(std::vector<REAL>& density,
 REAL calculate_total_mass(Field2D& density,
                           std::vector<REAL>& neso_cell_volume_on_bout_mesh) {
   Mesh* bout_mesh = density.getMesh();
-  // local number of BOUT++ x cells, excluding guards
-  const int Nx = bout_mesh->xend - bout_mesh->xstart + 1;
-  // local number of BOUT++ y cells, excluding guards
-  const int Ny = bout_mesh->yend - bout_mesh->ystart + 1;
   // Get the number of cells in the bout (plasma) mesh owned on this process, excluding guard cells
-  const size_t num_cells_owned_bout_mesh = static_cast<size_t>(Nx * Ny);
+  const size_t num_cells_owned_bout_mesh = get_num_cells_owned_bout_mesh(bout_mesh);
   // Get the number of cells in the kinetic (neutral) mesh owned on this process
   ASSERT1(neso_cell_volume_on_bout_mesh.size() == num_cells_owned_bout_mesh);
   // sum over the density on the BOUT++ grid, using NESO-Particles cell volumes
@@ -62,12 +59,8 @@ Options initialise_plasma_grid_diagnostics(Options& units, Mesh* bout_mesh,
                                            std::vector<REAL>& neso_cell_volumes,
                                            std::string vantage_dump_filepath) {
 
-  // local number of BOUT++ x cells, excluding guards
-  const int Nx = bout_mesh->xend - bout_mesh->xstart + 1;
-  // local number of BOUT++ y cells, excluding guards
-  const int Ny = bout_mesh->yend - bout_mesh->ystart + 1;
   // Get the number of cells in the bout (plasma) mesh owned on this process, excluding guard cells
-  const size_t num_cells_owned_bout_mesh = static_cast<size_t>(Nx * Ny);
+  const size_t num_cells_owned_bout_mesh = get_num_cells_owned_bout_mesh(bout_mesh);
   // Get the number of cells in the kinetic (neutral) mesh owned on this process
   ASSERT1(neso_cell_volumes.size() == num_cells_owned_bout_mesh);
 
@@ -259,14 +252,6 @@ VantageDiagnosticsManager::VantageDiagnosticsManager(
   energy_plasma_grid = Field2D(0.0, bout_mesh);
   pressure_plasma_grid = Field2D(0.0, bout_mesh);
   temperature_plasma_grid = Field2D(0.0, bout_mesh);
-  // local number of BOUT++ x cells, excluding guards
-  const int Nx = bout_mesh->xend - bout_mesh->xstart + 1;
-  // local number of BOUT++ y cells, excluding guards
-  const int Ny = bout_mesh->yend - bout_mesh->ystart + 1;
-  // Get the number of cells in the bout (plasma) mesh owned on this process, excluding guard cells
-  const size_t num_cells_owned_bout_mesh = static_cast<size_t>(Nx * Ny);
-  // a vector used to receive scalar BOUT++ data from the kinetic mesh
-  dof_bout_mesh_scalar = std::vector<REAL>(num_cells_owned_bout_mesh);
 }
 
 // Functions for diagnostics on the kinetic mesh
