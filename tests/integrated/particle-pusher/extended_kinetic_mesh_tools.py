@@ -21,7 +21,7 @@ def extended_kinetic_mesh_test_input(
     input_file_string = f"""
     nout = 1
     timestep = 1
-    MZ = 1
+    MZ = 1  # Z grid size
 
     [mesh]
     file="{bout_grid_file}"
@@ -90,7 +90,7 @@ def generate_BOUT_grid_data(base_grid_dir, kinetic_nc_file_path, verbose=True):
     input_file_string = """
     nout = 0
     timestep = 1
-    MZ = 1
+    MZ = 1  # Z grid size
 
     [mesh]
     J = 1
@@ -413,6 +413,9 @@ def generate_BOUT_grid_data(base_grid_dir, kinetic_nc_file_path, verbose=True):
 
     # open the kinetic nc file and append mesh data
     with Dataset(kinetic_nc_file_path, mode="a") as ncdataset:
+        # Remove nz for consistency with typical grid files.
+        # Z resolution is set in input file by MZ=1.
+        ncdataset.renameVariable("nz", "nz_from_dump")
         if verbose:
             print(f"append: map_RZ_to_itriangle_0 to {kinetic_nc_file_path}")
         ptr_map_RZ_to_itriangle_0 = ncdataset.createVariable(
