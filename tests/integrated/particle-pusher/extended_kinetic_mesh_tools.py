@@ -42,18 +42,22 @@ def extended_kinetic_mesh_test_input(
     Nnorm = 1e19
     normalise_metric=false
 
+    # Density effectively fixed due to no sources.
+    # Must be set to evolved, otherwise solver complains.
     [d+]
-    type = evolve_density
+    type = evolve_density, fixed_temperature
     AA = 1
     charge = 1
+    temperature = 50  # [eV]
 
     [Nd+]
-    function = 1
+    function = 1e19 / hermes:Nnorm
 
     [e]
-    type = quasineutral
+    type = quasineutral, fixed_temperature
     AA = 1/1836
     charge = -1
+    temperature = 50  # [eV]
 
     [vantage]
     dt = {dt}
@@ -64,8 +68,6 @@ def extended_kinetic_mesh_test_input(
     initial_neutral_pressure = 1
     initial_neutral_temperature = 1
     npart_per_cell = 20
-    background_ion_density = 1e19
-    background_ion_temperature = 50
     background_ion_Vy = 1
     remove_threshold = {remove_threshold}
     merge_threshold = {merge_threshold}
