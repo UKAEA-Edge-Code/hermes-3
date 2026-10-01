@@ -446,9 +446,14 @@ void VantageSourceManager::update_all_sources(double dt) {
   }
 }
 
+// Destructor to handle VANTAGE related cleanup
+VantageSourceManager::~VantageSourceManager() {
+  neso_mesh->free(); // DMPlex interface
+}
+
 Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
-    : Component({readOnly("species:d+:density", Regions::Interior),
-                 readWrite("species:d+:density")}) {
+    : NamedComponent(name, {readOnly("species:d+:density", Regions::Interior),
+                            readWrite("species:d+:density")}) {
 
   // TODO: Put proper permissions in
 
@@ -478,9 +483,12 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
                  "unit weight. Default = 1.1 as a value close but different to unity"
                  "to make sure an incorrect implementation would show up in tests.")
             .withDefault<BoutReal>(1.1);
+  diagnose_vantage = options["diagnose_vantage"]
+                         .doc("Write vantage diagnostics to file.")
+                         .withDefault<bool>(true);
 
-  Options::root()["units"]["N_w"] = N_w;
-  Options::root()["units"]["N_w"].setConditionallyUsed();
+  alloptions["units"]["N_w"] = N_w;
+  alloptions["units"]["N_w"].setConditionallyUsed();
 
   bout_mesh = bout::globals::mesh;
   sycl_target = std::make_shared<SYCLTarget>(0, BoutComm::get());
@@ -988,10 +996,11 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
   this->source_manager->update_all_sources(dt);
 
   // diagnose the initial condition
-  bout_output_data =
-      initialise_diagnostics(alloptions, bout_mesh, neutral_density, ion_density,
-                             neso_mesh, vantage_dump_filepath);
-
+  if (diagnose_vantage) {
+    bout_output_data =
+        initialise_diagnostics(alloptions, bout_mesh, neutral_density, ion_density,
+                               neso_mesh, vantage_dump_filepath);
+  }
   // Object for VANTAGE dump files
   vantage_dump_writer =
       bout::OptionsIO::create({{"file", vantage_dump_filepath}, {"append", true}});
@@ -999,10 +1008,11 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
   // Object for particle_trajectories.h5part file.
   // Close it straight away to ensure that it's closed in event of a crash.
   // h5part->write re-opens it when needed.
-  h5part = std::make_shared<H5Part>(particle_data_filepath, A_particle_group,
-                                    Sym<REAL>("POSITION"), Sym<REAL>("VELOCITY"));
-  h5part->close();
-
+  if (diagnose_vantage) {
+    h5part = std::make_shared<H5Part>(particle_data_filepath, A_particle_group,
+                                      Sym<REAL>("POSITION"), Sym<REAL>("VELOCITY"));
+    h5part->close();
+  }
   // mass for conservation check
   total_density = neutral_density + ion_density;
   total_mass_initial = calculate_total_mass(total_density, neso_mesh);
@@ -1120,19 +1130,21 @@ int Vantage::advance_vantage(BoutReal UNUSED(time)) {
     // "Solve" density
     // Sources are in normalised m^-3 s^-1, so need to multiply by dt
     ion_density += (Siz + Srec) * dt;
+    if (diagnose_vantage) {
+      // Write to VANTAGE dump files
+      update_diagnostics(neutral_density, ion_density, Siz, Srec, neso_mesh,
+                         bout_output_data, *vantage_dump_writer, particle_time);
 
-    // Write to VANTAGE dump files
-    update_diagnostics(neutral_density, ion_density, Siz, Srec, neso_mesh,
-                       bout_output_data, *vantage_dump_writer, particle_time);
-
-    // Write to particle_trajectories file
-    h5part->write();
+      // Write to particle_trajectories file
+      h5part->write();
+    }
   }
   // Warning: if h5part gets destroyed while open due to crash, you will get a NESO_ASSERT
   // warning which will mask the actual backtrace. In this event
   // you could move this into the loop, but it will have an IO cost.
-  h5part->close();
-
+  if (diagnose_vantage) {
+    h5part->close();
+  }
   // mass for conservation check
   total_density = neutral_density + ion_density;
   BoutReal total_mass_final = calculate_total_mass(total_density, neso_mesh);

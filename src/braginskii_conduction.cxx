@@ -26,11 +26,11 @@
 
 using bout::globals::mesh;
 
-BraginskiiConduction::BraginskiiConduction(const std::string&, Options& alloptions,
+BraginskiiConduction::BraginskiiConduction(const std::string& name, Options& alloptions,
                                            Solver*)
-    : Component({readOnly("species:{sp}:{input_vars}"), readOnly("fields:Apar_flutter"),
-                 writeBoundary("species:{sp}:pressure"),
-                 readWrite("species:{sp}:{output_vars}")}) {
+    : NamedComponent(name, {readOnly("species:{sp}:{input_vars}"),
+                            readOnly("fields:Apar_flutter"),
+                            readWrite("species:{sp}:{output_vars}")}) {
 
   // Get settings for each species
   for (const auto& kv : alloptions.getChildren()) {
@@ -91,7 +91,7 @@ BraginskiiConduction::BraginskiiConduction(const std::string&, Options& alloptio
 
   std::vector<std::string> coll_types;
 
-  substitutePermissions("input_vars", {"AA", "density", "temperature"});
+  substitutePermissions("input_vars", {"AA", "density", "pressure", "temperature"});
   substitutePermissions("output_vars",
                         {"energy_source", "kappa_par", "energy_flow_ylow"});
   std::vector<std::string> species;
@@ -113,6 +113,8 @@ BraginskiiConduction::BraginskiiConduction(const std::string&, Options& alloptio
     }
   }
   substitutePermissions("sp", species);
+
+  conduction_method = alloptions["conduction_method"].withDefault(conduction_method);
 }
 
 void BraginskiiConduction::transform_impl(GuardedOptions& state) {
@@ -233,7 +235,10 @@ void BraginskiiConduction::transform_impl(GuardedOptions& state) {
     // EvolvePressure::finally
 
     Field3D P = GET_VALUE(Field3D, species["pressure"]);
-    P.clearParallelSlices();
+    // Only clear parallel slices when not Fci
+    if (!P.isFci()) {
+      P.clearParallelSlices();
+    }
     const Field3D Pfloor = floor(P, 0.0); // Restricted to never go below zero
     const Field3D T = get<Field3D>(species["temperature"]);
     const Field3D N = get<Field3D>(species["density"]);
@@ -273,18 +278,26 @@ void BraginskiiConduction::transform_impl(GuardedOptions& state) {
       mesh->communicate(kappa_par);
     }
 
-    for (RangeIterator r = mesh->iterateBndryLowerY(); !r.isDone(); r++) {
-      for (int jz = 0; jz < mesh->LocalNz; jz++) {
-        auto i = indexAt(kappa_par, r.ind, mesh->ystart, jz);
-        auto im = i.ym();
-        kappa_par[im] = kappa_par[i];
+    // Fci does not work with mesh->iterateBndryLowerY(), so set the boundaries differently
+    if (P.isFci()) {
+
+      mesh->communicate(kappa_par);
+      kappa_par.applyParallelBoundary("parallel_neumann_o1");
+
+    } else {
+      for (RangeIterator r = mesh->iterateBndryLowerY(); !r.isDone(); r++) {
+        for (int jz = 0; jz < mesh->LocalNz; jz++) {
+          auto i = indexAt(kappa_par, r.ind, mesh->ystart, jz);
+          auto im = i.ym();
+          kappa_par[im] = kappa_par[i];
+        }
       }
-    }
-    for (RangeIterator r = mesh->iterateBndryUpperY(); !r.isDone(); r++) {
-      for (int jz = 0; jz < mesh->LocalNz; jz++) {
-        auto i = indexAt(kappa_par, r.ind, mesh->yend, jz);
-        auto ip = i.yp();
-        kappa_par[ip] = kappa_par[i];
+      for (RangeIterator r = mesh->iterateBndryUpperY(); !r.isDone(); r++) {
+        for (int jz = 0; jz < mesh->LocalNz; jz++) {
+          auto i = indexAt(kappa_par, r.ind, mesh->yend, jz);
+          auto ip = i.yp();
+          kappa_par[ip] = kappa_par[i];
+        }
       }
     }
 
@@ -292,7 +305,8 @@ void BraginskiiConduction::transform_impl(GuardedOptions& state) {
     // is calculated and removed separately
     set(species["kappa_par"], kappa_par);
     add(species["energy_source"],
-        Div_par_K_Grad_par_mod(kappa_par, T, flow_ylow_conduction, false));
+        Div_par_K_Grad_par_mod(kappa_par, T, flow_ylow_conduction, false,
+                               conduction_method));
     add(species["energy_flow_ylow"], flow_ylow_conduction);
 
     if (state.isSection("fields") and state["fields"].isSet("Apar_flutter")) {
