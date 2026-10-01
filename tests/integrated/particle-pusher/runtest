@@ -30,7 +30,7 @@ def get_neutral_mass(vtkhdf_file_path):
     # assume that a single .vtkhdf file corresponds to a single time slice
     with h5py.File(vtkhdf_file_path, "r") as dataset:
         density_cellvalues = np.copy(dataset["/VTKHDF/CellData/density"][:])
-        # ion_density_cellvalues = np.copy(dataset[f"/VTKHDF/CellData/ion_density"][:])
+        # ion_density_cellvalues = np.copy(dataset[f"/VTKHDF/CellData/virtual_ion_density"][:])
         volumes = np.copy(dataset["/VTKHDF/CellData/cellvolume"][:])
         # get the masses from this time
         total_neutral_mass = integrate_cellvalue(density_cellvalues, volumes)
@@ -40,7 +40,7 @@ def get_neutral_mass(vtkhdf_file_path):
 # consider how to parallelise this when the test is run in parallel
 def get_ion_mass(ncfile_path):
     with nc.Dataset(ncfile_path, mode="r") as ncdataset:
-        ion_density = np.copy(ncdataset.variables["ion_density"][:])
+        ion_density = np.copy(ncdataset.variables["virtual_ion_density"][:])
         cellareas = np.copy(ncdataset.variables["neso_cell_areas"][:])
     ion_mass_0 = np.sum(ion_density[0, :, :] * cellareas[:, :])
     ion_mass_end = np.sum(ion_density[-1, :, :] * cellareas[:, :])

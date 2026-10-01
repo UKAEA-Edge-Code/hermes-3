@@ -516,7 +516,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
         neso_mesh, project_eval_dg0, mesh_coupler_dg0, bout_mesh, ndim);
 
     // vectors for storing an ion density on the kinetic mesh
-    ion_density_kmsh = std::vector<REAL>(
+    virtual_ion_density_kmsh = std::vector<REAL>(
         static_cast<size_t>(num_cells_owned_kinetic_mesh), background_ion_density);
     total_density =
         std::vector<REAL>(static_cast<size_t>(num_cells_owned_kinetic_mesh), 0.0);
@@ -528,6 +528,8 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
     electron_temperature = Field2D{background_electron_temperature, bout_mesh};
     ion_velocity = std::vector<Field2D>{Field2D{background_ion_Vx, bout_mesh},
                                         Field2D{background_ion_Vy, bout_mesh}};
+    // VANTAGE's ion inventory starts from the plasma ion density
+    virtual_ion_density = ion_density;
     // RNG kernel
     // Used for sampling from velocity distribution for REC/CX
     // ------------------------------------------------------------------------------
@@ -780,7 +782,8 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
       neso_mesh_cell_volumes_on_plasma_grid, A_particle_group, data_transfer,
       this->source_manager, N_w, AA, bout_mesh, units, vantage_dump_filepath);
   diagnostics_manager->update_kinetic_velocity_moments();
-  diagnostics_manager->write_kinetic_velocity_moment_diagnostics(0, ion_density_kmsh);
+  diagnostics_manager->write_kinetic_velocity_moment_diagnostics(
+      0, virtual_ion_density_kmsh);
   diagnostics_manager->transfer_moments_to_plasma_grid();
 
   this->source_manager->update_all_sources(dt);
@@ -797,12 +800,12 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
   //   total_density.at(ic) = neutral_density.at(ic) + ion_density_kmsh.at(ic);
   // }
   total_mass_initial = calculate_total_mass(neutral_density, neso_mesh);
-  total_mass_initial +=
-      calculate_total_mass(ion_density, this->neso_mesh_cell_volumes_on_plasma_grid);
+  total_mass_initial += calculate_total_mass(virtual_ion_density,
+                                             this->neso_mesh_cell_volumes_on_plasma_grid);
 
   // Initialise particle time
   particle_time = 0.0;
-  diagnostics_manager->write_bout_diagnostics(ion_density, particle_time);
+  diagnostics_manager->write_bout_diagnostics(virtual_ion_density, particle_time);
 
   // Register VANTAGE timestep scheduler.
   // https://bout-dev.readthedocs.io/en/latest/user_docs/time_integration.html#monitoring-the-simulation-output
@@ -941,19 +944,20 @@ int Vantage::advance_vantage(BoutReal UNUSED(time)) {
 
     // "Solve" density
     // Sources are in normalised m^-3 s^-1, so need to multiply by dt
-    ion_density += (Siz + Srec) * dt;
-    data_transfer->transfer_scalar_to_kinetic_mesh(ion_density, ion_density_kmsh);
+    virtual_ion_density += (Siz + Srec) * dt;
+    data_transfer->transfer_scalar_to_kinetic_mesh(virtual_ion_density,
+                                                   virtual_ion_density_kmsh);
     // for (size_t ic=0; ic < static_cast<size_t>(neso_mesh->get_cell_count());ic++){
     //   ion_density_kmsh.at(ic) += (Siz_kmsh.at(ic) + Srec_kmsh.at(ic)) * dt;
     // }
 
     diagnostics_manager->update_kinetic_velocity_moments();
-    diagnostics_manager->write_kinetic_velocity_moment_diagnostics(stepx + 1,
-                                                                   ion_density_kmsh);
+    diagnostics_manager->write_kinetic_velocity_moment_diagnostics(
+        stepx + 1, virtual_ion_density_kmsh);
     diagnostics_manager->transfer_moments_to_plasma_grid();
     // Write to VANTAGE dump files
     // data_transfer->transfer_scalar_to_plasma_grid(ion_density_kmsh, ion_density);
-    diagnostics_manager->write_bout_diagnostics(ion_density, particle_time);
+    diagnostics_manager->write_bout_diagnostics(virtual_ion_density, particle_time);
     // Write to particle_trajectories file
     h5part->write();
   }
@@ -965,8 +969,8 @@ int Vantage::advance_vantage(BoutReal UNUSED(time)) {
   // mass for conservation check
   neutral_density = diagnostics_manager->get_density_kinetic_mesh();
   REAL total_mass_final = calculate_total_mass(neutral_density, neso_mesh);
-  total_mass_final +=
-      calculate_total_mass(ion_density, this->neso_mesh_cell_volumes_on_plasma_grid);
+  total_mass_final += calculate_total_mass(virtual_ion_density,
+                                           this->neso_mesh_cell_volumes_on_plasma_grid);
   if (test_mass_conservation) {
     check_mass_conservation(total_mass_final, total_mass_initial);
   }

@@ -63,12 +63,15 @@ private:
   Mesh* bout_mesh; // Pointer to the BOUT++ mesh object
   // Diagnostic variables on the kinetic mesh, for testing
   std::vector<REAL> neutral_density, total_density;
-  std::vector<REAL> ion_density_kmsh;
+  std::vector<REAL> virtual_ion_density_kmsh;
   // Field2D for storing plasma data coming from the plasma grid, that will be evaluated
   // on to the kinetic mesh, and then on to the particles themselves.
   Field2D electron_density, electron_temperature;
   Field2D ion_density, ion_temperature;
   std::vector<Field2D> ion_velocity;
+  // VANTAGE's own ion inventory, updated by Siz + Srec. Used only for the
+  // mass conservation check and diagnostics, never sent to the particles.
+  Field2D virtual_ion_density;
   // a threshold density, for reactions between neutrals and the plasma
   REAL electron_density_threshold;
   BoutReal total_mass_initial, total_mass;
