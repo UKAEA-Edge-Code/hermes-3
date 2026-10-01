@@ -366,12 +366,11 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
                       two_way_coupling ? "enabled" : "disabled");
 
     const int ndim = 2;
-    dt = options["dt"]
-             .doc("Timestep to use for VANTAGE kinetic neutrals (normalised units)")
-             .withDefault(0.01);
     nsteps = options["nsteps"]
-                 .doc("Number of timesteps to use for VANTAGE kinetic neutrals")
+                 .doc("Number of VANTAGE steps per output timestep")
                  .withDefault(10);
+    // Set from the output timestep in each advance_vantage()
+    dt = 0.0;
     const int rng_samples = options["rng_samples"]
                                 .doc("Number of RNG samples to prepare per-particle")
                                 .withDefault(40);
@@ -785,7 +784,9 @@ void Vantage::apply_boundary_conditions(ParticleSubGroupSharedPtr aa) {
 
 // Initialisation/construction that needs the plasma from the state.
 // Executed during the first monitor call (iteration 0)
-void Vantage::initialise_from_plasma() {
+void Vantage::initialise_from_plasma(BoutReal time) {
+  previous_call_time = time;
+
   // update particle properties from the plasma
   update_particle_properties_from_plasma(data_transfer, A_particle_group, Ni, Ti,
                                          ion_velocity, Ne, Te);
@@ -820,14 +821,17 @@ int VantageMonitor::call(Solver* UNUSED(solver), BoutReal time, int iter,
 
   // At the 0th timestep (before the first timestep), finish the initialisation.
   if (iter == 0) {
-    vantage->initialise_from_plasma();
+    vantage->initialise_from_plasma(time);
     return 0;
   }
   return vantage->advance_vantage(time);
 }
 
 // Function called by the Monitor to advance kinetic neutrals for some number of VANTAGE timesteps
-int Vantage::advance_vantage(BoutReal UNUSED(time)) {
+int Vantage::advance_vantage(BoutReal time) {
+  // VANTAGE runs once per output, so its steps span the output timestep
+  dt = (time - previous_call_time) / nsteps;
+  previous_call_time = time;
 
   // Send plasma data to recombination markers
   update_particle_properties_from_plasma(data_transfer, marker_group, Ni, Ti,

@@ -46,10 +46,10 @@ struct Vantage : public NamedComponent<Vantage> {
   void outputVars(Options& state) override;
 
   // Function with the kinetic loop.
-  // time is the normalised VANTAGE monitor frequency.
+  // time is the simulation time of the monitor call.
   int advance_vantage(BoutReal time);
   // Initialisation that needs plasma data, called by the monitor at iteration 0.
-  void initialise_from_plasma();
+  void initialise_from_plasma(BoutReal time);
 
   static constexpr auto type = "vantage";
 
@@ -57,7 +57,7 @@ private:
   bool test_mass_conservation;
   bool diagnose_vantage;
   BoutReal N_w;
-  REAL dt;
+  REAL dt; // VANTAGE step = output timestep / nsteps
   BoutReal charge;
   BoutReal AA; // mass
   BoutReal initial_neutral_density;
@@ -89,6 +89,7 @@ private:
 
   // Physics
   BoutReal particle_time;
+  BoutReal previous_call_time; // Simulation time of the previous monitor call
   std::string neutral_species; // Neutral species to simulate with VANTAGE
   std::string ion_species;
   bool has_plasma;       // Whether to read plasma fields from the state (ion_species set)

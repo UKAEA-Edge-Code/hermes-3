@@ -15,7 +15,7 @@ def extended_kinetic_mesh_test_input(
 
     input_file_string = f"""
     nout = 1
-    timestep = 1
+    timestep = {dt * nsteps}
     MZ = 1  # Z grid size
 
     [mesh]
@@ -54,7 +54,6 @@ def extended_kinetic_mesh_test_input(
     temperature = 50  # [eV]
 
     [vantage]
-    dt = {dt}
     nsteps = {nsteps}
     ion_species = d+
     neutral_species = d
