@@ -48,6 +48,8 @@ struct Vantage : public NamedComponent<Vantage> {
   // Function with the kinetic loop.
   // time is the normalised VANTAGE monitor frequency.
   int advance_vantage(BoutReal time);
+  // Initialisation that needs plasma data, called by the monitor at iteration 0.
+  void initialise_from_plasma();
 
   static constexpr auto type = "vantage";
 
@@ -69,8 +71,8 @@ private:
   std::vector<REAL> virtual_ion_density_kmsh;
   // Field2D for storing plasma data coming from the plasma mesh, that will be evaluated
   // on to the kinetic mesh, and then on to the particles themselves.
-  Field2D electron_density, electron_temperature;
-  Field2D ion_density, ion_temperature;
+  Field2D Ne, Te;
+  Field2D Ni, Ti;
   std::vector<Field2D> ion_velocity;
   // VANTAGE's own ion inventory, updated by Siz + Srec. Used only for the
   // mass conservation check and diagnostics, never sent to the particles.

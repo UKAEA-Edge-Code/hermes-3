@@ -34,19 +34,23 @@ type = pvode
 components = (d+, e, vantage)
 Nnorm = 1e19
 
+# Density effectively fixed due to no sources.
+# Must be set to evolved, otherwise solver complains.
 [d+]
-type = evolve_density
+type = evolve_density, fixed_temperature
 AA = 1
 charge = 1
+temperature = 2  # [eV]
 
 [Nd+]
-function = 1
+function = 1e21 / hermes:Nnorm
 bndry_all = neumann
 
 [e]
-type = quasineutral
+type = quasineutral, fixed_temperature
 AA = 1/1836
 charge = -1
+temperature = 2  # [eV]
 
 [vantage]
 # Trying to get as close to equilibrium in only 3 steps.
@@ -67,8 +71,6 @@ test_mass_conservation = true
 
 npart_per_cell = 20
 
-background_ion_density = 1e21
-background_ion_temperature = 2
 background_ion_Vy = 0
 
 remove_threshold = 1e-10
