@@ -358,9 +358,9 @@ void VantageDiagnosticsManager::update_kinetic_velocity_moments() {
 
 // Function to save a VTKHDF file, writing the private member
 // velocity moments and the mesh in VTK compatible format
-// we pass in the ion_density here to enable testing of mass conservation
+// we pass in the virtual_ion_density here to enable testing of mass conservation
 void VantageDiagnosticsManager::write_kinetic_velocity_moment_diagnostics(
-    int istep, std::vector<REAL>& ion_density) {
+    int istep, std::vector<REAL>& virtual_ion_density) {
   // get the necessary inputs from the class
   const std::string vtkhdf_filename =
       fmt::format("{}.istep.{}.vtkhdf", this->vtkhdf_filename, istep);
@@ -391,7 +391,7 @@ void VantageDiagnosticsManager::write_kinetic_velocity_moment_diagnostics(
       cell_data.at(ic).insert(
           {"cellvolume", neso_mesh->dmh->get_cell_volume(static_cast<int>(ic))});
       // write the "ion density" for testing purposes only
-      cell_data.at(ic).insert({"ion_density", ion_density.at(ic)});
+      cell_data.at(ic).insert({"virtual_ion_density", virtual_ion_density.at(ic)});
     }
     // vector variables
     for (size_t ic = 0; ic < num_cells_owned_kinetic_mesh; ic++) {
@@ -435,7 +435,7 @@ void VantageDiagnosticsManager::transfer_moments_to_plasma_mesh() {
                                                       this->temperature_plasma_mesh);
 }
 
-void VantageDiagnosticsManager::write_bout_diagnostics(const Field2D& ion_density,
+void VantageDiagnosticsManager::write_bout_diagnostics(const Field2D& virtual_ion_density,
                                                        //  Field2D& Siz, Field2D& Srec,
                                                        BoutReal particle_time) {
   if (write_diagnostics) {
@@ -451,7 +451,7 @@ void VantageDiagnosticsManager::write_bout_diagnostics(const Field2D& ion_densit
     set_with_attrs(this->bout_output_data["neutral_density"], neutral_density,
                    {{"time_dimension", "t"}});
 
-    set_with_attrs(this->bout_output_data["ion_density"], ion_density,
+    set_with_attrs(this->bout_output_data["virtual_ion_density"], virtual_ion_density,
                    {{"time_dimension", "t"}});
 
     set_with_attrs(this->bout_output_data["Nn"], neutral_density,
