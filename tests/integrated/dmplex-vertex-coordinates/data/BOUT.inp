@@ -1,6 +1,6 @@
 nout = 1
 timestep = 1
-MZ = 1
+MZ = 1  # Needed to set nz=1 if reading mesh from file
 
 [mesh]
 file = example_usn.grd.nc
