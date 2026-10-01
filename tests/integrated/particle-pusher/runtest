@@ -76,7 +76,7 @@ def particle_push_input(
     input_file_string = f"""
 
     nout = 1
-    timestep = 1
+    timestep = {dt * nsteps}
     MZ = 1  # Z grid size
 
     [mesh]
@@ -130,7 +130,6 @@ def particle_push_input(
     temperature = 50  # [eV]
 
     [vantage]
-    dt = {dt}
     nsteps = {nsteps}
     ion_species = d+
     neutral_species = d

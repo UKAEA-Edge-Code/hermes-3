@@ -1,5 +1,5 @@
 nout = 1
-timestep = 1
+timestep = 2100
 MZ = 1  # Z grid size
 
 [mesh]
@@ -56,7 +56,6 @@ temperature = 2  # [eV]
 # Trying to get as close to equilibrium in only 3 steps.
 # This is not straightforward because the step can't be too big
 # so that it consumes all of the neutral particles in one go.
-dt = 700
 nsteps = 3
 
 ion_species = d+
