@@ -10,19 +10,21 @@ parser = argparse.ArgumentParser(
     description="Animate particles moving on a DMPlex mesh."
 )
 parser.add_argument(
-    "dmplex_h5_file_path",
-    type=str,
-    help="The path to the HDF5 file representing the DMPlex data",
-)
-parser.add_argument(
-    "particle_trajectory_h5_file_path",
-    type=str,
-    help="The path to the HDF5 file representing the particle data",
-)
-parser.add_argument(
     "BOUT_file_path",
     type=str,
-    help="The path to the BOUT.dmp.0.nc file associated with the particle data",
+    help="The path to the folder containing the BOUT.dmp.0.nc file associated with the particle data",
+)
+parser.add_argument(
+    "--dmplex_h5_file_path",
+    type=str,
+    help="The path relative to BOUT_file_path to the HDF5 file representing the DMPlex data",
+    default="hypnotoad_dmplex_mesh_output.h5",
+)
+parser.add_argument(
+    "--particle_trajectory_h5_file_path",
+    type=str,
+    help="The path relative to BOUT_file_path to the HDF5 file representing the particle data",
+    default="particle_trajectories.h5part",
 )
 parser.add_argument(
     "--equal-aspect",
@@ -77,7 +79,8 @@ def get_mesh_edges(dm):
 # normalisation for particle data
 meters = get_length_normalisation(args.BOUT_file_path)
 
-dm = load_dmplex(args.dmplex_h5_file_path)
+dmplex_h5_file_path = args.BOUT_file_path + "/" + args.dmplex_h5_file_path
+dm = load_dmplex(dmplex_h5_file_path)
 # dm = load_dmplex('dmplex/expected_nonorthogonal.grd.nc.mesh.h5')
 edges = get_mesh_edges(dm)
 
@@ -115,7 +118,10 @@ def update_plot(i, data, scat):
     return (scat,)
 
 
-particle_positions = load_particle_data(args.particle_trajectory_h5_file_path)
+particle_trajectory_h5_file_path = (
+    args.BOUT_file_path + "/" + args.particle_trajectory_h5_file_path
+)
+particle_positions = load_particle_data(particle_trajectory_h5_file_path)
 nstep = len(particle_positions)
 
 # plot an animation of the particles on the mesh
