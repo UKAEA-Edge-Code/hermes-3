@@ -532,6 +532,12 @@ if(HERMES_TESTS)
       WORKING_DIRECTORY tests/integrated/vantage-iz-rec-balance/
       COMMAND runtest)
     set_tests_properties(vantage-iz-rec-balance PROPERTIES LABELS integration)
+
+    add_test(
+      NAME examples-with-vantage
+      WORKING_DIRECTORY tests/integrated/examples/
+      COMMAND runtest --vantage)
+    set_tests_properties(examples-with-vantage PROPERTIES LABELS integration)
   endif()
 endif()
 

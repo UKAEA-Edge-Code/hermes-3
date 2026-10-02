@@ -15,11 +15,16 @@ JSON_DEFAULT = pathlib.Path("../../../json_database")
 NPROCS = {"tokamak-2D": 12, "tokamak-3D": 12}
 
 
+def requires_vantage(example_dir):
+    return "[vantage]" in pathlib.Path(example_dir / "BOUT.inp").read_text()
+
+
 def run_examples(
     examples_dir: pathlib.Path,
     hermes3_exe: pathlib.Path,
     json_database: pathlib.Path,
     quiet: bool,
+    vantage: bool,
 ):
     # Specify the number of processors needed by each category of test. If
     # not specified, assume 1.
@@ -39,6 +44,13 @@ def run_examples(
         json_link.symlink_to(json_database)
         for example in examples:
             example_dir = example.parent
+            # skip example if Vantage required but Vantage tests not requested
+            req_vantage = requires_vantage(example_dir)
+            if req_vantage and not vantage:
+                continue
+            # skip example if Vantage not required but Vantage requested
+            if not req_vantage and vantage:
+                continue
             print(f"Running {example_dir.relative_to(examples_dir)}...")
             s, out = launch(
                 f"{hermes3_exe} -d {example_dir} nout=1 timestep=1e-3 input:error_on_unused_options=true",
@@ -75,10 +87,12 @@ if __name__ == "__main__":
     parser.add_argument("--hermes-exe", default=HERMES_3_DEFAULT, type=pathlib.Path)
     parser.add_argument("--json-database", default=JSON_DEFAULT, type=pathlib.Path)
     parser.add_argument("-q", "--quiet", action="store_true")
+    parser.add_argument("--vantage", action="store_true")
     args = parser.parse_args()
     run_examples(
         args.example_dir.resolve(),
         args.hermes_exe.resolve(),
         args.json_database.resolve(),
         args.quiet,
+        args.vantage,
     )
