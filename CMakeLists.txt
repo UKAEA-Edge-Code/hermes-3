@@ -189,15 +189,24 @@ set(HERMES_SOURCES
     include/zero_current.hxx
     include/transform.hxx
     include/fixed_fraction_radiation.hxx
-    include/simple_pump.hxx
-)
+    include/simple_pump.hxx)
 
 if(HERMES_USE_VANTAGE)
   # include Hermes-VANTAGE include and source files
-  list(APPEND HERMES_SOURCES 
-    src/vantage_dmplex.cxx 
-    include/vantage_dmplex.hxx 
-    src/vantage.cxx 
+  list(
+    APPEND
+    HERMES_SOURCES
+    src/vantage_dmplex.cxx
+    include/vantage_dmplex.hxx
+    src/vantage_helperfunctions.cxx
+    include/vantage_helperfunctions.hxx
+    src/vantage_datatransfer.cxx
+    include/vantage_datatransfer.hxx
+    src/vantage_sources.cxx
+    include/vantage_sources.hxx
+    src/vantage_diagnostics.cxx
+    include/vantage_diagnostics.hxx
+    src/vantage.cxx
     include/vantage.hxx)
 endif()
 
@@ -406,11 +415,12 @@ if(HERMES_TESTS)
   option(HERMES_UNIT_TESTS "Build the unit tests" ON)
   option(SPACK_GTEST "Use spack-installed googletest for unit tests" ON)
 
-  # "gtest" and "GTest::gtest" are not the same, and the latter is preferred as being
-  # more complete. So, instead of just linking to "gtest", we will try to find the package
-  # using CMake if SPACK_GTEST is enabled. If not, then if gtest isn't already a target, then
-  # it will get it from the submodule. The GTest target is saved as its own variable
-  # so that it can be passed to both hermes_unit_tests.
+  # "gtest" and "GTest::gtest" are not the same, and the latter is preferred as
+  # being more complete. So, instead of just linking to "gtest", we will try to
+  # find the package using CMake if SPACK_GTEST is enabled. If not, then if
+  # gtest isn't already a target, then it will get it from the submodule. The
+  # GTest target is saved as its own variable so that it can be passed to both
+  # hermes_unit_tests.
   set(HERMES_GTEST_TARGET "")
   if(HERMES_UNIT_TESTS)
     if(SPACK_GTEST)

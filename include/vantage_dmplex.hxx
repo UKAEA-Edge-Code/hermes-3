@@ -1,4 +1,5 @@
 #pragma once
+#include <cstddef>
 #include <string>
 #ifndef VANTAGE_DMPLEX_H
 #define VANTAGE_DMPLEX_H
@@ -26,34 +27,63 @@ static_assert(false, "NESO-Particles was installed without PETSc support.");
 
 using namespace NESO::Particles;
 
-void collect_unique_points(std::vector<double>& global_Z_vertices_buffer,
-                           std::vector<double>& global_R_vertices_buffer, int& N_unique,
-                           const double& tolerance,
-                           std::vector<double>& global_Z_hypnotoad_vertices,
-                           std::vector<double>& global_R_hypnotoad_vertices);
+// data recording the global vertex coordinates for the DMPlex mesh
+struct VerticesData {
+  // global, flattened list of vertices coordinates in the mesh
+  std::vector<REAL> vertices;
+  // total number of vertices in the mesh
+  size_t nvertices_global;
+  // number of dimensions in the mesh
+  size_t ndim;
+};
 
-void RZ_to_ivertex_vector(Field2D& ivertex_corners,
-                          std::vector<double>& global_Z_vertices,
-                          std::vector<double>& global_R_vertices, const double& tolerance,
-                          Mesh*& bout_mesh, Field2D& Rxy_corners, Field2D& Zxy_corners);
+// data recording the definition of triangular DMPlex cells in the mesh
+struct TrianglesDefinitionData {
+  // flattened vector of integers defining the triangular cells in the mesh, with the indices defined by "vertices" above
+  std::vector<int> tri_cell_vertices;
+  // total number of triangular cells in the mesh
+  size_t ntriangles_global;
+  // number of corners in each cell in the mesh
+  size_t ncorners;
+};
 
-void load_vertex_information_from_netcdf(int& Nvertex,
-                                         std::vector<double>& global_vertex_R,
-                                         std::vector<double>& global_vertex_Z);
+// auxiliary information needed to create the
+// mesh coupler object and perform other initialisation steps
+// with the NESO-Particles kinetic mesh
+struct VantageBasicMeshData {
+  // map from R,Z (x,y) to the triangle "0" in a given BOUT++ cell
+  Field2D map_RZ_to_itriangle_0;
+  // map from R,Z (x,y) to the triangle "1" in a given BOUT++ cell
+  Field2D map_RZ_to_itriangle_1;
+  // vertex coordinates in the mesh
+  VerticesData vertices_data;
+  // data defining the triangular cells in the mesh
+  TrianglesDefinitionData cell_definition;
+};
 
-std::vector<PetscInt> cells_definition_from_RZ_ivertex(
-    std::vector<PetscInt>& cells, Mesh*& bout_mesh, Field2D& Rxy_lower_left_corners,
-    Field2D& Rxy_lower_right_corners, Field2D& Rxy_upper_right_corners,
-    Field2D& Rxy_upper_left_corners, Field2D& Zxy_lower_left_corners,
-    Field2D& Zxy_lower_right_corners, Field2D& Zxy_upper_right_corners,
-    Field2D& Zxy_upper_left_corners, Field2D& ivertex_lower_left_corners,
-    Field2D& ivertex_lower_right_corners, Field2D& ivertex_upper_right_corners,
-    Field2D& ivertex_upper_left_corners);
+VantageBasicMeshData cells_definition_from_RZ_ivertex(
+    Mesh*& bout_mesh, Field2D& Rxy_lower_left_corners, Field2D& Rxy_lower_right_corners,
+    Field2D& Rxy_upper_right_corners, Field2D& Rxy_upper_left_corners,
+    Field2D& Zxy_lower_left_corners, Field2D& Zxy_lower_right_corners,
+    Field2D& Zxy_upper_right_corners, Field2D& Zxy_upper_left_corners,
+    std::vector<double>& global_R_vertices, std::vector<double>& global_Z_vertices,
+    const BoutReal dmplex_vertex_tolerance);
 
-DM create_dmplex_from_Bout_mesh(Mesh* bout_mesh, Options& mesh_options,
-                                std::shared_ptr<SYCLTarget> sycl_target,
-                                std::string dmplex_h5_filename);
+VantageBasicMeshData create_dmplex_from_Bout_mesh(DM& dm, Mesh* bout_mesh,
+                                                  Options& mesh_options);
 
-#endif 
+VantageBasicMeshData create_dmplex_from_GMSH_msh(DM& dm, Mesh* bout_mesh,
+                                                 std::string msh_file);
+
+void write_dmplex_to_file(DM dm, std::string dmplex_name, std::string dmplex_h5_filename);
+
+BoutReal get_triangle_area(size_t itriangle, const std::vector<double>& vertices,
+                           const std::vector<int>& tri_cell_vertices);
+
+VerticesData get_triangle_vertices();
+
+TrianglesDefinitionData get_triangle_cell_definition();
+
+#endif
 
 #endif // VANTAGE_DMPLEX_H
