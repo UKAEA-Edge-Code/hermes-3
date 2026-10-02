@@ -36,6 +36,7 @@ env:
 
 jobs:
   benchmark:
+    if: github.repository == 'boutproject/hermes-3'
     runs-on: ubuntu-latest
     env:
       OMP_NUM_THREADS: 1
