@@ -1,6 +1,5 @@
 import h5py
 import numpy as np
-import matplotlib
 from matplotlib import pyplot as plt
 from matplotlib.animation import FuncAnimation
 from petsc4py import PETSc
@@ -46,6 +45,7 @@ def get_length_normalisation(BOUT_file_path):
     ds = xhermes.open(BOUT_file_path)
     return ds.attrs["metadata"]["rho_s0"]
 
+
 def load_dmplex(file_path):
     dm = PETSc.DMPlex().create()
     viewer = PETSc.Viewer().createHDF5(file_path, "r")
@@ -72,6 +72,7 @@ def get_mesh_edges(dm):
             x1 = coords[section.getOffset(v1) : section.getOffset(v1) + dim]
             edges.append((x0, x1))
     return edges
+
 
 # normalisation for particle data
 meters = get_length_normalisation(args.BOUT_file_path)
@@ -100,7 +101,7 @@ def load_particle_data(file_path):
             pdata = np.zeros((nparticles, 2))
             pdata[:, 0] = P_0
             pdata[:, 1] = P_1
-            particle_positions.append(np.multiply(pdata,meters))
+            particle_positions.append(np.multiply(pdata, meters))
         except KeyError as error:
             print(f"No particles at time step {it}: {error}")
             # assign empty particle data
@@ -130,9 +131,9 @@ ax.set_title("Particle Positions")
 ax.set_xlabel("R")
 ax.set_ylabel("Z")
 if args.equal_aspect:
-    ax.set_aspect("equal",adjustable="box")
+    ax.set_aspect("equal", adjustable="box")
 if args.set_xlim_zero:
-    ax.set_xlim(0.0,None)
+    ax.set_xlim(0.0, None)
 
 
 def update(frame):
