@@ -668,8 +668,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
 
     auto rec_data_calc_sampler =
         FilteredMaxwellianSampler<2, decltype(constant_rate_cross_section)>(
-            1 / (rec_marker_species.get_mass() * eV), constant_rate_cross_section,
-            rng_kernel);
+            1 / rec_marker_species.get_mass(), constant_rate_cross_section, rng_kernel);
 
     // Set neutrals to be products of recombination
     const int out_state = static_cast<int>(main_species.get_id());
