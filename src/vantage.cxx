@@ -152,8 +152,7 @@ ParticleSubGroupSharedPtr create_particle_sub_group_in_plasma_volume(
 }
 
 Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
-    : NamedComponent(name, {readOnly("species:d+:density", Regions::Interior),
-                            readWrite("species:d+:density")}) {
+    : NamedComponent(name, {}) {
 
   //Get BOUT++ mesh and comm, throw if mesh not 2D
   bout_mesh = bout::globals::mesh;
@@ -165,8 +164,6 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
         "GlobalNz = {}. Set MZ = 1 on the top of the input file (root level).",
         bout_mesh->GlobalNz);
   }
-
-  // TODO: Put proper permissions in
 
   // int main(int argc, char** argv) {
   // initialise_mpi(&argc, &argv);
@@ -371,6 +368,10 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
                  .withDefault(10);
     // Set from the output timestep in each advance_vantage()
     dt = 0.0;
+    if (two_way_coupling) {
+      setPermissions(readWrite("species:{ion}:density_source"));
+      substitutePermissions("ion", {ion_species});
+    }
     const int rng_samples = options["rng_samples"]
                                 .doc("Number of RNG samples to prepare per-particle")
                                 .withDefault(40);
@@ -512,6 +513,8 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
                                         Field2D{background_ion_Vy, bout_mesh}};
     // Emulated ion density for runtime mass conservation check between Siz and Srec
     virtual_ion_density = Field2D{0.0, bout_mesh};
+    // Total density source averaged over VANTAGE call
+    Svantage = Field2D{0.0, bout_mesh};
     // RNG kernel
     // Used for sampling from velocity distribution for REC/CX
     // ------------------------------------------------------------------------------
@@ -910,6 +913,7 @@ int Vantage::advance_vantage(BoutReal time) {
 
   // begin timestepping
   output << "\nBegin VANTAGE iterations \n";
+  Svantage = 0.0;
   for (int stepx = 0; stepx < nsteps; stepx++) {
 
     output << "Particle time: " << std::to_string(particle_time) << std::endl;
@@ -937,6 +941,8 @@ int Vantage::advance_vantage(BoutReal time) {
     // "Solve" density
     // Sources are in normalised m^-3 s^-1, so need to multiply by dt
     virtual_ion_density += (Siz + Srec) * dt;
+    // Mean ion density source over the advance
+    Svantage += (Siz + Srec) / nsteps;
     data_transfer->transfer_scalar_to_kinetic_mesh(virtual_ion_density,
                                                    virtual_ion_density_kmsh);
     // for (size_t ic=0; ic < static_cast<size_t>(neso_mesh->get_cell_count());ic++){
@@ -972,7 +978,11 @@ int Vantage::advance_vantage(BoutReal time) {
   return 0;
 }
 
-void Vantage::transform_impl(GuardedOptions& UNUSED(state)) {}
+void Vantage::transform_impl(GuardedOptions& state) {
+  if (two_way_coupling) {
+    add(state["species"][ion_species]["density_source"], Field3D(Svantage));
+  }
+}
 
 void Vantage::finally(const Options& state) {
 

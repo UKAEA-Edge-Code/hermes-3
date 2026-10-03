@@ -77,6 +77,8 @@ private:
   // VANTAGE's own ion inventory, updated by Siz + Srec. Used only for the
   // mass conservation check and diagnostics, never sent to the particles.
   Field2D virtual_ion_density;
+  // Total density source averaged over VANTAGE call
+  Field2D Svantage;
   // a threshold density, for reactions between neutrals and the plasma
   REAL electron_density_threshold;
   BoutReal total_mass_initial, total_mass;
