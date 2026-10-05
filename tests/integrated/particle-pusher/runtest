@@ -11,7 +11,6 @@ import netCDF4 as nc
 from extended_kinetic_mesh_tools import (
     extended_kinetic_mesh_test_input,
     generate_BOUT_grid_data,
-    kinetic_mesh_path,
 )
 
 verbose = False
@@ -316,7 +315,6 @@ def test_particle_push_extended_kinetic_mesh(
     simdir,
     mode,
     bout_grid_file,
-    msh_file,
     nsteps=10,
     remove_threshold=0.0,
     merge_threshold=0.0,
@@ -325,7 +323,6 @@ def test_particle_push_extended_kinetic_mesh(
 ):
     input_file_string = extended_kinetic_mesh_test_input(
         bout_grid_file,
-        msh_file,
         0.005,
         nsteps,
         iz_rate,
@@ -409,8 +406,6 @@ base_grid_dir = "basic_slab"
 # path of modified .nc file with extra kinetic mesh data
 kinetic_nc_file_path = f"{base_grid_dir}/BOUT.dmp.vantage.0.with_kinetic_mesh.nc"
 generate_BOUT_grid_data(base_grid_dir, kinetic_nc_file_path, verbose=verbose)
-# path to the pre-computed GMSH .msh file for the kinetic mesh
-kinetic_mesh_file_path = kinetic_mesh_path()
 # use the generated files to run the test
 simdir = "particle-push-extended-kinetic-mesh-slab-test"
 shell(f"mkdir {simdir}")
@@ -418,7 +413,6 @@ test_particle_push_extended_kinetic_mesh(
     simdir,
     "advection",
     kinetic_nc_file_path,
-    kinetic_mesh_file_path,
     nsteps=3,
     remove_threshold=1.0e-10,
     merge_threshold=0,
@@ -432,7 +426,6 @@ test_particle_push_extended_kinetic_mesh(
     simdir,
     "ionisation",
     kinetic_nc_file_path,
-    kinetic_mesh_file_path,
     nsteps=3,
     remove_threshold=1.0e-10,
     merge_threshold=0,
@@ -446,7 +439,6 @@ test_particle_push_extended_kinetic_mesh(
     simdir,
     "recombination",
     kinetic_nc_file_path,
-    kinetic_mesh_file_path,
     nsteps=3,
     remove_threshold=1.0e-10,
     merge_threshold=0,

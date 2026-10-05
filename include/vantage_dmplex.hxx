@@ -69,13 +69,15 @@ VantageBasicMeshData cells_definition_from_RZ_ivertex(
     std::vector<double>& global_R_vertices, std::vector<double>& global_Z_vertices,
     const BoutReal dmplex_vertex_tolerance);
 
-VantageBasicMeshData create_dmplex_from_Bout_mesh(DM& dm, Mesh* bout_mesh,
-                                                  Options& mesh_options);
+VantageBasicMeshData kinetic_mesh_data_from_Bout_mesh(Mesh* bout_mesh,
+                                                      Options& mesh_options);
 
-VantageBasicMeshData create_dmplex_from_GMSH_msh(DM& dm, Mesh* bout_mesh,
-                                                 std::string msh_file);
+VantageBasicMeshData kinetic_mesh_data_from_netcdf(Mesh* bout_mesh);
 
-void write_dmplex_to_file(DM dm, std::string dmplex_name, std::string dmplex_h5_filename);
+void create_dmplex_in_serial(VantageBasicMeshData& basic_mesh_data, DM& dm);
+
+void write_dmplex_to_file(DM& dm, const std::string& dmplex_name,
+                          const std::string& dmplex_h5_filename);
 
 BoutReal get_triangle_area(size_t itriangle, const std::vector<double>& vertices,
                            const std::vector<int>& tri_cell_vertices);

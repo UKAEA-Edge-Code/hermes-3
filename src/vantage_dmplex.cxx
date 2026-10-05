@@ -228,8 +228,8 @@ VantageBasicMeshData cells_definition_from_RZ_ivertex(
                               ntri_vertices}};
 }
 
-void write_dmplex_to_file(DM dm, std::string dmplex_name,
-                          std::string dmplex_h5_filename) {
+void write_dmplex_to_file(DM& dm, const std::string& dmplex_name,
+                          const std::string& dmplex_h5_filename) {
   // save a HDF5 file containing the DM for diagnostics
   PetscViewer viewer;
   // Set a name for the DMPlex object (important for HDF5)
@@ -246,10 +246,7 @@ void write_dmplex_to_file(DM dm, std::string dmplex_name,
   output << "Finished DMPlex diagnostic \n";
 }
 
-VantageBasicMeshData create_dmplex_from_GMSH_msh(DM& dm, Mesh* bout_mesh,
-                                                 std::string msh_file) {
-  PETSCCHK(DMPlexCreateGmshFromFile(BoutComm::get(), msh_file.c_str(),
-                                    static_cast<PetscBool>(1), &dm));
+VantageBasicMeshData kinetic_mesh_data_from_netcdf(Mesh* bout_mesh) {
   Field2D map_RZ_to_itriangle_0;
   Field2D map_RZ_to_itriangle_1;
   const int read_status_itri0 =
@@ -265,8 +262,8 @@ VantageBasicMeshData create_dmplex_from_GMSH_msh(DM& dm, Mesh* bout_mesh,
                               cell_definition};
 }
 
-VantageBasicMeshData create_dmplex_from_Bout_mesh(DM& dm, Mesh* bout_mesh,
-                                                  Options& mesh_options) {
+VantageBasicMeshData kinetic_mesh_data_from_Bout_mesh(Mesh* bout_mesh,
+                                                      Options& mesh_options) {
 
   // DMPlex vertex distance tolerance for duplicate Hypnotoad vertices
   const BoutReal dmplex_vertex_tolerance =
@@ -429,11 +426,14 @@ VantageBasicMeshData create_dmplex_from_Bout_mesh(DM& dm, Mesh* bout_mesh,
     std::cout << "N_unique=" << N_unique << std::endl;
   }
 
-  const VantageBasicMeshData basic_mesh_data = cells_definition_from_RZ_ivertex(
+  return cells_definition_from_RZ_ivertex(
       bout_mesh, Rxy_lower_left_corners, Rxy_lower_right_corners, Rxy_upper_right_corners,
       Rxy_upper_left_corners, Zxy_lower_left_corners, Zxy_lower_right_corners,
       Zxy_upper_right_corners, Zxy_upper_left_corners, global_R_vertices,
       global_Z_vertices, dmplex_vertex_tolerance);
+}
+
+void create_dmplex_in_serial(VantageBasicMeshData& basic_mesh_data, DM& dm) {
   // First we setup the integers for the topology of the mesh (using data in serial only).
   const PetscInt num_cells_owned =
       static_cast<PetscInt>(basic_mesh_data.cell_definition.ntriangles_global);
@@ -448,7 +448,6 @@ VantageBasicMeshData create_dmplex_from_Bout_mesh(DM& dm, Mesh* bout_mesh,
   PETSCCHK(DMPlexCreateFromCellListPetsc(BoutComm::get(), ndim, num_cells_owned,
                                          num_vertices_owned, ncorners, PETSC_TRUE,
                                          cells.data(), ndim, vertex_coords.data(), &dm));
-  return basic_mesh_data;
 }
 
 VerticesData get_triangle_vertices() {

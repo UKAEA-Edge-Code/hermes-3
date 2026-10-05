@@ -3,13 +3,8 @@ from netCDF4 import Dataset
 import numpy as np
 
 
-def kinetic_mesh_path():
-    return "extended_kinetic_mesh_data/BOUT.dmp.vantage.0.kinetic.msh"
-
-
 def extended_kinetic_mesh_test_input(
     bout_grid_file,
-    msh_file,
     dt,
     nsteps,
     iz_rate,
@@ -31,7 +26,6 @@ def extended_kinetic_mesh_test_input(
     test_dmplex_cell_volumes = true
     test_dmplex_cell_centres = true
     use_external_msh = true
-    msh_file = "{msh_file}"
 
     [solver]
     type = pvode

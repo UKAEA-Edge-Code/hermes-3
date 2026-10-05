@@ -169,13 +169,14 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
 
   // keep dmplex_h5_filename in vantage.cxx to retain access to make_output_path()
   // which should presumably not need to exist within the hermes-3 library
-  std::string dmplex_name = mesh_options["dmplex_name"]
-                                .doc("DMPlex object name.")
-                                .withDefault("hypnotoad_dmplex_mesh");
-  std::string dmplex_h5_filename = mesh_options["dmplex_h5_filename"]
-                                       .doc("Filename to use for saving the DMPlex mesh")
-                                       .withDefault("hypnotoad_dmplex_mesh_output.h5");
-  bool use_external_msh =
+  const std::string dmplex_name = mesh_options["dmplex_name"]
+                                      .doc("DMPlex object name.")
+                                      .withDefault("hypnotoad_dmplex_mesh");
+  const std::string dmplex_h5_filename =
+      mesh_options["dmplex_h5_filename"]
+          .doc("Filename to use for saving the DMPlex mesh")
+          .withDefault("hypnotoad_dmplex_mesh_output.h5");
+  const bool use_external_msh =
       mesh_options["use_external_msh"]
           .doc("Use an externally generated .msh file for the kinetic mesh. "
                "Not default and recommendation is false.")
@@ -186,14 +187,12 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
   // create a DMPlex in serial, either from an externally supplied
   // GMSH file and associated data, or directly from the BOUT++ mesh
   if (use_external_msh) {
-    std::string msh_file =
-        mesh_options["msh_file"]
-            .doc("Path to an externally generated .msh file for the kinetic mesh. ")
-            .withDefault("kinetic.msh");
-    basic_mesh_data = create_dmplex_from_GMSH_msh(dm, bout_mesh, msh_file);
+    basic_mesh_data = kinetic_mesh_data_from_netcdf(bout_mesh);
   } else {
-    basic_mesh_data = create_dmplex_from_Bout_mesh(dm, bout_mesh, mesh_options);
+    basic_mesh_data = kinetic_mesh_data_from_Bout_mesh(bout_mesh, mesh_options);
   }
+  // create the DMPlex in serial
+  create_dmplex_in_serial(basic_mesh_data, dm);
   // distribute DMPlex across cores
   PetscSF
       sf_kinetic_mesh; // Petsc variable that records map of vertices from original vector to distributed vector indices
