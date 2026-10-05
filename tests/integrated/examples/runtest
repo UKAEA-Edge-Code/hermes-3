@@ -38,10 +38,6 @@ def run_examples(
         print(f"\033[1mRunning tests in category '{category_name}'.\033[0m")
         print(f"Working directory: {category}")
         os.chdir(category)
-        json_link = category / "json_database"
-        if json_link.exists() or json_link.is_symlink():
-            json_link.unlink()
-        json_link.symlink_to(json_database)
         for example in examples:
             example_dir = example.parent
             # skip example if Vantage required but Vantage tests not requested
@@ -51,6 +47,19 @@ def run_examples(
             # skip example if Vantage not required but Vantage requested
             if not req_vantage and vantage:
                 continue
+            # if we need to run this example, create a symlink to the "json_database"
+            # this logic works only because [vantage] is only used in all examples of a single category
+            # multiple calls to this line result in symlink linking/unlinking errors if
+            # two scripts run different examples from the same category synchronously
+            # this would occur if
+            # $ ./runtest --vantage
+            # and
+            # $ ./runtest
+            # were executed synchronously by
+            # $ ctest -j N with N > 1
+            # the solution should be to have a different path to the `json_database` for each example
+            json_link = category / "json_database"
+            json_link.symlink_to(json_database)
             print(f"Running {example_dir.relative_to(examples_dir)}...")
             s, out = launch(
                 f"{hermes3_exe} -d {example_dir} nout=1 timestep=1e-3 input:error_on_unused_options=true",
@@ -65,7 +74,8 @@ def run_examples(
                 if not quiet:
                     print(out)
                 failed_tests.append(example_dir)
-        json_link.unlink()
+            # unlink the symlink after running the example
+            json_link.unlink()
         print()
 
     print("-" * 80, end="\n\n")
