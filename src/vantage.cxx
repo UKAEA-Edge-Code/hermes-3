@@ -122,8 +122,8 @@ ParticleSubGroupSharedPtr create_particle_sub_group_in_plasma_volume(
 }
 
 Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
-    : Component({readOnly("species:d+:density", Regions::Interior),
-                 readWrite("species:d+:density")}) {
+    : NamedComponent(name, {readOnly("species:d+:density", Regions::Interior),
+                            readWrite("species:d+:density")}) {
 
   // TODO: Put proper permissions in
 
@@ -160,9 +160,12 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
                "at which the reactions between neutrals and charged plasma species are "
                "applied.")
           .withDefault<BoutReal>(1.0e-12);
+  diagnose_vantage = options["diagnose_vantage"]
+                         .doc("Write vantage diagnostics to file.")
+                         .withDefault<bool>(true);
 
-  Options::root()["units"]["N_w"] = N_w;
-  Options::root()["units"]["N_w"].setConditionallyUsed();
+  alloptions["units"]["N_w"] = N_w;
+  alloptions["units"]["N_w"].setConditionallyUsed();
 
   bout_mesh = bout::globals::mesh;
   sycl_target = std::make_shared<SYCLTarget>(0, BoutComm::get());
@@ -205,7 +208,9 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
   PetscInterface::label_all_dmplex_boundaries(dm, PetscInterface::face_sets_label, 100);
   // diagnose the DMPlex by writing to file
   dmplex_filepath = make_output_path(dmplex_h5_filename, alloptions);
-  write_dmplex_to_file(dm, dmplex_name, dmplex_filepath);
+  if (diagnose_vantage) {
+    write_dmplex_to_file(dm, dmplex_name, dmplex_filepath);
+  }
   // Create paths for other diagnostics
   mpi_rank = sycl_target->comm_pair.rank_parent;
   vantage_dump_filepath =
@@ -743,7 +748,8 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
   diagnostics_manager = std::make_unique<VantageDiagnosticsManager>(
       make_output_path("BOUT.dmp.vantage.particle.moments", alloptions), neso_mesh,
       neso_mesh_cell_volumes_on_plasma_mesh, A_particle_group, data_transfer,
-      this->source_manager, N_w, AA, bout_mesh, units, vantage_dump_filepath);
+      this->source_manager, N_w, AA, bout_mesh, units, vantage_dump_filepath,
+      diagnose_vantage);
   diagnostics_manager->update_kinetic_velocity_moments();
   diagnostics_manager->write_kinetic_velocity_moment_diagnostics(0, ion_density_kmsh);
   diagnostics_manager->transfer_moments_to_plasma_mesh();
@@ -752,10 +758,11 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
   // Object for particle_trajectories.h5part file.
   // Close it straight away to ensure that it's closed in event of a crash.
   // h5part->write re-opens it when needed.
-  h5part = std::make_shared<H5Part>(particle_data_filepath, A_particle_group,
-                                    Sym<REAL>("POSITION"), Sym<REAL>("VELOCITY"));
-  h5part->close();
-
+  if (diagnose_vantage) {
+    h5part = std::make_shared<H5Part>(particle_data_filepath, A_particle_group,
+                                      Sym<REAL>("POSITION"), Sym<REAL>("VELOCITY"));
+    h5part->close();
+  }
   // mass for conservation check
   neutral_density = diagnostics_manager->get_density_kinetic_mesh();
   // for (size_t ic=0; ic< static_cast<size_t>(neso_mesh->get_cell_count());ic++){
@@ -910,13 +917,16 @@ int Vantage::advance_vantage(BoutReal UNUSED(time)) {
     // data_transfer->transfer_scalar_to_plasma_mesh(ion_density_kmsh, ion_density);
     diagnostics_manager->write_bout_diagnostics(ion_density, particle_time);
     // Write to particle_trajectories file
-    h5part->write();
+    if (diagnose_vantage) {
+      h5part->write();
+    }
   }
   // Warning: if h5part gets destroyed while open due to crash, you will get a NESO_ASSERT
   // warning which will mask the actual backtrace. In this event
   // you could move this into the loop, but it will have an IO cost.
-  h5part->close();
-
+  if (diagnose_vantage) {
+    h5part->close();
+  }
   // mass for conservation check
   neutral_density = diagnostics_manager->get_density_kinetic_mesh();
   REAL total_mass_final = calculate_total_mass(neutral_density, neso_mesh);

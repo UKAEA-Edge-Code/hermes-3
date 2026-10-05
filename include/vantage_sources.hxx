@@ -87,6 +87,8 @@ public:
   // Return data for a given Hermes-3 source name on the kinetic mesh
   std::vector<REAL> get_kinetic_mesh_data(const std::string& hermes_source_name);
 
+  ~VantageSourceManager(); // Destructor for VantageSourceManager related cleanup
+
 private:
   std::map<std::string, VantageSource> sources;
   std::shared_ptr<PetscInterface::DMPlexInterface> neso_mesh;

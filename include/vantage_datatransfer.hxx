@@ -49,6 +49,8 @@ public:
   void transfer_vector_to_kinetic_mesh(std::vector<Field2D>& vector_plasma_mesh,
                                        std::vector<REAL>& vector_kinetic_mesh);
 
+  ~VantageDataTransfer(); // free NESO-Particles objects
+
 private:
   // internal variables needed for data transfer
   std::shared_ptr<PetscInterface::DMPlexInterface> neso_mesh;

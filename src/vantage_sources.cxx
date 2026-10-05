@@ -22,6 +22,11 @@ VantageSourceManager::VantageSourceManager(
     : bout_mesh(bout_mesh), neso_mesh(neso_mesh), data_transfer(data_transfer),
       units(units) {}
 
+// Destructor to handle VANTAGE related cleanup
+VantageSourceManager::~VantageSourceManager() {
+  neso_mesh->free(); // DMPlex interface
+}
+
 // Register new source with the manager and initialise its data
 void VantageSourceManager::add_source(
     const std::string& hermes_source_name, const std::string& vantage_source_name,

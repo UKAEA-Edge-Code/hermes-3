@@ -26,7 +26,8 @@ public:
                             std::shared_ptr<VantageDataTransfer>& data_transfer,
                             std::shared_ptr<VantageSourceManager>& source_manager,
                             BoutReal N_w, BoutReal mass, Mesh* bout_mesh, Options& units,
-                            std::string vantage_dump_filepath);
+                            std::string vantage_dump_filepath,
+                            bool write_diagnostics);
 
   // compute the kinetic velocity moments and
   // store in private variables
@@ -37,8 +38,10 @@ public:
   // transfer kinetic moments to BOUT++ mesh
   void transfer_moments_to_plasma_mesh();
   // write BOUT++ style diagnostics on the BOUT++ mesh
-  void write_bout_diagnostics(Field2D& ion_density, BoutReal particle_time);
+  void write_bout_diagnostics(const Field2D& ion_density, BoutReal particle_time);
   std::vector<REAL> get_density_kinetic_mesh();
+
+  ~VantageDiagnosticsManager(); // free NESO-Particles objects
 
 private:
   // internal variables needed for diagnostics
@@ -58,7 +61,7 @@ private:
   Options bout_output_data; // Options object to hold output data for VANTAGE diagnostics
   std::unique_ptr<bout::OptionsIO>
       vantage_dump_writer; // OptionsIO object to write VANTAGE diagnostics
-
+  bool write_diagnostics; // if true, write diagnostics to file
   // variables used to store the moments of
   // the neutral distribution function, on
   // the kinetic mesh

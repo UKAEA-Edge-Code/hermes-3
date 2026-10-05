@@ -226,11 +226,13 @@ VantageDiagnosticsManager::VantageDiagnosticsManager(
     std::shared_ptr<ParticleGroup>& A_particle_group,
     std::shared_ptr<VantageDataTransfer>& data_transfer,
     std::shared_ptr<VantageSourceManager>& source_manager, BoutReal N_w, BoutReal mass,
-    Mesh* bout_mesh, Options& units, std::string vantage_dump_filepath)
+    Mesh* bout_mesh, Options& units, std::string vantage_dump_filepath,
+    bool write_diagnostics)
     : vtkhdf_filename(vtkhdf_filename), neso_mesh(neso_mesh),
       A_particle_group(A_particle_group), data_transfer(data_transfer),
       source_manager(source_manager), N_w(N_w), mass(mass), bout_mesh(bout_mesh),
-      units(units), vantage_dump_filepath(vantage_dump_filepath) {
+      units(units), vantage_dump_filepath(vantage_dump_filepath),
+      write_diagnostics(write_diagnostics) {
   // initialise vectors for storing the moments on the kinetic mesh
   const size_t ndimv = this->ndimv;
   const std::size_t num_cells_owned_kinetic_mesh =
@@ -241,12 +243,14 @@ VantageDiagnosticsManager::VantageDiagnosticsManager(
   uvector = std::vector<REAL>(ndimv * num_cells_owned_kinetic_mesh);
   pressure = std::vector<REAL>(num_cells_owned_kinetic_mesh);
   temperature = std::vector<REAL>(num_cells_owned_kinetic_mesh);
-  // initialise BOUT++ diagnostic on BOUT++ mesh
-  // Object for VANTAGE dump files
-  vantage_dump_writer =
-      bout::OptionsIO::create({{"file", vantage_dump_filepath}, {"append", true}});
-  bout_output_data = initialise_plasma_mesh_diagnostics(
-      units, bout_mesh, neso_cell_volumes, vantage_dump_filepath);
+  if (write_diagnostics) {
+    // initialise BOUT++ diagnostic on BOUT++ mesh
+    // Object for VANTAGE dump files
+    vantage_dump_writer =
+        bout::OptionsIO::create({{"file", vantage_dump_filepath}, {"append", true}});
+    bout_output_data = initialise_plasma_mesh_diagnostics(
+        units, bout_mesh, neso_cell_volumes, vantage_dump_filepath);
+  }
   // initialise plasma mesh variables
   density_plasma_mesh = Field2D(0.0, bout_mesh);
   energy_plasma_mesh = Field2D(0.0, bout_mesh);
@@ -358,62 +362,63 @@ void VantageDiagnosticsManager::write_kinetic_velocity_moment_diagnostics(
   // get the necessary inputs from the class
   const std::string vtkhdf_filename =
       fmt::format("{}.istep.{}.vtkhdf", this->vtkhdf_filename, istep);
-  std::shared_ptr<PetscInterface::DMPlexInterface> neso_mesh = this->neso_mesh;
-
-  // write the data
-  VTK::VTKHDF vtk_writer(vtkhdf_filename, neso_mesh->get_comm());
-  const std::size_t num_cells_owned_kinetic_mesh =
-      static_cast<size_t>(neso_mesh->get_cell_count());
-  // vectors to hold the diagnosed moments
-  std::vector<REAL> density = this->density;
-  std::vector<REAL> energy = this->energy;
-  std::vector<REAL> particle_flux = this->particle_flux;
-  std::vector<REAL> uvector = this->uvector;
-  std::vector<REAL> pressure = this->pressure;
-  std::vector<REAL> temperature = this->temperature;
-  // mesh data only CellData not yet filled on each cell
-  std::vector<VTK::UnstructuredCell> dvtk0 = neso_mesh->dmh->get_vtk_cell_data();
-  std::vector<std::map<std::string, double>> cell_data(num_cells_owned_kinetic_mesh);
-  // scalar variables
-  for (size_t ic = 0; ic < num_cells_owned_kinetic_mesh; ic++) {
-    // insert map entries at this ic
-    cell_data.at(ic).insert({"density", density.at(ic)});
-    cell_data.at(ic).insert({"energy", energy.at(ic)});
-    cell_data.at(ic).insert({"pressure", pressure.at(ic)});
-    cell_data.at(ic).insert({"temperature", temperature.at(ic)});
-    // write cell volume for convenience in later post-processing analysis
-    cell_data.at(ic).insert(
-        {"cellvolume", neso_mesh->dmh->get_cell_volume(static_cast<int>(ic))});
-    // write the "ion density" for testing purposes only
-    cell_data.at(ic).insert({"ion_density", ion_density.at(ic)});
-  }
-  // vector variables
-  for (size_t ic = 0; ic < num_cells_owned_kinetic_mesh; ic++) {
-    for (size_t dim = 0; dim < ndimv; dim++) {
-      const size_t jc =
-          ic * ndimv + dim; // compound index covering all cells and dimensions
-      // insert a map entry at this ic
-      cell_data.at(ic).insert(
-          {fmt::format("particle_flux_{}", dim), particle_flux.at(jc)});
-      cell_data.at(ic).insert({fmt::format("uvector_{}", dim), uvector.at(jc)});
-    }
-  }
-  // source variables (stored as scalars -> vector sources would require a refactor)
-  const std::vector<std::string> source_names = this->source_manager->get_source_names();
-  for (size_t is = 0; is < source_names.size(); is++) {
-    const std::vector<REAL> source_kinetic_mesh =
-        this->source_manager->get_kinetic_mesh_data(source_names.at(is));
+  const std::shared_ptr<PetscInterface::DMPlexInterface> neso_mesh = this->neso_mesh;
+  if (write_diagnostics) {
+    // write the data
+    VTK::VTKHDF vtk_writer(vtkhdf_filename, neso_mesh->get_comm());
+    const std::size_t num_cells_owned_kinetic_mesh =
+        static_cast<size_t>(neso_mesh->get_cell_count());
+    // vectors to hold the diagnosed moments
+    std::vector<REAL> density = this->density;
+    std::vector<REAL> energy = this->energy;
+    std::vector<REAL> particle_flux = this->particle_flux;
+    std::vector<REAL> uvector = this->uvector;
+    std::vector<REAL> pressure = this->pressure;
+    std::vector<REAL> temperature = this->temperature;
+    // mesh data only CellData not yet filled on each cell
+    std::vector<VTK::UnstructuredCell> dvtk0 = neso_mesh->dmh->get_vtk_cell_data();
+    std::vector<std::map<std::string, double>> cell_data(num_cells_owned_kinetic_mesh);
+    // scalar variables
     for (size_t ic = 0; ic < num_cells_owned_kinetic_mesh; ic++) {
       // insert map entries at this ic
-      cell_data.at(ic).insert({source_names.at(is), source_kinetic_mesh.at(ic)});
+      cell_data.at(ic).insert({"density", density.at(ic)});
+      cell_data.at(ic).insert({"energy", energy.at(ic)});
+      cell_data.at(ic).insert({"pressure", pressure.at(ic)});
+      cell_data.at(ic).insert({"temperature", temperature.at(ic)});
+      // write cell volume for convenience in later post-processing analysis
+      cell_data.at(ic).insert(
+          {"cellvolume", neso_mesh->dmh->get_cell_volume(static_cast<int>(ic))});
+      // write the "ion density" for testing purposes only
+      cell_data.at(ic).insert({"ion_density", ion_density.at(ic)});
     }
+    // vector variables
+    for (size_t ic = 0; ic < num_cells_owned_kinetic_mesh; ic++) {
+      for (size_t dim = 0; dim < ndimv; dim++) {
+        const size_t jc =
+            ic * ndimv + dim; // compound index covering all cells and dimensions
+        // insert a map entry at this ic
+        cell_data.at(ic).insert(
+            {fmt::format("particle_flux_{}", dim), particle_flux.at(jc)});
+        cell_data.at(ic).insert({fmt::format("uvector_{}", dim), uvector.at(jc)});
+      }
+    }
+    // source variables (stored as scalars -> vector sources would require a refactor)
+    const std::vector<std::string> source_names = this->source_manager->get_source_names();
+    for (size_t is = 0; is < source_names.size(); is++) {
+      const std::vector<REAL> source_kinetic_mesh =
+          this->source_manager->get_kinetic_mesh_data(source_names.at(is));
+      for (size_t ic = 0; ic < num_cells_owned_kinetic_mesh; ic++) {
+        // insert map entries at this ic
+        cell_data.at(ic).insert({source_names.at(is), source_kinetic_mesh.at(ic)});
+      }
+    }
+    for (size_t ic = 0; ic < static_cast<size_t>(num_cells_owned_kinetic_mesh); ic++) {
+      // fill the VTK::UnstructuredCell value appropriately
+      dvtk0.at(ic).cell_data = cell_data.at(ic);
+    }
+    vtk_writer.write(dvtk0);
+    vtk_writer.close();
   }
-  for (size_t ic = 0; ic < static_cast<size_t>(num_cells_owned_kinetic_mesh); ic++) {
-    // fill the VTK::UnstructuredCell value appropriately
-    dvtk0.at(ic).cell_data = cell_data.at(ic);
-  }
-  vtk_writer.write(dvtk0);
-  vtk_writer.close();
 }
 
 void VantageDiagnosticsManager::transfer_moments_to_plasma_mesh() {
@@ -427,63 +432,70 @@ void VantageDiagnosticsManager::transfer_moments_to_plasma_mesh() {
                                                       this->temperature_plasma_mesh);
 }
 
-void VantageDiagnosticsManager::write_bout_diagnostics(Field2D& ion_density,
+void VantageDiagnosticsManager::write_bout_diagnostics(const Field2D& ion_density,
                                                        //  Field2D& Siz, Field2D& Srec,
                                                        BoutReal particle_time) {
-  // extract the units
-  const BoutReal Nnorm = get<BoutReal>(this->units["inv_meters_cubed"]);
-  // const BoutReal Tnorm = get<BoutReal>(units["eV"]);
-  // const BoutReal Omega_ci = 1 / get<BoutReal>(this->units["seconds"]);
-  // const BoutReal rho_s0 = get<BoutReal>(units["meters"]);
-  // const BoutReal Bnorm = get<BoutReal>(units["Tesla"]);
-  // const BoutReal Cs0 = get<BoutReal>(units["meters"])
-  //            / get<BoutReal>(units["seconds"]);
-  Field2D neutral_density = this->density_plasma_mesh;
-  set_with_attrs(this->bout_output_data["neutral_density"], neutral_density,
-                 {{"time_dimension", "t"}});
+  if (write_diagnostics) {
+    // extract the units
+    const BoutReal Nnorm = get<BoutReal>(this->units["inv_meters_cubed"]);
+    // const BoutReal Tnorm = get<BoutReal>(units["eV"]);
+    // const BoutReal Omega_ci = 1 / get<BoutReal>(this->units["seconds"]);
+    // const BoutReal rho_s0 = get<BoutReal>(units["meters"]);
+    // const BoutReal Bnorm = get<BoutReal>(units["Tesla"]);
+    // const BoutReal Cs0 = get<BoutReal>(units["meters"])
+    //            / get<BoutReal>(units["seconds"]);
+    Field2D neutral_density = this->density_plasma_mesh;
+    set_with_attrs(this->bout_output_data["neutral_density"], neutral_density,
+                  {{"time_dimension", "t"}});
 
-  set_with_attrs(this->bout_output_data["ion_density"], ion_density,
-                 {{"time_dimension", "t"}});
+    set_with_attrs(this->bout_output_data["ion_density"], ion_density,
+                  {{"time_dimension", "t"}});
 
-  set_with_attrs(this->bout_output_data["Nn"], neutral_density,
-                 {{"time_dimension", "t"},
-                  {"units", "m^-3"},
-                  {"conversion", Nnorm},
-                  {"standard_name", "Density"},
-                  {"long_name", "Kinetic neutral density"},
-                  {"species", "kinetic neutrals"},
-                  {"source", "vantage"}});
-  // diagnose sources (scalars only -> vectors require a refactor)
-  const std::vector<std::string> source_names = this->source_manager->get_source_names();
-  for (size_t is = 0; is < source_names.size(); is++) {
-    const Field2D source =
-        this->source_manager->get_plasma_mesh_data(source_names.at(is));
-    const std::string units_description =
-        this->source_manager->get_units(source_names.at(is));
-    const BoutReal conversion = this->source_manager->get_conversion(source_names.at(is));
-    const std::string long_name =
-        this->source_manager->get_long_name(source_names.at(is));
-    const std::string standard_name =
-        this->source_manager->get_standard_name(source_names.at(is));
-    set_with_attrs(this->bout_output_data[source_names.at(is)], source,
-                   {{"time_dimension", "t"},
-                    {"units", units_description},
-                    {"conversion", conversion},
-                    {"standard_name", standard_name},
-                    {"long_name", long_name},
+    set_with_attrs(this->bout_output_data["Nn"], neutral_density,
+                  {{"time_dimension", "t"},
+                    {"units", "m^-3"},
+                    {"conversion", Nnorm},
+                    {"standard_name", "Density"},
+                    {"long_name", "Kinetic neutral density"},
                     {"species", "kinetic neutrals"},
                     {"source", "vantage"}});
+    // diagnose sources (scalars only -> vectors require a refactor)
+    const std::vector<std::string> source_names = this->source_manager->get_source_names();
+    for (size_t is = 0; is < source_names.size(); is++) {
+      const Field2D source =
+          this->source_manager->get_plasma_mesh_data(source_names.at(is));
+      const std::string units_description =
+          this->source_manager->get_units(source_names.at(is));
+      const BoutReal conversion = this->source_manager->get_conversion(source_names.at(is));
+      const std::string long_name =
+          this->source_manager->get_long_name(source_names.at(is));
+      const std::string standard_name =
+          this->source_manager->get_standard_name(source_names.at(is));
+      set_with_attrs(this->bout_output_data[source_names.at(is)], source,
+                    {{"time_dimension", "t"},
+                      {"units", units_description},
+                      {"conversion", conversion},
+                      {"standard_name", standard_name},
+                      {"long_name", long_name},
+                      {"species", "kinetic neutrals"},
+                      {"source", "vantage"}});
+    }
+
+    set_with_attrs(this->bout_output_data["t_array"], particle_time,
+                  {{"time_dimension", "t"}});
+
+    // Append data to file
+    this->vantage_dump_writer->write(this->bout_output_data);
+    // Ensure buffer is written to disk to avoid crash data loss
+    this->vantage_dump_writer->flush();
   }
-
-  set_with_attrs(this->bout_output_data["t_array"], particle_time,
-                 {{"time_dimension", "t"}});
-
-  // Append data to file
-  this->vantage_dump_writer->write(this->bout_output_data);
-  // Ensure buffer is written to disk to avoid crash data loss
-  this->vantage_dump_writer->flush();
 }
 
 std::vector<REAL> VantageDiagnosticsManager::get_density_kinetic_mesh() {
   return this->density;
+}
+
+// Destructor to handle VANTAGE related cleanup
+VantageDiagnosticsManager::~VantageDiagnosticsManager() {
+  neso_mesh->free(); // DMPlex interface
 }

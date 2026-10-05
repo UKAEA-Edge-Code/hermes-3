@@ -34,6 +34,12 @@ VantageDataTransfer::VantageDataTransfer(
   vector_dof_bout_mesh = std::vector<REAL>(num_cells_owned_bout_mesh * ndim_vector);
 }
 
+// Destructor to handle VANTAGE related cleanup
+VantageDataTransfer::~VantageDataTransfer() {
+  mesh_coupler->free();
+  neso_mesh->free(); // DMPlex interface
+}
+
 void VantageDataTransfer::transfer_scalar_to_plasma_mesh(
     std::vector<REAL>& scalar_kinetic_mesh, Field2D& scalar_plasma_mesh) {
   // some ASSERT required here to check bout_mesh the same
