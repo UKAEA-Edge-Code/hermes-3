@@ -1,6 +1,6 @@
-from boututils.run_wrapper import shell, launch_safe
-from netCDF4 import Dataset
 import numpy as np
+from boututils.run_wrapper import launch_safe, shell
+from netCDF4 import Dataset
 
 
 def extended_kinetic_mesh_test_input(
@@ -141,7 +141,7 @@ def generate_BOUT_grid_data(base_grid_dir, kinetic_nc_file_path, verbose=True):
     # Launch using MPI, with OMP_NUM_THREADS=1
     if verbose:
         print(f"execute: {cmd}")
-    s, out = launch_safe(cmd, nproc=nproc, mthread=1, pipe=True)
+    launch_safe(cmd, nproc=nproc, mthread=1, pipe=True)
 
     # copy the file to be used as a grid file, and insert the necessary
     # mesh variables that should be computed in preprocessing by the gridding/meshing workflow
@@ -435,5 +435,3 @@ def generate_BOUT_grid_data(base_grid_dir, kinetic_nc_file_path, verbose=True):
             "tri_cell_vertices", "i4", ("ntriangle", "tricorners")
         )
         ptr_tri_cell_vertices[:] = tri_cell_vertices
-
-    return None

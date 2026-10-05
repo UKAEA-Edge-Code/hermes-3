@@ -403,7 +403,8 @@ void VantageDiagnosticsManager::write_kinetic_velocity_moment_diagnostics(
       }
     }
     // source variables (stored as scalars -> vector sources would require a refactor)
-    const std::vector<std::string> source_names = this->source_manager->get_source_names();
+    const std::vector<std::string> source_names =
+        this->source_manager->get_source_names();
     for (size_t is = 0; is < source_names.size(); is++) {
       const std::vector<REAL> source_kinetic_mesh =
           this->source_manager->get_kinetic_mesh_data(source_names.at(is));
@@ -446,13 +447,13 @@ void VantageDiagnosticsManager::write_bout_diagnostics(const Field2D& ion_densit
     //            / get<BoutReal>(units["seconds"]);
     Field2D neutral_density = this->density_plasma_mesh;
     set_with_attrs(this->bout_output_data["neutral_density"], neutral_density,
-                  {{"time_dimension", "t"}});
+                   {{"time_dimension", "t"}});
 
     set_with_attrs(this->bout_output_data["ion_density"], ion_density,
-                  {{"time_dimension", "t"}});
+                   {{"time_dimension", "t"}});
 
     set_with_attrs(this->bout_output_data["Nn"], neutral_density,
-                  {{"time_dimension", "t"},
+                   {{"time_dimension", "t"},
                     {"units", "m^-3"},
                     {"conversion", Nnorm},
                     {"standard_name", "Density"},
@@ -460,19 +461,21 @@ void VantageDiagnosticsManager::write_bout_diagnostics(const Field2D& ion_densit
                     {"species", "kinetic neutrals"},
                     {"source", "vantage"}});
     // diagnose sources (scalars only -> vectors require a refactor)
-    const std::vector<std::string> source_names = this->source_manager->get_source_names();
+    const std::vector<std::string> source_names =
+        this->source_manager->get_source_names();
     for (size_t is = 0; is < source_names.size(); is++) {
       const Field2D source =
           this->source_manager->get_plasma_mesh_data(source_names.at(is));
       const std::string units_description =
           this->source_manager->get_units(source_names.at(is));
-      const BoutReal conversion = this->source_manager->get_conversion(source_names.at(is));
+      const BoutReal conversion =
+          this->source_manager->get_conversion(source_names.at(is));
       const std::string long_name =
           this->source_manager->get_long_name(source_names.at(is));
       const std::string standard_name =
           this->source_manager->get_standard_name(source_names.at(is));
       set_with_attrs(this->bout_output_data[source_names.at(is)], source,
-                    {{"time_dimension", "t"},
+                     {{"time_dimension", "t"},
                       {"units", units_description},
                       {"conversion", conversion},
                       {"standard_name", standard_name},
@@ -482,7 +485,7 @@ void VantageDiagnosticsManager::write_bout_diagnostics(const Field2D& ion_densit
     }
 
     set_with_attrs(this->bout_output_data["t_array"], particle_time,
-                  {{"time_dimension", "t"}});
+                   {{"time_dimension", "t"}});
 
     // Append data to file
     this->vantage_dump_writer->write(this->bout_output_data);

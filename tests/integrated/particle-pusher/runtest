@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 
 # Python script to run and analyse particle pushing test
-
-from boututils.run_wrapper import shell, launch_safe
-import numpy as np
 import h5py
 import netCDF4 as nc
+import numpy as np
+from boututils.run_wrapper import launch_safe, shell
 
 # tools for extended kinetic mesh test
 from extended_kinetic_mesh_tools import (
@@ -148,7 +147,7 @@ def load_particle_data(file_path):
     nstep = len(data_all_timesteps)
 
     particle_positions = []
-    for it in range(0, nstep):
+    for it in range(nstep):
         try:
             group = particle_data[f"Step#{it}"]
             # print(list(group.keys()))
@@ -214,7 +213,7 @@ def test_particle_push(
     cmd = f"./hermes-3 -d {simdir}"
     nproc = 1
     # Launch using MPI
-    s, out = launch_safe(cmd, nproc=nproc, mthread=1, pipe=True)
+    launch_safe(cmd, nproc=nproc, mthread=1, pipe=True)
 
     particle_positions_file_path = rf"{simdir}/particle_trajectories.h5part"
     particle_positions = load_particle_data(particle_positions_file_path)
@@ -306,7 +305,6 @@ def test_particle_push(
             total_neutral_mass_end,
             err_msg="Neutral mass did not increase in recombination test",
         )
-    return None
 
 
 # function to test the mesh with triangular cells, aligned with BOUT++ grid,
