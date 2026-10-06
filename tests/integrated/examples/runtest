@@ -4,6 +4,9 @@ import argparse
 import itertools
 import os
 import pathlib
+import random
+import shutil
+import string
 import sys
 
 from boututils.run_wrapper import launch
@@ -19,27 +22,56 @@ def requires_vantage(example_dir):
     return "[vantage]" in pathlib.Path(example_dir / "BOUT.inp").read_text()
 
 
+def make_new_directory():
+    population = string.ascii_letters + string.digits
+    dir_exists = True  # set to true to enter the while loop
+    while dir_exists:
+        # make a new path in the current working directory
+        new_directory = pathlib.Path(
+            "".join(random.choices(population, k=20))
+        ).resolve()
+        # check if the new dir exists
+        dir_exists = new_directory.exists()
+    return new_directory
+
+
 def run_examples(
-    examples_dir: pathlib.Path,
+    examples_dir_in: pathlib.Path,
     hermes3_exe: pathlib.Path,
     json_database: pathlib.Path,
     quiet: bool,
     vantage: bool,
 ):
+    # to allow multiple copies of this test to run without conflict,
+    # copy the examples to a new directory and execute the tests there
+    new_directory = make_new_directory()
+    # copy to the new directory
+    shutil.copytree(examples_dir_in, new_directory)
+    examples_dir = new_directory.resolve()
+    original_working_dir = pathlib.Path.cwd()
+    # print(original_working_dir)
+
     # Specify the number of processors needed by each category of test. If
     # not specified, assume 1.
 
     failed_tests = []
-
+    sorted_paths = sorted(examples_dir.rglob("*.inp"))
+    # print(sorted_paths)
     for category, examples in itertools.groupby(
-        sorted(examples_dir.rglob("*.inp")), lambda p: p.parent.parent
+        sorted_paths, lambda p: p.parent.parent
     ):
         category_name = str(category.relative_to(examples_dir))
         print(f"\033[1mRunning tests in category '{category_name}'.\033[0m")
         print(f"Working directory: {category}")
-        os.chdir(category)
+        # use absolute paths for changing directory
+        os.chdir(category.resolve())
+        # make link to json_database for reactions data
+        json_link = pathlib.Path("json_database")
+        json_link.symlink_to(json_database)
+        # loop over all examples in this category
         for example in examples:
-            example_dir = example.parent
+            example_dir = example.parent.relative_to(category)
+            # print(example_dir)
             # skip example if Vantage required but Vantage tests not requested
             req_vantage = requires_vantage(example_dir)
             if req_vantage and not vantage:
@@ -47,20 +79,7 @@ def run_examples(
             # skip example if Vantage not required but Vantage requested
             if not req_vantage and vantage:
                 continue
-            # if we need to run this example, create a symlink to the "json_database"
-            # this logic works only because [vantage] is only used in all examples of a single category
-            # multiple calls to this line result in symlink linking/unlinking errors if
-            # two scripts run different examples from the same category synchronously
-            # this would occur if
-            # $ ./runtest --vantage
-            # and
-            # $ ./runtest
-            # were executed synchronously by
-            # $ ctest -j N with N > 1
-            # the solution should be to have a different path to the `json_database` for each example
-            json_link = category / "json_database"
-            json_link.symlink_to(json_database)
-            print(f"Running {example_dir.relative_to(examples_dir)}...")
+            print(f"Running {example_dir}...")
             s, out = launch(
                 f"{hermes3_exe} -d {example_dir} nout=1 timestep=1e-3 input:error_on_unused_options=true",
                 nproc=NPROCS.get(category_name, 1),
@@ -74,10 +93,13 @@ def run_examples(
                 if not quiet:
                     print(out)
                 failed_tests.append(example_dir)
-            # unlink the symlink after running the example
-            json_link.unlink()
+        # unlink the symlink in this category after running the examples
+        json_link.unlink()
         print()
-
+    # clean up the copied files if possible
+    if shutil.rmtree.avoids_symlink_attacks:
+        os.chdir(original_working_dir)
+        shutil.rmtree(examples_dir)
     print("-" * 80, end="\n\n")
     nfailed = len(failed_tests)
     if nfailed == 0:
