@@ -1,29 +1,51 @@
 import h5py
 import numpy as np
-import matplotlib
 from matplotlib import pyplot as plt
 from matplotlib.animation import FuncAnimation
 from petsc4py import PETSc
 import argparse
+import xhermes
 
 parser = argparse.ArgumentParser(
     description="Animate particles moving on a DMPlex mesh."
 )
 parser.add_argument(
-    "dmplex_h5_file_path",
+    "BOUT_file_path",
     type=str,
-    help="The path to the HDF5 file representing the DMPlex data",
+    help="The path to the folder containing the BOUT.dmp.0.nc file associated with the particle data",
 )
 parser.add_argument(
-    "particle_trajectory_h5_file_path",
+    "--dmplex_h5_file_path",
     type=str,
-    help="The path to the HDF5 file representing the particle data",
+    help="The path relative to BOUT_file_path to the HDF5 file representing the DMPlex data",
+    default="hypnotoad_dmplex_mesh_output.h5",
+)
+parser.add_argument(
+    "--particle_trajectory_h5_file_path",
+    type=str,
+    help="The path relative to BOUT_file_path to the HDF5 file representing the particle data",
+    default="particle_trajectories.h5part",
+)
+parser.add_argument(
+    "--equal-aspect",
+    action="store_true",
+    help="Use equal aspect ratio R, Z axes",
+)
+parser.add_argument(
+    "--set-xlim-zero",
+    action="store_true",
+    help="Use 0 as the minimum R on the axes",
 )
 
 args = parser.parse_args()
 print(
     f"Animating particle paths from {args.particle_trajectory_h5_file_path} on DMPlex edges from {args.dmplex_h5_file_path}"
 )
+
+
+def get_length_normalisation(BOUT_file_path):
+    ds = xhermes.open(BOUT_file_path)
+    return ds.attrs["metadata"]["rho_s0"]
 
 
 def load_dmplex(file_path):
@@ -54,7 +76,11 @@ def get_mesh_edges(dm):
     return edges
 
 
-dm = load_dmplex(args.dmplex_h5_file_path)
+# normalisation for particle data
+meters = get_length_normalisation(args.BOUT_file_path)
+
+dmplex_h5_file_path = args.BOUT_file_path + "/" + args.dmplex_h5_file_path
+dm = load_dmplex(dmplex_h5_file_path)
 # dm = load_dmplex('dmplex/expected_nonorthogonal.grd.nc.mesh.h5')
 edges = get_mesh_edges(dm)
 
@@ -78,7 +104,7 @@ def load_particle_data(file_path):
             pdata = np.zeros((nparticles, 2))
             pdata[:, 0] = P_0
             pdata[:, 1] = P_1
-            particle_positions.append(pdata)
+            particle_positions.append(np.multiply(pdata, meters))
         except KeyError as error:
             print(f"No particles at time step {it}: {error}")
             # assign empty particle data
@@ -92,7 +118,10 @@ def update_plot(i, data, scat):
     return (scat,)
 
 
-particle_positions = load_particle_data(args.particle_trajectory_h5_file_path)
+particle_trajectory_h5_file_path = (
+    args.BOUT_file_path + "/" + args.particle_trajectory_h5_file_path
+)
+particle_positions = load_particle_data(particle_trajectory_h5_file_path)
 nstep = len(particle_positions)
 
 # plot an animation of the particles on the mesh
@@ -107,6 +136,10 @@ scat = ax.scatter(
 ax.set_title("Particle Positions")
 ax.set_xlabel("R")
 ax.set_ylabel("Z")
+if args.equal_aspect:
+    ax.set_aspect("equal", adjustable="box")
+if args.set_xlim_zero:
+    ax.set_xlim(0.0, None)
 
 
 def update(frame):
@@ -118,6 +151,6 @@ def update(frame):
 
 ani = FuncAnimation(fig, update, frames=nstep, interval=50, blit=True)
 output_path = args.particle_trajectory_h5_file_path + ".animation.gif"
-ani.save(output_path)
+ani.save(output_path, dpi=400)
 print(f"Saving animation of particle paths to {output_path}")
 # plt.show()
