@@ -55,6 +55,8 @@ public:
   // Return data for a given Hermes-3 source name
   Field2D get_data(const std::string& hermes_source_name);
 
+  ~VantageSourceManager(); // Destructor for VantageSourceManager related cleanup
+
 private:
   std::map<std::string, VantageSource> sources;
   std::shared_ptr<PetscInterface::DMPlexInterface> neso_mesh;
@@ -81,7 +83,7 @@ private:
   Vantage* vantage;
 };
 
-struct Vantage : public Component {
+struct Vantage : public NamedComponent<Vantage> {
   Vantage(std::string name, Options& options, Solver* solver);
 
   ~Vantage(); // Destructor for VANTAGE related cleanup
@@ -93,8 +95,11 @@ struct Vantage : public Component {
   // time is the normalised VANTAGE monitor frequency.
   int advance_vantage(BoutReal time);
 
+  static constexpr auto type = "vantage";
+
 private:
   bool test_mass_conservation;
+  bool diagnose_vantage;
   BoutReal particle_time;
   BoutReal N_w;
   REAL dt;
@@ -142,7 +147,7 @@ private:
 };
 
 namespace {
-RegisterComponent<Vantage> registercomponentvantage("vantage");
+RegisterComponent<Vantage> registercomponentvantage;
 }
 
 /**

@@ -1,3 +1,4 @@
+#include "../include/vantage_dmplex.hxx"
 #include "bout/bout.hxx"
 #include "bout/bout_types.hxx"
 #include "bout/field2d.hxx"
@@ -15,7 +16,6 @@
 #include <netcdf>
 #include <petscsystypes.h>
 #include <petscviewerhdf5.h>
-#include "../include/vantage_dmplex.hxx"
 
 #ifndef NESO_PARTICLES_PETSC
 static_assert(false, "NESO-Particles was installed without PETSc support.");
@@ -29,8 +29,8 @@ inline void ASSERT_EQ(T t, U u) {
 }
 
 void collect_unique_points(std::vector<double>& global_Z_vertices_buffer,
-                           std::vector<double>& global_R_vertices_buffer, size_t& N_unique,
-                           const double& tolerance,
+                           std::vector<double>& global_R_vertices_buffer,
+                           size_t& N_unique, const double& tolerance,
                            std::vector<double>& global_Z_hypnotoad_vertices,
                            std::vector<double>& global_R_hypnotoad_vertices) {
   bool unique;
@@ -42,10 +42,11 @@ void collect_unique_points(std::vector<double>& global_Z_vertices_buffer,
     unique = true;
     // check if the point is unique, by comparing the the existing N_unique points
     for (size_t iunique = 0; iunique < N_unique; iunique++) {
-      if (std::abs(global_Z_hypnotoad_vertices.at(iv) - global_Z_vertices_buffer.at(iunique))
+      if (std::abs(global_Z_hypnotoad_vertices.at(iv)
+                   - global_Z_vertices_buffer.at(iunique))
               < tolerance
           && std::abs(global_R_hypnotoad_vertices.at(iv)
-                 - global_R_vertices_buffer.at(iunique))
+                      - global_R_vertices_buffer.at(iunique))
                  < tolerance) {
         unique = false;
         // we have determined that the point is not unique
@@ -371,17 +372,17 @@ DM create_dmplex_from_Bout_mesh(Mesh* bout_mesh, Options& mesh_options,
   Field2D ivertex_upper_left_corners_cxx{-1, bout_mesh};
   // now fill ivertex_corners arrays
   RZ_to_ivertex_vector(ivertex_lower_left_corners_cxx, global_Z_vertices,
-                       global_R_vertices, dmplex_vertex_tolerance, bout_mesh, Rxy_lower_left_corners,
-                       Zxy_lower_left_corners);
+                       global_R_vertices, dmplex_vertex_tolerance, bout_mesh,
+                       Rxy_lower_left_corners, Zxy_lower_left_corners);
   RZ_to_ivertex_vector(ivertex_lower_right_corners_cxx, global_Z_vertices,
-                       global_R_vertices, dmplex_vertex_tolerance, bout_mesh, Rxy_lower_right_corners,
-                       Zxy_lower_right_corners);
+                       global_R_vertices, dmplex_vertex_tolerance, bout_mesh,
+                       Rxy_lower_right_corners, Zxy_lower_right_corners);
   RZ_to_ivertex_vector(ivertex_upper_right_corners_cxx, global_Z_vertices,
-                       global_R_vertices, dmplex_vertex_tolerance, bout_mesh, Rxy_upper_right_corners,
-                       Zxy_upper_right_corners);
+                       global_R_vertices, dmplex_vertex_tolerance, bout_mesh,
+                       Rxy_upper_right_corners, Zxy_upper_right_corners);
   RZ_to_ivertex_vector(ivertex_upper_left_corners_cxx, global_Z_vertices,
-                       global_R_vertices, dmplex_vertex_tolerance, bout_mesh, Rxy_upper_left_corners,
-                       Zxy_upper_left_corners);
+                       global_R_vertices, dmplex_vertex_tolerance, bout_mesh,
+                       Rxy_upper_left_corners, Zxy_upper_left_corners);
 
   // First we setup the topology of the mesh.
   PetscInt num_cells_owned = Nx * Ny;
@@ -416,7 +417,8 @@ DM create_dmplex_from_Bout_mesh(Mesh* bout_mesh, Options& mesh_options,
   }
   // number of vertices to keep per process for passing to
   // DMPlexCreateFromCellListParallelPetsc
-  int nvertex_per_process = static_cast<int>(std::floor(static_cast<int>(nvertices) / mpi_size));
+  int nvertex_per_process =
+      static_cast<int>(std::floor(static_cast<int>(nvertices) / mpi_size));
   int nvertex_remainder = static_cast<int>(nvertices) - mpi_size * nvertex_per_process;
   int nvertex_this_process = nvertex_per_process;
   // include the remaining vertices on the last rank
@@ -424,8 +426,8 @@ DM create_dmplex_from_Bout_mesh(Mesh* bout_mesh, Options& mesh_options,
     nvertex_this_process += nvertex_remainder;
   }
   // starting vertex index
-//   int ivertex_minimum = mpi_rank * nvertex_per_process;
-//   int ivertex_maximum = mpi_rank * nvertex_per_process + nvertex_this_process - 1;
+  //   int ivertex_minimum = mpi_rank * nvertex_per_process;
+  //   int ivertex_maximum = mpi_rank * nvertex_per_process + nvertex_this_process - 1;
   /*
    * Each rank owns a contiguous block of global indices. We label our indices
    * lexicographically (row-wise). Sorting out the global vertex indexing is
@@ -457,6 +459,7 @@ DM create_dmplex_from_Bout_mesh(Mesh* bout_mesh, Options& mesh_options,
   // Label all of the boundary faces with 100 in the "Face Sets" label by using
   // the helper function label_all_dmplex_boundaries.
   PetscInterface::label_all_dmplex_boundaries(dm, PetscInterface::face_sets_label, 100);
+  output << "Finished DMPlex creation \n";
 
   // // Label subsections of the boundary by specifing pairs of vertices and using
   // // the label_dmplex_edges helper function.
@@ -475,21 +478,27 @@ DM create_dmplex_from_Bout_mesh(Mesh* bout_mesh, Options& mesh_options,
 
   // PetscInterface::label_dmplex_edges(dm, PetscInterface::face_sets_label,
   //                                    vertex_starts, vertex_ends, edge_labels);
+  bool diagnose_dmplex = mesh_options["diagnose_dmplex"]
+                             .doc("Write .h5 view of the DMPlex.")
+                             .withDefault(true);
+  if (diagnose_dmplex) {
+    std::cout << fmt::format("dmplex_h5_filename : {}", dmplex_h5_filename) << std::endl;
 
-  // save a HDF5 file containing the DM for diagnostics
-  PetscViewer viewer;
-  // Set a name for the DMPlex object (important for HDF5)
-  PetscObjectSetName(reinterpret_cast<PetscObject>(dm), dmplex_name.c_str());
-  // Create an HDF5 viewer
-  PetscViewerHDF5Open(BoutComm::get(), dmplex_h5_filename.c_str(), FILE_MODE_WRITE,
-                      &viewer);
-  // Set viewer format to PETSC_VIEWER_HDF5_PETSC for compatibility
-  PetscViewerPushFormat(viewer, PETSC_VIEWER_HDF5_PETSC);
-  // Save the DMPlex to the HDF5 file
-  DMView(dm, viewer);
-  // Clean up
-  PetscViewerDestroy(&viewer);
-  output << "Finished DMPlex creation and diagnostic \n";
+    // save a HDF5 file containing the DM for diagnostics
+    PetscViewer viewer;
+    // Set a name for the DMPlex object (important for HDF5)
+    PetscObjectSetName(reinterpret_cast<PetscObject>(dm), dmplex_name.c_str());
+    // Create an HDF5 viewer
+    PetscViewerHDF5Open(BoutComm::get(), dmplex_h5_filename.c_str(), FILE_MODE_WRITE,
+                        &viewer);
+    // Set viewer format to PETSC_VIEWER_HDF5_PETSC for compatibility
+    PetscViewerPushFormat(viewer, PETSC_VIEWER_HDF5_PETSC);
+    // Save the DMPlex to the HDF5 file
+    DMView(dm, viewer);
+    // Clean up
+    PetscViewerDestroy(&viewer);
+    output << "Finished DMPlexdiagnostic \n";
+  }
   return dm;
 }
 

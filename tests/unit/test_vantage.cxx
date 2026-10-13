@@ -91,7 +91,6 @@ Options MakeOptions() {
   alloptions["units"]["meters"] = 1.0;
   alloptions["units"]["seconds"] = 1.0;
   alloptions["units"]["Tesla"] = 1.0;
-  alloptions["units"]["N_w"] = 1.0;
   alloptions["units"]["inv_meters_cubed"] = 1e19;
 
   alloptions["dmplex"]["use_cxx_ivertex"] = true;
@@ -100,6 +99,7 @@ Options MakeOptions() {
   alloptions["vantage"]["npart_per_cell"] = 1;
   alloptions["vantage"]["nsteps"] = 0;
   alloptions["vantage"]["dt"] = 0.001;
+  alloptions["vantage"]["N_w"] = 1.0;
   return alloptions;
 }
 
@@ -109,5 +109,5 @@ Options MakeOptions() {
 TEST_F(VantageTest, CreateComponent) {
 
   Options alloptions = MakeOptions();
-  Vantage const component("vantage", alloptions, nullptr);
+  const Vantage component("vantage", alloptions, nullptr);
 }

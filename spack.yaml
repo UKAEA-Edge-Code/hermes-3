@@ -39,10 +39,10 @@ spack:
   develop:
     boutpp:
       path: ./external/BOUT-dev
-      spec: boutpp
+      spec: boutpp@develop build_type=RelWithDebInfo
     hermes-3:
       path: .
-      spec: hermes-3@master
+      spec: hermes-3@develop build_type=RelWithDebInfo
     vantage.vantagereactions:
       path: ./external/Reactions
       spec: vantage.vantagereactions@working
@@ -61,4 +61,3 @@ spack:
     py-boutdata:
       path: ./external/boutdata
       spec: py-boutdata
-
