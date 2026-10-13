@@ -90,7 +90,7 @@ void set_initial_particle_weights(
     scalar_dof_kinetic_mesh.at(ic) = particle_weights;
   }
   // now copy the data to internal variables
-  data_transfer->transfer_scalar_to_particle_property(scalar_dof_kinetic_mesh,
+  data_transfer->evaluate_scalar_to_particle_property(scalar_dof_kinetic_mesh,
                                                       A_particle_group, "WEIGHT");
 }
 
@@ -99,15 +99,15 @@ void update_particle_properties_from_plasma(
     std::shared_ptr<ParticleGroup>& A_particle_group, Field2D& ion_density,
     Field2D& ion_temperature, std::vector<Field2D>& ion_velocity,
     Field2D& electron_density, Field2D& electron_temperature) {
-  data_transfer->transfer_scalar_to_particle_property(ion_density, A_particle_group,
+  data_transfer->evaluate_scalar_to_particle_property(ion_density, A_particle_group,
                                                       "FLUID_DENSITY");
-  data_transfer->transfer_scalar_to_particle_property(ion_temperature, A_particle_group,
+  data_transfer->evaluate_scalar_to_particle_property(ion_temperature, A_particle_group,
                                                       "FLUID_TEMPERATURE");
-  data_transfer->transfer_vector_to_particle_property(ion_velocity, A_particle_group,
+  data_transfer->evaluate_vector_to_particle_property(ion_velocity, A_particle_group,
                                                       "FLUID_FLOW_SPEED");
-  data_transfer->transfer_scalar_to_particle_property(electron_density, A_particle_group,
+  data_transfer->evaluate_scalar_to_particle_property(electron_density, A_particle_group,
                                                       "ELECTRON_DENSITY");
-  data_transfer->transfer_scalar_to_particle_property(
+  data_transfer->evaluate_scalar_to_particle_property(
       electron_temperature, A_particle_group, "ELECTRON_TEMPERATURE");
 }
 

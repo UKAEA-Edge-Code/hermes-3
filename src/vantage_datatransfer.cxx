@@ -78,7 +78,7 @@ void VantageDataTransfer::transfer_scalar_to_kinetic_mesh(
   this->mesh_coupler->forward_transfer(scalar_dof_bout_mesh, 1, scalar_kinetic_mesh);
 }
 
-void VantageDataTransfer::transfer_scalar_to_particle_property(
+void VantageDataTransfer::evaluate_scalar_to_particle_property(
     std::vector<REAL>& scalar_kinetic_mesh,
     std::shared_ptr<ParticleGroup>& A_particle_group, std::string particle_property) {
   // check dimensions
@@ -92,18 +92,18 @@ void VantageDataTransfer::transfer_scalar_to_particle_property(
   this->project_eval_dg0->evaluate(A_particle_group, Sym<REAL>(particle_property));
 }
 
-void VantageDataTransfer::transfer_scalar_to_particle_property(
+void VantageDataTransfer::evaluate_scalar_to_particle_property(
     Field2D& scalar_plasma_mesh, std::shared_ptr<ParticleGroup>& A_particle_group,
     std::string particle_property) {
   // check dimensions
   // need some ASSERT to check bout_mesh is the same variables
   this->transfer_scalar_to_kinetic_mesh(scalar_plasma_mesh,
                                         this->scalar_dof_kinetic_mesh);
-  this->transfer_scalar_to_particle_property(this->scalar_dof_kinetic_mesh,
+  this->evaluate_scalar_to_particle_property(this->scalar_dof_kinetic_mesh,
                                              A_particle_group, particle_property);
 }
 
-void VantageDataTransfer::transfer_particle_property_to_scalar(
+void VantageDataTransfer::project_particle_property_to_scalar(
     std::shared_ptr<ParticleGroup>& A_particle_group, std::string particle_property,
     std::vector<REAL>& scalar_kinetic_mesh) {
   // check dimensions
@@ -118,7 +118,7 @@ void VantageDataTransfer::transfer_particle_property_to_scalar(
   project_eval_dg0->get_dofs(1, scalar_kinetic_mesh);
 }
 
-void VantageDataTransfer::transfer_particle_property_to_vector(
+void VantageDataTransfer::project_particle_property_to_vector(
     std::shared_ptr<ParticleGroup>& A_particle_group, std::string particle_property,
     std::vector<REAL>& vector_kinetic_mesh) {
   // check dimensions
@@ -134,7 +134,7 @@ void VantageDataTransfer::transfer_particle_property_to_vector(
   project_eval_dg0->get_dofs(static_cast<int>(ndim_vector), vector_kinetic_mesh);
 }
 
-void VantageDataTransfer::transfer_vector_to_particle_property(
+void VantageDataTransfer::evaluate_vector_to_particle_property(
     std::vector<REAL>& vector_kinetic_mesh,
     std::shared_ptr<ParticleGroup>& A_particle_group, std::string particle_property) {
   // check dimensions
@@ -172,11 +172,11 @@ void VantageDataTransfer::transfer_vector_to_kinetic_mesh(
                                        static_cast<int>(this->ndim_vector),
                                        vector_kinetic_mesh);
 }
-void VantageDataTransfer::transfer_vector_to_particle_property(
+void VantageDataTransfer::evaluate_vector_to_particle_property(
     std::vector<Field2D>& vector_plasma_mesh,
     std::shared_ptr<ParticleGroup>& A_particle_group, std::string particle_property) {
   this->transfer_vector_to_kinetic_mesh(vector_plasma_mesh,
                                         this->vector_dof_kinetic_mesh);
-  this->transfer_vector_to_particle_property(this->vector_dof_kinetic_mesh,
+  this->evaluate_vector_to_particle_property(this->vector_dof_kinetic_mesh,
                                              A_particle_group, particle_property);
 }

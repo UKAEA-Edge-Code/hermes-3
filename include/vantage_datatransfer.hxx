@@ -15,35 +15,35 @@ public:
       std::shared_ptr<PetscInterface::DMPlexMeshCouplerDG0>& mesh_coupler,
       Mesh* bout_mesh, size_t ndim_vector);
 
-  // transfer functions for physics scalars
+  // transfer/evaluate/project functions for physics scalars
   void transfer_scalar_to_plasma_mesh(std::vector<REAL>& scalar_kinetic_mesh,
                                       Field2D& scalar_plasma_mesh);
   void transfer_scalar_to_kinetic_mesh(Field2D& scalar_plasma_mesh,
                                        std::vector<REAL>& scalar_kinetic_mesh);
   void
-  transfer_scalar_to_particle_property(std::vector<REAL>& scalar_kinetic_mesh,
+  evaluate_scalar_to_particle_property(std::vector<REAL>& scalar_kinetic_mesh,
                                        std::shared_ptr<ParticleGroup>& A_particle_group,
                                        std::string particle_property);
   void
-  transfer_scalar_to_particle_property(Field2D& scalar_plasma_mesh,
+  evaluate_scalar_to_particle_property(Field2D& scalar_plasma_mesh,
                                        std::shared_ptr<ParticleGroup>& A_particle_group,
                                        std::string particle_property);
   void
-  transfer_particle_property_to_scalar(std::shared_ptr<ParticleGroup>& A_particle_group,
-                                       std::string particle_property,
-                                       std::vector<REAL>& scalar_kinetic_mesh);
+  project_particle_property_to_scalar(std::shared_ptr<ParticleGroup>& A_particle_group,
+                                      std::string particle_property,
+                                      std::vector<REAL>& scalar_kinetic_mesh);
   void
-  transfer_particle_property_to_vector(std::shared_ptr<ParticleGroup>& A_particle_group,
-                                       std::string particle_property,
-                                       std::vector<REAL>& vector_kinetic_mesh);
+  project_particle_property_to_vector(std::shared_ptr<ParticleGroup>& A_particle_group,
+                                      std::string particle_property,
+                                      std::vector<REAL>& vector_kinetic_mesh);
 
-  // transfer functions for physics vectors
+  // evaluate/transfer functions for physics vectors
   void
-  transfer_vector_to_particle_property(std::vector<Field2D>& vector_plasma_mesh,
+  evaluate_vector_to_particle_property(std::vector<Field2D>& vector_plasma_mesh,
                                        std::shared_ptr<ParticleGroup>& A_particle_group,
                                        std::string particle_property);
   void
-  transfer_vector_to_particle_property(std::vector<REAL>& vector_kinetic_mesh,
+  evaluate_vector_to_particle_property(std::vector<REAL>& vector_kinetic_mesh,
                                        std::shared_ptr<ParticleGroup>& A_particle_group,
                                        std::string particle_property);
   void transfer_vector_to_kinetic_mesh(std::vector<Field2D>& vector_plasma_mesh,
