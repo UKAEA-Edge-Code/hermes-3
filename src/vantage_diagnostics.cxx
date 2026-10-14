@@ -233,6 +233,8 @@ VantageDiagnosticsManager::VantageDiagnosticsManager(
       source_manager(source_manager), N_w(N_w), mass(mass), bout_mesh(bout_mesh),
       units(units), vantage_dump_filepath(vantage_dump_filepath),
       write_diagnostics(write_diagnostics) {
+  // check the particle group uses the expected mesh
+  ASSERT1(this->neso_mesh == A_particle_group->domain->mesh);
   // initialise vectors for storing the moments on the kinetic mesh
   const size_t ndimv = this->ndimv;
   const std::size_t num_cells_owned_kinetic_mesh =

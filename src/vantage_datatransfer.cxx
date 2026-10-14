@@ -84,6 +84,8 @@ void VantageDataTransfer::evaluate_scalar_to_particle_property(
   // check dimensions
   ASSERT1(scalar_kinetic_mesh.size()
           == static_cast<size_t>(this->neso_mesh->get_cell_count()))
+  // check the particle group uses the expected mesh
+  ASSERT1(this->neso_mesh == A_particle_group->domain->mesh);
   // check the particle property exists with the expected number of dimensions
   ASSERT1(A_particle_group->contains_dat(Sym<REAL>(particle_property), 1));
   // set the kinetic mesh property to NESO-Particles internal variables
@@ -97,6 +99,8 @@ void VantageDataTransfer::evaluate_scalar_to_particle_property(
     std::string particle_property) {
   // check dimensions
   // need some ASSERT to check bout_mesh is the same variables
+  // check the particle group uses the expected mesh
+  ASSERT1(this->neso_mesh == A_particle_group->domain->mesh);
   this->transfer_scalar_to_kinetic_mesh(scalar_plasma_mesh,
                                         this->scalar_dof_kinetic_mesh);
   this->evaluate_scalar_to_particle_property(this->scalar_dof_kinetic_mesh,
@@ -109,6 +113,8 @@ void VantageDataTransfer::project_particle_property_to_scalar(
   // check dimensions
   ASSERT1(scalar_kinetic_mesh.size()
           == static_cast<size_t>(this->neso_mesh->get_cell_count()))
+  // check the particle group uses the expected mesh
+  ASSERT1(this->neso_mesh == A_particle_group->domain->mesh);
   // check the particle property exists with the expected number of dimensions
   ASSERT1(A_particle_group->contains_dat(Sym<REAL>(particle_property), 1));
   // set the particle property to NESO-Particles internal variables
@@ -124,6 +130,8 @@ void VantageDataTransfer::project_particle_property_to_vector(
   // check dimensions
   ASSERT1(vector_kinetic_mesh.size()
           == this->ndim_vector * static_cast<size_t>(this->neso_mesh->get_cell_count()))
+  // check the particle group uses the expected mesh
+  ASSERT1(this->neso_mesh == A_particle_group->domain->mesh);
   // check the particle property exists with the expected number of dimensions
   ASSERT1(A_particle_group->contains_dat(Sym<REAL>(particle_property),
                                          static_cast<int>(this->ndim_vector)));
@@ -140,6 +148,8 @@ void VantageDataTransfer::evaluate_vector_to_particle_property(
   // check dimensions
   ASSERT1(vector_kinetic_mesh.size()
           == this->ndim_vector * static_cast<size_t>(this->neso_mesh->get_cell_count()))
+  // check the particle group uses the expected mesh
+  ASSERT1(this->neso_mesh == A_particle_group->domain->mesh);
   // check the particle property exists with the expected number of dimensions
   ASSERT1(A_particle_group->contains_dat(Sym<REAL>(particle_property),
                                          static_cast<int>(this->ndim_vector)));
@@ -175,6 +185,8 @@ void VantageDataTransfer::transfer_vector_to_kinetic_mesh(
 void VantageDataTransfer::evaluate_vector_to_particle_property(
     std::vector<Field2D>& vector_plasma_mesh,
     std::shared_ptr<ParticleGroup>& A_particle_group, std::string particle_property) {
+  // check the particle group uses the expected mesh
+  ASSERT1(this->neso_mesh == A_particle_group->domain->mesh);
   this->transfer_vector_to_kinetic_mesh(vector_plasma_mesh,
                                         this->vector_dof_kinetic_mesh);
   this->evaluate_vector_to_particle_property(this->vector_dof_kinetic_mesh,
