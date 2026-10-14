@@ -195,8 +195,21 @@ set(HERMES_SOURCES
 
 if(HERMES_USE_VANTAGE)
   # include Hermes-VANTAGE include and source files
-  list(APPEND HERMES_SOURCES src/vantage_dmplex.cxx include/vantage_dmplex.hxx
-       src/vantage.cxx include/vantage.hxx)
+  list(
+    APPEND
+    HERMES_SOURCES
+    src/vantage_dmplex.cxx
+    include/vantage_dmplex.hxx
+    src/vantage_helperfunctions.cxx
+    include/vantage_helperfunctions.hxx
+    src/vantage_datatransfer.cxx
+    include/vantage_datatransfer.hxx
+    src/vantage_sources.cxx
+    include/vantage_sources.hxx
+    src/vantage_diagnostics.cxx
+    include/vantage_diagnostics.hxx
+    src/vantage.cxx
+    include/vantage.hxx)
 endif()
 
 # Compile Hermes sources into a library, which can be used for unit tests

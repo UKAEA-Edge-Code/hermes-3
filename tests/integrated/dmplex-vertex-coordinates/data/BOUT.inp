@@ -6,7 +6,6 @@ file = example_usn.grd.nc
 extrapolate_y = false
 
 [dmplex]
-use_cxx_ivertex = true
 test_dmplex_cell_volumes = false
 test_dmplex_cell_centres = false
 dmplex_vertex_tolerance = 1e-08
@@ -37,7 +36,6 @@ dt = 0.005
 nsteps = 3
 
 test_mass_conservation = true
-initial_neutral_density = 20
 
 npart_per_cell = 20
 remove_threshold = 0.0

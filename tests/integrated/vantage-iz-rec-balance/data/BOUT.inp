@@ -23,7 +23,6 @@ Zxy_upper_left_corners = y + 0.5*dy
 Zxy_upper_right_corners = y + 0.5*dy
 
 [dmplex]
-use_cxx_ivertex=true
 test_dmplex_cell_volumes = true
 test_dmplex_cell_centres = true
 
@@ -56,8 +55,9 @@ dt = 700
 nsteps = 3
 
 # This is the final expected steady state density
-initial_neutral_density = 8e18
-
+# initial_neutral_density = 8e18
+initial_neutral_pressure = 1.2817413072
+initial_neutral_temperature = 1
 
 test_mass_conservation = true
 

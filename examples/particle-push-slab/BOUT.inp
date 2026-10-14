@@ -28,7 +28,6 @@ Zxy_upper_left_corners = y + 0.5*dy
 Zxy_upper_right_corners = y + 0.5*dy
 
 [dmplex]
-use_cxx_ivertex=true
 test_dmplex_cell_volumes = true
 test_dmplex_cell_centres = true
 
@@ -57,7 +56,6 @@ charge = -1
 dt = 1.0
 nsteps = 1
 test_mass_conservation = true
-initial_neutral_density = 1e19
 npart_per_cell = 20
 background_ion_density = 1e19
 background_ion_temperature = 50
