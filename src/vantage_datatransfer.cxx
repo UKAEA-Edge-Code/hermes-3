@@ -42,9 +42,11 @@ VantageDataTransfer::~VantageDataTransfer() {
 
 void VantageDataTransfer::transfer_scalar_to_plasma_mesh(
     std::vector<REAL>& scalar_kinetic_mesh, Field2D& scalar_plasma_mesh) {
-  // some ASSERT required here to check bout_mesh the same
+  // check size of scalar degrees of freedom are as expected
   ASSERT1(scalar_kinetic_mesh.size()
           == static_cast<size_t>(this->neso_mesh->get_cell_count()));
+  // check the Field2D uses the expected mesh
+  ASSERT1(scalar_plasma_mesh.getMesh() == this->bout_mesh);
   // we need to port data from the kinetic mesh dofs to the dofs expected by BOUT++ in the loop below
   this->mesh_coupler->backward_transfer(scalar_kinetic_mesh, 1, scalar_dof_bout_mesh);
   std::size_t ic = 0;
@@ -63,6 +65,8 @@ void VantageDataTransfer::transfer_scalar_to_plasma_mesh(
 
 void VantageDataTransfer::transfer_scalar_to_kinetic_mesh(
     Field2D& scalar_plasma_mesh, std::vector<REAL>& scalar_kinetic_mesh) {
+  // check the Field2D uses the expected mesh
+  ASSERT1(scalar_plasma_mesh.getMesh() == this->bout_mesh);
   // get scalar from plasma mesh into the dummy vector
   std::size_t ic = 0;
   for (PetscInt ix = bout_mesh->xstart; ix <= bout_mesh->xend; ix++) {
@@ -97,8 +101,8 @@ void VantageDataTransfer::evaluate_scalar_to_particle_property(
 void VantageDataTransfer::evaluate_scalar_to_particle_property(
     Field2D& scalar_plasma_mesh, std::shared_ptr<ParticleGroup>& A_particle_group,
     std::string particle_property) {
-  // check dimensions
-  // need some ASSERT to check bout_mesh is the same variables
+  // check the Field2D uses the expected mesh
+  ASSERT1(scalar_plasma_mesh.getMesh() == this->bout_mesh);
   // check the particle group uses the expected mesh
   ASSERT1(this->neso_mesh == A_particle_group->domain->mesh);
   this->transfer_scalar_to_kinetic_mesh(scalar_plasma_mesh,
@@ -164,6 +168,10 @@ void VantageDataTransfer::transfer_vector_to_kinetic_mesh(
     std::vector<Field2D>& vector_plasma_mesh, std::vector<REAL>& vector_kinetic_mesh) {
   // check dimensions
   ASSERT1(vector_plasma_mesh.size() == this->ndim_vector);
+  // check the Field2D uses the expected mesh
+  for (size_t idim = 0; idim < vector_plasma_mesh.size(); idim++) {
+    ASSERT1(vector_plasma_mesh.at(idim).getMesh() == this->bout_mesh);
+  }
   std::size_t ic = 0;
   for (PetscInt ix = bout_mesh->xstart; ix <= bout_mesh->xend; ix++) {
     for (PetscInt iy = bout_mesh->ystart; iy <= bout_mesh->yend; iy++) {
@@ -187,6 +195,10 @@ void VantageDataTransfer::evaluate_vector_to_particle_property(
     std::shared_ptr<ParticleGroup>& A_particle_group, std::string particle_property) {
   // check the particle group uses the expected mesh
   ASSERT1(this->neso_mesh == A_particle_group->domain->mesh);
+  // check the Field2D uses the expected mesh
+  for (size_t idim = 0; idim < vector_plasma_mesh.size(); idim++) {
+    ASSERT1(vector_plasma_mesh.at(idim).getMesh() == this->bout_mesh);
+  }
   this->transfer_vector_to_kinetic_mesh(vector_plasma_mesh,
                                         this->vector_dof_kinetic_mesh);
   this->evaluate_vector_to_particle_property(this->vector_dof_kinetic_mesh,
