@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
-import os
-from pathlib import Path
-import numpy as np
-import urllib.request
 import hashlib
 import shutil
-from boututils.run_wrapper import shell, launch, getmpirun
-from boutdata.collect import collect
-from boutdata.data import BoutOptionsFile
-from petsc4py import PETSc
+import sys
+import urllib.request
 import zipfile
+from pathlib import Path
+
+import numpy as np
 import xhermes
+from boutdata.data import BoutOptionsFile
+from boututils.run_wrapper import launch, shell
+from petsc4py import PETSc
 
 """
 This test checks that the DMPLex and Hypnotoad grids have matching vertices.
@@ -97,36 +97,11 @@ def get_hypnotoad_vertices(gridfile):
     return hypno_vertices
 
 
-### Prepare for test
-
-for gridfile in grid_filenames:
-    if verbose:
-        print("\n", "*" * 30, "\n")
-        print(f"Testing {gridfile}")
-
-    ### Remove old data file, log file and link if they exist
-
-    to_remove = []
-    for file in case_path.glob(".BOUT.pid.*"):
-        to_remove.append(file)
-
-    for file in case_path.glob("BOUT.log.*"):
-        to_remove.append(file)
-
-    for file in case_path.glob("BOUT.dmp.*.nc"):
-        to_remove.append(file)
-
-    for file in case_path.glob("BOUT.settings"):
-        to_remove.append(file)
-
-    if logfile_path.exists():
-        to_remove.append(logfile_path)
-
-    if len(to_remove) > 0:
-        for file in to_remove:
-            shell(f"rm {file}")
-
-    ## Download grids
+def download_grids(
+    gridzipfile_path: Path,
+    gridurl: str,
+    expected_hash: str,
+):
     tmp_path = gridzipfile_path.with_name(gridzipfile_path.name + ".tmp")
 
     with urllib.request.urlopen(gridurl, timeout=60) as response:
@@ -151,6 +126,7 @@ for gridfile in grid_filenames:
 
         except Exception as e:
             print("Extracting test grids failed:", e)
+            raise
 
     # Check hash
     with open(gridzipfile_path, "rb") as f:
@@ -160,6 +136,33 @@ for gridfile in grid_filenames:
         raise RuntimeError(
             "Downloaded grid zip file hash does not match expected value"
         )
+
+
+### Prepare for test
+
+## Download grids
+download_grids(gridzipfile_path, gridurl, expected_hash)
+
+## Loop over downloaded grid files
+for gridfile in grid_filenames:
+    if verbose:
+        print("\n", "*" * 30, "\n")
+        print(f"Testing {gridfile}")
+
+    ### Remove old data file, log file and link if they exist
+
+    to_remove = []
+    to_remove.extend(case_path.glob(".BOUT.pid.*"))
+    to_remove.extend(case_path.glob("BOUT.log.*"))
+    to_remove.extend(case_path.glob("BOUT.dmp.*.nc"))
+    to_remove.extend(case_path.glob("BOUT.settings"))
+
+    if logfile_path.exists():
+        to_remove.append(logfile_path)
+
+    if len(to_remove) > 0:
+        for file in to_remove:
+            shell(f"rm {file}")
 
     ## Run Hermes-3 to generate DMPlex mesh
     # Find how many cores to use
@@ -178,7 +181,7 @@ for gridfile in grid_filenames:
     if s != 0:
         print(f" => DMPLex vertex match test failed to run for {gridfile}")
         print(out)
-        exit(1)
+        sys.exit(1)
 
     # Save output to log file
     with open(logfile_path, "w") as f:
@@ -193,7 +196,7 @@ for gridfile in grid_filenames:
                 print(
                     f" => DMPLex vertex match test failed for {gridfile}: \n{message}"
                 )
-                exit(1)
+                sys.exit(1)
 
     ### Check vertices
 
