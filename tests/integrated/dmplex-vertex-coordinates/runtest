@@ -96,37 +96,12 @@ def get_hypnotoad_vertices(gridfile):
 
     return hypno_vertices
 
+def download_grids(
+    gridzipfile_path: Path,
+    gridurl: str,
+    expected_hash: str,
 
-### Prepare for test
-
-for gridfile in grid_filenames:
-    if verbose:
-        print("\n", "*" * 30, "\n")
-        print(f"Testing {gridfile}")
-
-    ### Remove old data file, log file and link if they exist
-
-    to_remove = []
-    for file in case_path.glob(".BOUT.pid.*"):
-        to_remove.append(file)
-
-    for file in case_path.glob("BOUT.log.*"):
-        to_remove.append(file)
-
-    for file in case_path.glob("BOUT.dmp.*.nc"):
-        to_remove.append(file)
-
-    for file in case_path.glob("BOUT.settings"):
-        to_remove.append(file)
-
-    if logfile_path.exists():
-        to_remove.append(logfile_path)
-
-    if len(to_remove) > 0:
-        for file in to_remove:
-            shell(f"rm {file}")
-
-    ## Download grids
+):
     tmp_path = gridzipfile_path.with_name(gridzipfile_path.name + ".tmp")
 
     with urllib.request.urlopen(gridurl, timeout=60) as response:
@@ -160,6 +135,39 @@ for gridfile in grid_filenames:
         raise RuntimeError(
             "Downloaded grid zip file hash does not match expected value"
         )
+
+### Prepare for test
+
+## Download grids
+download_grids(gridzipfile_path, gridurl, expected_hash)
+
+## Loop over downloaded grid files
+for gridfile in grid_filenames:
+    if verbose:
+        print("\n", "*" * 30, "\n")
+        print(f"Testing {gridfile}")
+
+    ### Remove old data file, log file and link if they exist
+
+    to_remove = []
+    for file in case_path.glob(".BOUT.pid.*"):
+        to_remove.append(file)
+
+    for file in case_path.glob("BOUT.log.*"):
+        to_remove.append(file)
+
+    for file in case_path.glob("BOUT.dmp.*.nc"):
+        to_remove.append(file)
+
+    for file in case_path.glob("BOUT.settings"):
+        to_remove.append(file)
+
+    if logfile_path.exists():
+        to_remove.append(logfile_path)
+
+    if len(to_remove) > 0:
+        for file in to_remove:
+            shell(f"rm {file}")
 
     ## Run Hermes-3 to generate DMPlex mesh
     # Find how many cores to use
