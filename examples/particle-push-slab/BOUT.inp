@@ -53,7 +53,6 @@ AA = 1/1836
 charge = -1
 
 [vantage]
-dt = 1.0
 nsteps = 1
 test_mass_conservation = true
 npart_per_cell = 20
