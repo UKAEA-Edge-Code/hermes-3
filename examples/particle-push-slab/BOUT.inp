@@ -5,6 +5,7 @@
 
 nout = 1
 timestep = 1
+MZ = 1  # Z grid size
 
 [mesh]
 J = 1

@@ -949,8 +949,8 @@ int Vantage::advance_vantage(BoutReal time) {
     // }
 
     diagnostics_manager->update_kinetic_velocity_moments();
-    diagnostics_manager->write_kinetic_velocity_moment_diagnostics(stepx + 1,
-                                                                   virtual_ion_density_kmsh);
+    diagnostics_manager->write_kinetic_velocity_moment_diagnostics(
+        stepx + 1, virtual_ion_density_kmsh);
     diagnostics_manager->transfer_moments_to_plasma_mesh();
     // Write to VANTAGE dump files
     // data_transfer->transfer_scalar_to_plasma_mesh(virtual_ion_density_kmsh, ion_density);
