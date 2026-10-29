@@ -96,22 +96,52 @@ void set_initial_particle_weights(
 
 void update_particle_properties_from_plasma(
     std::shared_ptr<VantageDataTransfer>& data_transfer,
-    std::shared_ptr<ParticleGroup>& A_particle_group, Field2D& ion_density,
-    Field2D& ion_temperature, std::vector<Field2D>& ion_velocity,
-    Field2D& electron_density, Field2D& electron_temperature) {
-  data_transfer->evaluate_scalar_to_particle_property(ion_density, A_particle_group,
+    std::shared_ptr<ParticleGroup>& A_particle_group, Field2D& Ni, Field2D& Ti,
+    std::vector<Field2D>& ion_velocity, Field2D& Ne, Field2D& Te) {
+  data_transfer->evaluate_scalar_to_particle_property(Ni, A_particle_group,
                                                       "FLUID_DENSITY");
-  data_transfer->evaluate_scalar_to_particle_property(ion_temperature, A_particle_group,
+  data_transfer->evaluate_scalar_to_particle_property(Ti, A_particle_group,
                                                       "FLUID_TEMPERATURE");
   data_transfer->evaluate_vector_to_particle_property(ion_velocity, A_particle_group,
                                                       "FLUID_FLOW_SPEED");
-  data_transfer->evaluate_scalar_to_particle_property(electron_density, A_particle_group,
+  data_transfer->evaluate_scalar_to_particle_property(Ne, A_particle_group,
                                                       "ELECTRON_DENSITY");
-  data_transfer->evaluate_scalar_to_particle_property(
-      electron_temperature, A_particle_group, "ELECTRON_TEMPERATURE");
+  data_transfer->evaluate_scalar_to_particle_property(Te, A_particle_group,
+                                                      "ELECTRON_TEMPERATURE");
 }
 
-// Create a ParticleSubGroup from particles that are in a cell with nonzero electron_density.
+// Calculate rec marker weights so that they correspond to local ion density.
+// Reads ion density from FLUID_DENSITY so that must be kept up to date.
+void set_recombination_marker_weights(
+    std::shared_ptr<ParticleGroup>& marker_group,
+    std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh,
+    std::vector<double>& dof_kinetic_mesh_scalar,
+    std::shared_ptr<VantageDataTransfer>& data_transfer, BoutReal N_w) {
+
+  // Weight of one marker per unit density
+  const size_t ncell = dof_kinetic_mesh_scalar.size();
+  for (size_t ic = 0; ic < ncell; ic++) {
+    const REAL cell_volume = neso_mesh->dmh->get_cell_volume(static_cast<int>(ic));
+    const INT nmarkers_per_cell = marker_group->get_npart_cell(static_cast<int>(ic));
+    dof_kinetic_mesh_scalar.at(ic) =
+        cell_volume / static_cast<BoutReal>(nmarkers_per_cell) / N_w;
+  }
+  // Upload to device as "WEIGHT" property
+  data_transfer->evaluate_scalar_to_particle_property(dof_kinetic_mesh_scalar,
+                                                      marker_group, "WEIGHT");
+
+  // Multiply by ion density on-device:
+  // - Weight of one marker per unit density * ion density = actual marker weight
+  particle_loop(
+      "Update weight of ions", marker_group,
+      [=](auto ion_dens_prop, auto weight_prop) {
+        weight_prop.at(0) *= ion_dens_prop.at(0);
+      },
+      Access::read(Sym<REAL>("FLUID_DENSITY")), Access::write(Sym<REAL>("WEIGHT")))
+      ->execute();
+}
+
+// Create a ParticleSubGroup from particles that are in a cell with nonzero Ne.
 ParticleSubGroupSharedPtr create_particle_sub_group_in_plasma_volume(
     std::shared_ptr<ParticleGroup>& A_particle_group,
     const REAL electron_density_threshold) {
@@ -122,10 +152,18 @@ ParticleSubGroupSharedPtr create_particle_sub_group_in_plasma_volume(
 }
 
 Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
-    : NamedComponent(name, {readOnly("species:d+:density", Regions::Interior),
-                            readWrite("species:d+:density")}) {
+    : NamedComponent(name, {}) {
 
-  // TODO: Put proper permissions in
+  //Get BOUT++ mesh and comm, throw if mesh not 2D
+  bout_mesh = bout::globals::mesh;
+  sycl_target = std::make_shared<SYCLTarget>(0, BoutComm::get());
+
+  if (bout_mesh->GlobalNz != 1) {
+    throw BoutException(
+        "VANTAGE currently only supports 2D grids, but the provided grid has "
+        "GlobalNz = {}. Set MZ = 1 on the top of the input file (root level).",
+        bout_mesh->GlobalNz);
+  }
 
   // int main(int argc, char** argv) {
   // initialise_mpi(&argc, &argv);
@@ -166,9 +204,6 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
 
   alloptions["units"]["N_w"] = N_w;
   alloptions["units"]["N_w"].setConditionallyUsed();
-
-  bout_mesh = bout::globals::mesh;
-  sycl_target = std::make_shared<SYCLTarget>(0, BoutComm::get());
 
   // keep dmplex_h5_filename in vantage.cxx to retain access to make_output_path()
   // which should presumably not need to exist within the hermes-3 library
@@ -280,20 +315,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
                                    .withDefault(1);
 
     // Plasma parameters
-    const BoutReal background_ion_temperature =
-        options["background_ion_temperature"]
-            .doc("Background ion temp override [eV], default = 10")
-            .withDefault(10)
-        / eV;
-    const BoutReal background_ion_density =
-        options["background_ion_density"]
-            .doc("Background density override [m^-3], default = 1.0e19")
-            .withDefault(1.0e19)
-        / inv_meters_cubed;
-
-    const BoutReal background_electron_temperature = background_ion_temperature;
-    const BoutReal background_electron_density = background_ion_density;
-
+    // Density and temperature come from the Hermes-3 state in finally().
     const BoutReal background_ion_Vx = options["background_ion_Vx"].withDefault(0.0);
     const BoutReal background_ion_Vy = options["background_ion_Vy"].withDefault(0.0);
     const std::vector<BoutReal> V_background = {background_ion_Vx, background_ion_Vy};
@@ -311,13 +333,71 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
     const int rec_markers_per_cell = options["rec_markers_per_cell"].withDefault(1000);
 
     // Other settings
+    neutral_species =
+        options["neutral_species"].doc("Name of the neutral species to use in VANTAGE");
+
+    // Note we're using Options& to avoid copying the Options
+    Options& ion_species_opt =
+        options["ion_species"].doc("Name of the ion correspondng to the VANTAGE neutral "
+                                   "species. If unset, no plasma is read from the state");
+
+    // Read plasma only if ions set.
+    // ion_species is the option content from ion_species_opt.
+    has_plasma = ion_species_opt.isSet();
+    if (has_plasma) {
+      ion_species = ion_species_opt.as<std::string>();
+      output_info.write("\tVANTAGE: reading plasma of ion species '{:s}'\n", ion_species);
+      // Same option and default as evolve_density, so the floors match
+      ion_density_floor = alloptions[ion_species]["density_floor"]
+                              .doc("Minimum density floor")
+                              .withDefault(1e-7);
+    } else {
+      output_info.write("\tVANTAGE: no ion_species set, no plasma is read\n");
+    }
+
+    two_way_coupling =
+        options["two_way_coupling"]
+            .doc("If true, enable VANTAGE sources to the Hermes-3 plasma. "
+                 "If false, the plasma is read-only. Needs ion_species to be set.")
+            .withDefault(false);
+    if (two_way_coupling and not has_plasma) {
+      throw BoutException("VANTAGE: two_way_coupling = true needs ion_species to be set");
+    }
+    output_info.write("\tVANTAGE: two-way coupling {:s}\n",
+                      two_way_coupling ? "enabled" : "disabled");
+
+    linearise_sources =
+        options["linearise_sources"]
+            .doc("If true, scale Srec linearly with Ni during plasma step")
+            .withDefault(false);
+
+    linearisation_correction =
+        options["linearisation_correction"]
+            .doc("If true, correct the VANTAGE sources to account for "
+                 "their difference on the plasma side due to linearisation")
+            .withDefault(false);
+
+    if (linearise_sources and not two_way_coupling) {
+      throw BoutException("VANTAGE: linearise_sources = true needs two_way_coupling");
+    }
+
     const int ndim = 2;
-    dt = options["dt"]
-             .doc("Timestep to use for VANTAGE kinetic neutrals (normalised units)")
-             .withDefault(0.01);
     nsteps = options["nsteps"]
-                 .doc("Number of timesteps to use for VANTAGE kinetic neutrals")
+                 .doc("Number of VANTAGE steps per output timestep")
                  .withDefault(10);
+    // Set from the output timestep in each advance_vantage()
+    dt = 0.0;
+    if (two_way_coupling) {
+      setPermissions(readWrite("species:{ion}:density_source"));
+      if (linearise_sources) {
+        setPermissions(readOnly("species:{ion}:density", Regions::Interior));
+
+        // Hermes-3 sources integrated over plasma iterations
+        // to ensure it's synchronised between codes
+        solver->add(intS_hermes, "intS_hermes");
+      }
+      substitutePermissions("ion", {ion_species});
+    }
     const int rng_samples = options["rng_samples"]
                                 .doc("Number of RNG samples to prepare per-particle")
                                 .withDefault(40);
@@ -363,7 +443,6 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
         ParticleProp(Sym<REAL>("FLUID_DENSITY"), 1),
         ParticleProp(Sym<REAL>("FLUID_FLOW_SPEED"), ndim),
         ParticleProp(Sym<REAL>("FLUID_TEMPERATURE"), 1),
-        ParticleProp(Sym<INT>("N_CELL"), 1),
         ParticleProp(Sym<REAL>("WEIGHT_V2"), 1),
         ParticleProp(Sym<REAL>("WEIGHT_V"), ndim),
     };
@@ -406,13 +485,12 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
         initial_distribution[Sym<REAL>("POSITION")][px][dimx] = positions[dimu][pxu];
         initial_distribution[Sym<REAL>("VELOCITY")][px][dimx] = velocities[dimu][pxu];
       }
-      initial_distribution[Sym<REAL>("ION_DENSITY")][px][0] = background_ion_density;
+      // Plasma properties are set from the state before the first reaction step
+      initial_distribution[Sym<REAL>("ION_DENSITY")][px][0] = 0.0;
       initial_distribution[Sym<REAL>("ION_SOURCE_DENSITY")][px][0] = 0.0;
       initial_distribution[Sym<REAL>("ION_SOURCE_ENERGY")][px][0] = 0.0;
-      initial_distribution[Sym<REAL>("ELECTRON_DENSITY")][px][0] =
-          background_electron_density;
-      initial_distribution[Sym<REAL>("ELECTRON_TEMPERATURE")][px][0] =
-          background_electron_temperature;
+      initial_distribution[Sym<REAL>("ELECTRON_DENSITY")][px][0] = 0.0;
+      initial_distribution[Sym<REAL>("ELECTRON_TEMPERATURE")][px][0] = 0.0;
       initial_distribution[Sym<REAL>("ELECTRON_SOURCE_DENSITY")][px][0] = 0.0;
       initial_distribution[Sym<REAL>("ELECTRON_SOURCE_ENERGY")][px][0] = 0.0;
       for (int dimx = 0; dimx < ndim; dimx++) {
@@ -448,18 +526,29 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
         neso_mesh, project_eval_dg0, mesh_coupler_dg0, bout_mesh, ndim);
 
     // vectors for storing an ion density on the kinetic mesh
-    ion_density_kmsh = std::vector<REAL>(
-        static_cast<size_t>(num_cells_owned_kinetic_mesh), background_ion_density);
+    virtual_ion_density_kmsh =
+        std::vector<REAL>(static_cast<size_t>(num_cells_owned_kinetic_mesh), 0.0);
     total_density =
         std::vector<REAL>(static_cast<size_t>(num_cells_owned_kinetic_mesh), 0.0);
     // Field2D for storing plasma data coming from the plasma mesh
-    // that will be evaluated on to the particle properties
-    ion_density = Field2D{background_ion_density, bout_mesh};
-    electron_density = Field2D{background_electron_density, bout_mesh};
-    ion_temperature = Field2D{background_ion_temperature, bout_mesh};
-    electron_temperature = Field2D{background_electron_temperature, bout_mesh};
+    Ni = Field2D{0.0, bout_mesh};
+    Ne = Field2D{0.0, bout_mesh};
+    Ti = Field2D{0.0, bout_mesh};
+    Te = Field2D{0.0, bout_mesh};
     ion_velocity = std::vector<Field2D>{Field2D{background_ion_Vx, bout_mesh},
                                         Field2D{background_ion_Vy, bout_mesh}};
+    // Emulated ion density for runtime mass conservation check between Siz and Srec
+    virtual_ion_density = Field2D{0.0, bout_mesh};
+    // Total density source averaged over VANTAGE call
+    S_vantage = Field2D{0.0, bout_mesh};
+
+    // Linearised density source and VANTAGE-side Ni
+    dS_dNi = Field2D{0.0, bout_mesh};
+    Ni_vantage = Field2D{0.0, bout_mesh};
+    intS_hermes_previous = Field3D{0.0, bout_mesh};
+    intS_vantage_change = Field2D{0.0, bout_mesh};
+    intS_difference = Field2D{0.0, bout_mesh};
+
     // RNG kernel
     // Used for sampling from velocity distribution for REC/CX
     // ------------------------------------------------------------------------------
@@ -480,53 +569,10 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
 
     // Give particle group initial kinetic values (positions and velocities)
     // Numerical settings: weight, stdev, species ID
-    // use the same standard deviation for markers as in the initial distribution of velocities
-    // we should consider if marker distribution should evolve with time to track the neutral/ion temperature
-    // we should consider if marker distrubution should be initialised using Field2D information
-    const REAL initial_ion_thermal_speed = std::sqrt(background_ion_temperature / AA);
     ParticleSet maxwellian_markers = uniform_cellwise_maxwellian<ndim>(
-        sycl_target, neso_mesh, particle_spec, rec_markers_per_cell, 1.0,
-        initial_ion_thermal_speed, -1);
+        sycl_target, neso_mesh, particle_spec, rec_markers_per_cell, 1.0, 1.0, -1);
 
     marker_group->add_particles_local(maxwellian_markers);
-
-    // Give particle group initial fluid values:
-    // markers will contain background plasma properties
-    update_particle_properties_from_plasma(data_transfer, marker_group, ion_density,
-                                           ion_temperature, ion_velocity,
-                                           electron_density, electron_temperature);
-
-    // Calculate marker weights
-
-    // Add particle property: number of particles in the local cell
-    // From demo app: "distribute_n_part_cell"
-    for (int ic = 0; ic < marker_group->domain->mesh->get_cell_count(); ic++) {
-      INT n_part_cell = marker_group->get_npart_cell(ic);
-      particle_loop(
-          "Update N_CELL prop", marker_group,
-          [=](auto n_cell_prop) { n_cell_prop.at(0) = n_part_cell; },
-          Access::write(Sym<INT>("N_CELL")))
-          ->execute(ic);
-    }
-
-    const INT num_cells = marker_group->domain->mesh->get_cell_count();
-    const BoutReal N_w_local = this->N_w;
-
-    // Calculate weight for each marker particle
-    // based on FLUID_DENSITY and N_CELL properties contained in same particle.
-    for (int ic = 0; ic < num_cells; ic++) {
-      REAL V_cell = neso_mesh->dmh->get_cell_volume(ic);
-      particle_loop(
-          "Update weight of ions", marker_group,
-          [N_w_local, V_cell](auto n_cell_prop, auto ion_dens_prop, auto weight_prop) {
-            const BoutReal n_cell = static_cast<BoutReal>(n_cell_prop.at(0));
-            auto updated_weight = (ion_dens_prop.at(0) * V_cell) / (N_w_local * n_cell);
-            weight_prop.at(0) = updated_weight;
-          },
-          Access::read(Sym<INT>("N_CELL")), Access::read(Sym<REAL>("FLUID_DENSITY")),
-          Access::write(Sym<REAL>("WEIGHT")))
-          ->execute(ic);
-    }
 
     // Wrappers & controllers
     // ------------------------------------------------------------------------------
@@ -656,8 +702,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
 
     auto rec_data_calc_sampler =
         FilteredMaxwellianSampler<2, decltype(constant_rate_cross_section)>(
-            1 / (rec_marker_species.get_mass() * eV), constant_rate_cross_section,
-            rng_kernel);
+            1 / rec_marker_species.get_mass(), constant_rate_cross_section, rng_kernel);
 
     // Set neutrals to be products of recombination
     const int out_state = static_cast<int>(main_species.get_id());
@@ -740,19 +785,11 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
   // set weights from a constant initial density
   set_initial_particle_weights(initial_neutral_density, A_particle_group, neso_mesh,
                                scalar_dof_kinetic_mesh, data_transfer, N_w);
-  // update particle properties from the plasma
-  update_particle_properties_from_plasma(data_transfer, A_particle_group, ion_density,
-                                         ion_temperature, ion_velocity, electron_density,
-                                         electron_temperature);
-  // write velocity moment diagnostics
   diagnostics_manager = std::make_unique<VantageDiagnosticsManager>(
       make_output_path("BOUT.dmp.vantage.particle.moments", alloptions), neso_mesh,
       neso_mesh_cell_volumes_on_plasma_mesh, A_particle_group, data_transfer,
       this->source_manager, N_w, AA, bout_mesh, units, vantage_dump_filepath,
       diagnose_vantage);
-  diagnostics_manager->update_kinetic_velocity_moments();
-  diagnostics_manager->write_kinetic_velocity_moment_diagnostics(0, ion_density_kmsh);
-  diagnostics_manager->transfer_moments_to_plasma_mesh();
 
   this->source_manager->update_all_sources(dt);
   // Object for particle_trajectories.h5part file.
@@ -763,18 +800,6 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
                                       Sym<REAL>("POSITION"), Sym<REAL>("VELOCITY"));
     h5part->close();
   }
-  // mass for conservation check
-  neutral_density = diagnostics_manager->get_density_kinetic_mesh();
-  // for (size_t ic=0; ic< static_cast<size_t>(neso_mesh->get_cell_count());ic++){
-  //   total_density.at(ic) = neutral_density.at(ic) + ion_density_kmsh.at(ic);
-  // }
-  total_mass_initial = calculate_total_mass(neutral_density, neso_mesh);
-  total_mass_initial +=
-      calculate_total_mass(ion_density, this->neso_mesh_cell_volumes_on_plasma_mesh);
-
-  // Initialise particle time
-  particle_time = 0.0;
-  diagnostics_manager->write_bout_diagnostics(ion_density, particle_time);
 
   // Register VANTAGE timestep scheduler.
   // https://bout-dev.readthedocs.io/en/latest/user_docs/time_integration.html#monitoring-the-simulation-output
@@ -793,19 +818,65 @@ void Vantage::apply_boundary_conditions(ParticleSubGroupSharedPtr aa) {
   }
 }
 
+// Initialisation/construction that needs the plasma from the state.
+// Executed during the first monitor call (iteration 0)
+void Vantage::initialise_from_plasma(BoutReal time) {
+  previous_call_time = time;
+
+  // update particle properties from the plasma
+  update_particle_properties_from_plasma(data_transfer, A_particle_group, Ni, Ti,
+                                         ion_velocity, Ne, Te);
+
+  // VANTAGE's ion inventory starts from the plasma ion density
+  virtual_ion_density = Ni;
+  data_transfer->transfer_scalar_to_kinetic_mesh(virtual_ion_density,
+                                                 virtual_ion_density_kmsh);
+
+  // write velocity moment diagnostics
+  diagnostics_manager->update_kinetic_velocity_moments();
+  diagnostics_manager->write_kinetic_velocity_moment_diagnostics(
+      0, virtual_ion_density_kmsh);
+  diagnostics_manager->transfer_moments_to_plasma_mesh();
+
+  // mass for conservation check
+  neutral_density = diagnostics_manager->get_density_kinetic_mesh();
+  // for (size_t ic=0; ic< static_cast<size_t>(neso_mesh->get_cell_count());ic++){
+  //   total_density.at(ic) = neutral_density.at(ic) + ion_density_kmsh.at(ic);
+  // }
+  total_mass_initial = calculate_total_mass(neutral_density, neso_mesh);
+  total_mass_initial += calculate_total_mass(virtual_ion_density,
+                                             this->neso_mesh_cell_volumes_on_plasma_mesh);
+
+  // Initialise particle time
+  particle_time = 0.0;
+  diagnostics_manager->write_bout_diagnostics(virtual_ion_density, particle_time);
+}
+
 int VantageMonitor::call(Solver* UNUSED(solver), BoutReal time, int iter,
                          int UNUSED(nout)) {
 
-  // Prevent monitor from firing at the 0th timestep (before first timestep).
-  // Initialisation is ran in the constructor already.
+  // At the 0th timestep (before the first timestep), finish the initialisation.
   if (iter == 0) {
+    vantage->initialise_from_plasma(time);
     return 0;
   }
   return vantage->advance_vantage(time);
 }
 
 // Function called by the Monitor to advance kinetic neutrals for some number of VANTAGE timesteps
-int Vantage::advance_vantage(BoutReal UNUSED(time)) {
+int Vantage::advance_vantage(BoutReal time) {
+  // VANTAGE runs once per output, so its steps span the output timestep
+  dt = (time - previous_call_time) / nsteps;
+  previous_call_time = time;
+
+  // Send plasma data to recombination markers
+  update_particle_properties_from_plasma(data_transfer, marker_group, Ni, Ti,
+                                         ion_velocity, Ne, Te);
+  // Calculate rec marker weight which becomes kinetic representation of ion density.
+  // Reads the FLUID_DENSITY just sent to the markers.
+  set_recombination_marker_weights(marker_group, neso_mesh, scalar_dof_kinetic_mesh,
+                                   data_transfer, N_w);
+
   // Advection & rest of code
   // ------------------------------------------------------------------------------
 
@@ -863,7 +934,7 @@ int Vantage::advance_vantage(BoutReal UNUSED(time)) {
       aa = lambda_find_partial_moves(aa);
     }
   };
-  // Create a ParticleSubGroup from particles that are in a cell with nonzero electron_density.
+  // Create a ParticleSubGroup from particles that are in a cell with nonzero Ne.
   // This makes sure reactions are only applied where the neutrals are within the plasma volume
   const REAL electron_density_threshold = this->electron_density_threshold;
   ParticleSubGroupSharedPtr marker_group_in_plasma =
@@ -875,6 +946,17 @@ int Vantage::advance_vantage(BoutReal UNUSED(time)) {
 
   // begin timestepping
   output << "\nBegin VANTAGE iterations \n";
+
+  if (linearise_sources) {
+    intS_hermes_change = DC(intS_hermes) - DC(intS_hermes_previous);
+    intS_hermes_previous = copy(intS_hermes);
+    intS_difference = intS_hermes_change - intS_vantage_change;
+  }
+
+  S_vantage = 0.0;
+  dS_dNi = 0.0;
+  Ni_vantage = Ni;
+
   for (int stepx = 0; stepx < nsteps; stepx++) {
 
     output << "Particle time: " << std::to_string(particle_time) << std::endl;
@@ -883,12 +965,10 @@ int Vantage::advance_vantage(BoutReal UNUSED(time)) {
     A_particle_group->cell_move();
     lambda_apply_timestep(static_particle_sub_group(A_particle_group));
     // update plasma properties on particles based on their new locations
-    update_particle_properties_from_plasma(data_transfer, A_particle_group, ion_density,
-                                           ion_temperature, ion_velocity,
-                                           electron_density, electron_temperature);
-    update_particle_properties_from_plasma(data_transfer, marker_group, ion_density,
-                                           ion_temperature, ion_velocity,
-                                           electron_density, electron_temperature);
+    update_particle_properties_from_plasma(data_transfer, A_particle_group, Ni, Ti,
+                                           ion_velocity, Ne, Te);
+    update_particle_properties_from_plasma(data_transfer, marker_group, Ni, Ti,
+                                           ion_velocity, Ne, Te);
     // apply reactions to particles with a non-zero electron density property (those neutrals in the plasma)
     reaction_controller->apply(A_particle_group_in_plasma, dt,
                                ControllerMode::standard_mode);
@@ -903,24 +983,40 @@ int Vantage::advance_vantage(BoutReal UNUSED(time)) {
 
     // "Solve" density
     // Sources are in normalised m^-3 s^-1, so need to multiply by dt
-    ion_density += (Siz + Srec) * dt;
-    data_transfer->transfer_scalar_to_kinetic_mesh(ion_density, ion_density_kmsh);
+    virtual_ion_density += (Siz + Srec) * dt;
+    // Mean ion density source over the advance
+    S_vantage += (Siz + Srec) / nsteps;
+    data_transfer->transfer_scalar_to_kinetic_mesh(virtual_ion_density,
+                                                   virtual_ion_density_kmsh);
+
+    // Linearisation
+    dS_dNi += 2.0 * Srec / (floor(Ni_vantage, ion_density_floor) * nsteps);
     // for (size_t ic=0; ic < static_cast<size_t>(neso_mesh->get_cell_count());ic++){
     //   ion_density_kmsh.at(ic) += (Siz_kmsh.at(ic) + Srec_kmsh.at(ic)) * dt;
     // }
 
     diagnostics_manager->update_kinetic_velocity_moments();
-    diagnostics_manager->write_kinetic_velocity_moment_diagnostics(stepx + 1,
-                                                                   ion_density_kmsh);
+    diagnostics_manager->write_kinetic_velocity_moment_diagnostics(
+        stepx + 1, virtual_ion_density_kmsh);
     diagnostics_manager->transfer_moments_to_plasma_mesh();
     // Write to VANTAGE dump files
-    // data_transfer->transfer_scalar_to_plasma_mesh(ion_density_kmsh, ion_density);
-    diagnostics_manager->write_bout_diagnostics(ion_density, particle_time);
+    // data_transfer->transfer_scalar_to_plasma_mesh(virtual_ion_density_kmsh, ion_density);
+    diagnostics_manager->write_bout_diagnostics(virtual_ion_density, particle_time);
     // Write to particle_trajectories file
     if (diagnose_vantage) {
       h5part->write();
     }
   }
+
+  // Correct S_vantage to account for difference in S on the plasma side
+  // due to linearisation
+  if (linearise_sources && linearisation_correction) {
+    S_vantage -= intS_difference / (dt * nsteps);
+  }
+
+  // Total density change over the VANTAGE call
+  intS_vantage_change = S_vantage * dt * nsteps;
+
   // Warning: if h5part gets destroyed while open due to crash, you will get a NESO_ASSERT
   // warning which will mask the actual backtrace. In this event
   // you could move this into the loop, but it will have an IO cost.
@@ -930,17 +1026,50 @@ int Vantage::advance_vantage(BoutReal UNUSED(time)) {
   // mass for conservation check
   neutral_density = diagnostics_manager->get_density_kinetic_mesh();
   REAL total_mass_final = calculate_total_mass(neutral_density, neso_mesh);
-  total_mass_final +=
-      calculate_total_mass(ion_density, this->neso_mesh_cell_volumes_on_plasma_mesh);
+  total_mass_final += calculate_total_mass(virtual_ion_density,
+                                           this->neso_mesh_cell_volumes_on_plasma_mesh);
   if (test_mass_conservation) {
     check_mass_conservation(total_mass_final, total_mass_initial);
   }
   return 0;
 }
 
-void Vantage::transform_impl(GuardedOptions& UNUSED(state)) {}
+void Vantage::transform_impl(GuardedOptions& state) {
+  if (two_way_coupling) {
 
-void Vantage::finally(const Options& UNUSED(state)) {}
+    // Correct the density source to account for
+    Field3D S_linearised = Field3D(S_vantage);
+
+    if (linearise_sources) {
+      const Field3D Ni_hermes =
+          GET_NOBOUNDARY(Field3D, state["species"][ion_species]["density"]);
+      S_linearised += Field3D(dS_dNi) * (Ni_hermes - Field3D(Ni_vantage));
+
+      // Keep track of the Hermes-3 source
+      ddt(intS_hermes) = S_linearised;
+    }
+
+    add(state["species"][ion_species]["density_source"], S_linearised);
+  }
+}
+
+void Vantage::finally(const Options& state) {
+
+  // Do not read from state if VANTAGE running standalone
+  if (!has_plasma) {
+    return;
+  }
+
+  // Get plasma fields from the state
+  const Options& electrons = state["species"]["e"];
+  const Options& ions = state["species"][ion_species];
+
+  // DC() averages over Z; the constructor already requires nz = 1.
+  Ne = DC(GET_VALUE(Field3D, electrons["density"]));
+  Te = DC(GET_VALUE(Field3D, electrons["temperature"]));
+  Ni = DC(GET_VALUE(Field3D, ions["density"]));
+  Ti = DC(GET_VALUE(Field3D, ions["temperature"]));
+}
 
 void Vantage::outputVars(Options& UNUSED(state)) {}
 
