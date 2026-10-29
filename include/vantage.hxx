@@ -56,6 +56,7 @@ struct Vantage : public NamedComponent<Vantage> {
 private:
   bool test_mass_conservation;
   bool diagnose_vantage;
+  bool linearisation_correction;
   BoutReal N_w;
   REAL dt; // VANTAGE step = output timestep / nsteps
   BoutReal charge;
@@ -78,11 +79,17 @@ private:
   // mass conservation check and diagnostics, never sent to the particles.
   Field2D virtual_ion_density;
   // Total density source averaged over VANTAGE call
-  Field2D S;
+  Field2D S_vantage;
   // Recombination part of dS/dNi in each cell, averaged over the VANTAGE call
   Field2D dS_dNi;
   // Ion density VANTAGE used in its last call: the linearisation point
   Field2D Ni_vantage;
+  // Integral of the Hermes-3 density source over plasma iterations
+  Field3D intS_hermes;
+  Field3D intS_hermes_previous;
+  Field2D intS_difference;
+  Field2D intS_vantage_change;
+  Field2D intS_hermes_change;
   // a threshold density, for reactions between neutrals and the plasma
   REAL electron_density_threshold;
   BoutReal total_mass_initial, total_mass;

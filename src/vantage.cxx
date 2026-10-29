@@ -371,6 +371,12 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
             .doc("If true, scale Srec linearly with Ni during plasma step")
             .withDefault(false);
 
+    linearisation_correction =
+        options["linearisation_correction"]
+            .doc("If true, correct the VANTAGE sources to account for "
+                 "their difference on the plasma side due to linearisation")
+            .withDefault(false);
+
     if (linearise_sources and not two_way_coupling) {
       throw BoutException("VANTAGE: linearise_sources = true needs two_way_coupling");
     }
@@ -385,6 +391,10 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
       setPermissions(readWrite("species:{ion}:density_source"));
       if (linearise_sources) {
         setPermissions(readOnly("species:{ion}:density", Regions::Interior));
+
+        // Hermes-3 sources integrated over plasma iterations
+        // to ensure it's synchronised between codes
+        solver->add(intS_hermes, "intS_hermes");
       }
       substitutePermissions("ion", {ion_species});
     }
@@ -530,11 +540,14 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
     // Emulated ion density for runtime mass conservation check between Siz and Srec
     virtual_ion_density = Field2D{0.0, bout_mesh};
     // Total density source averaged over VANTAGE call
-    S = Field2D{0.0, bout_mesh};
+    S_vantage = Field2D{0.0, bout_mesh};
 
     // Linearised density source and VANTAGE-side Ni
     dS_dNi = Field2D{0.0, bout_mesh};
     Ni_vantage = Field2D{0.0, bout_mesh};
+    intS_hermes_previous = Field3D{0.0, bout_mesh};
+    intS_vantage_change = Field2D{0.0, bout_mesh};
+    intS_difference = Field2D{0.0, bout_mesh};
 
     // RNG kernel
     // Used for sampling from velocity distribution for REC/CX
@@ -933,7 +946,14 @@ int Vantage::advance_vantage(BoutReal time) {
 
   // begin timestepping
   output << "\nBegin VANTAGE iterations \n";
-  S = 0.0;
+
+  if (linearise_sources) {
+    intS_hermes_change = DC(intS_hermes) - DC(intS_hermes_previous);
+    intS_hermes_previous = copy(intS_hermes);
+    intS_difference = intS_hermes_change - intS_vantage_change;
+  }
+
+  S_vantage = 0.0;
   dS_dNi = 0.0;
   Ni_vantage = Ni;
 
@@ -965,7 +985,7 @@ int Vantage::advance_vantage(BoutReal time) {
     // Sources are in normalised m^-3 s^-1, so need to multiply by dt
     virtual_ion_density += (Siz + Srec) * dt;
     // Mean ion density source over the advance
-    S += (Siz + Srec) / nsteps;
+    S_vantage += (Siz + Srec) / nsteps;
     data_transfer->transfer_scalar_to_kinetic_mesh(virtual_ion_density,
                                                    virtual_ion_density_kmsh);
 
@@ -987,6 +1007,16 @@ int Vantage::advance_vantage(BoutReal time) {
       h5part->write();
     }
   }
+
+  // Correct S_vantage to account for difference in S on the plasma side
+  // due to linearisation
+  if (linearise_sources && linearisation_correction) {
+    S_vantage -= intS_difference / (dt * nsteps);
+  }
+
+  // Total density change over the VANTAGE call
+  intS_vantage_change = S_vantage * dt * nsteps;
+
   // Warning: if h5part gets destroyed while open due to crash, you will get a NESO_ASSERT
   // warning which will mask the actual backtrace. In this event
   // you could move this into the loop, but it will have an IO cost.
@@ -1008,12 +1038,15 @@ void Vantage::transform_impl(GuardedOptions& state) {
   if (two_way_coupling) {
 
     // Correct the density source to account for
-    Field3D S_linearised = Field3D(S);
+    Field3D S_linearised = Field3D(S_vantage);
 
     if (linearise_sources) {
       const Field3D Ni_hermes =
           GET_NOBOUNDARY(Field3D, state["species"][ion_species]["density"]);
       S_linearised += Field3D(dS_dNi) * (Ni_hermes - Field3D(Ni_vantage));
+
+      // Keep track of the Hermes-3 source
+      ddt(intS_hermes) = S_linearised;
     }
 
     add(state["species"][ion_species]["density_source"], S_linearised);
