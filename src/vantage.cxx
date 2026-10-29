@@ -347,6 +347,10 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
     if (has_plasma) {
       ion_species = ion_species_opt.as<std::string>();
       output_info.write("\tVANTAGE: reading plasma of ion species '{:s}'\n", ion_species);
+      // Same option and default as evolve_density, so the floors match
+      ion_density_floor = alloptions[ion_species]["density_floor"]
+                              .doc("Minimum density floor")
+                              .withDefault(1e-7);
     } else {
       output_info.write("\tVANTAGE: no ion_species set, no plasma is read\n");
     }
@@ -362,6 +366,15 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
     output_info.write("\tVANTAGE: two-way coupling {:s}\n",
                       two_way_coupling ? "enabled" : "disabled");
 
+    linearise_sources =
+        options["linearise_sources"]
+            .doc("If true, scale Srec linearly with Ni during plasma step")
+            .withDefault(false);
+
+    if (linearise_sources and not two_way_coupling) {
+      throw BoutException("VANTAGE: linearise_sources = true needs two_way_coupling");
+    }
+
     const int ndim = 2;
     nsteps = options["nsteps"]
                  .doc("Number of VANTAGE steps per output timestep")
@@ -370,6 +383,9 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
     dt = 0.0;
     if (two_way_coupling) {
       setPermissions(readWrite("species:{ion}:density_source"));
+      if (linearise_sources) {
+        setPermissions(readOnly("species:{ion}:density", Regions::Interior));
+      }
       substitutePermissions("ion", {ion_species});
     }
     const int rng_samples = options["rng_samples"]
@@ -514,7 +530,12 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
     // Emulated ion density for runtime mass conservation check between Siz and Srec
     virtual_ion_density = Field2D{0.0, bout_mesh};
     // Total density source averaged over VANTAGE call
-    Svantage = Field2D{0.0, bout_mesh};
+    S = Field2D{0.0, bout_mesh};
+
+    // Linearised density source and VANTAGE-side Ni
+    dS_dNi = Field2D{0.0, bout_mesh};
+    Ni_vantage = Field2D{0.0, bout_mesh};
+
     // RNG kernel
     // Used for sampling from velocity distribution for REC/CX
     // ------------------------------------------------------------------------------
@@ -912,7 +933,10 @@ int Vantage::advance_vantage(BoutReal time) {
 
   // begin timestepping
   output << "\nBegin VANTAGE iterations \n";
-  Svantage = 0.0;
+  S = 0.0;
+  dS_dNi = 0.0;
+  Ni_vantage = Ni;
+
   for (int stepx = 0; stepx < nsteps; stepx++) {
 
     output << "Particle time: " << std::to_string(particle_time) << std::endl;
@@ -941,9 +965,12 @@ int Vantage::advance_vantage(BoutReal time) {
     // Sources are in normalised m^-3 s^-1, so need to multiply by dt
     virtual_ion_density += (Siz + Srec) * dt;
     // Mean ion density source over the advance
-    Svantage += (Siz + Srec) / nsteps;
+    S += (Siz + Srec) / nsteps;
     data_transfer->transfer_scalar_to_kinetic_mesh(virtual_ion_density,
                                                    virtual_ion_density_kmsh);
+
+    // Linearisation
+    dS_dNi += 2.0 * Srec / (floor(Ni_vantage, ion_density_floor) * nsteps);
     // for (size_t ic=0; ic < static_cast<size_t>(neso_mesh->get_cell_count());ic++){
     //   ion_density_kmsh.at(ic) += (Siz_kmsh.at(ic) + Srec_kmsh.at(ic)) * dt;
     // }
@@ -979,7 +1006,17 @@ int Vantage::advance_vantage(BoutReal time) {
 
 void Vantage::transform_impl(GuardedOptions& state) {
   if (two_way_coupling) {
-    add(state["species"][ion_species]["density_source"], Field3D(Svantage));
+
+    // Correct the density source to account for
+    Field3D S_linearised = Field3D(S);
+
+    if (linearise_sources) {
+      const Field3D Ni_hermes =
+          GET_NOBOUNDARY(Field3D, state["species"][ion_species]["density"]);
+      S_linearised += Field3D(dS_dNi) * (Ni_hermes - Field3D(Ni_vantage));
+    }
+
+    add(state["species"][ion_species]["density_source"], S_linearised);
   }
 }
 

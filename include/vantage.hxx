@@ -78,7 +78,11 @@ private:
   // mass conservation check and diagnostics, never sent to the particles.
   Field2D virtual_ion_density;
   // Total density source averaged over VANTAGE call
-  Field2D Svantage;
+  Field2D S;
+  // Recombination part of dS/dNi in each cell, averaged over the VANTAGE call
+  Field2D dS_dNi;
+  // Ion density VANTAGE used in its last call: the linearisation point
+  Field2D Ni_vantage;
   // a threshold density, for reactions between neutrals and the plasma
   REAL electron_density_threshold;
   BoutReal total_mass_initial, total_mass;
@@ -96,6 +100,8 @@ private:
   std::string ion_species;
   bool has_plasma;       // Whether to read plasma fields from the state (ion_species set)
   bool two_way_coupling; // Whether VANTAGE sources are also sent to the Hermes-3 plasma
+  bool linearise_sources;     // Whether Hermes-3 linearises S in Ni between VANTAGE calls
+  BoutReal ion_density_floor; // density_floor of ion_species, as in evolve_density
   PetscLib petsc_lib; // Ensures PETSc is initialized for the lifetime of this component
 
   // DMPLex/VANTAGE stuff
