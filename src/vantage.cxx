@@ -381,6 +381,13 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
       throw BoutException("VANTAGE: linearise_sources = true needs two_way_coupling");
     }
 
+    const REAL boundary_intersection_tolerance =
+        options["boundary_intersection_tolerance"]
+            .doc("NESO-Particles setting: Tolerance for intersection of trajectories and "
+                 "the line segments that form the boundary. If particles are passing "
+                 "through corners try increasing this value (default 0.0).")
+            .withDefault(0.0);
+
     const int ndim = 2;
     nsteps = options["nsteps"]
                  .doc("Number of VANTAGE steps per output timestep")
@@ -775,8 +782,8 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
     // boundary_groups[1] = {100, 200};
     boundary_groups[1] = {100};
 
-    b2d = std::make_shared<PetscInterface::BoundaryInteraction2D>(sycl_target, neso_mesh,
-                                                                  boundary_groups);
+    b2d = std::make_shared<PetscInterface::BoundaryInteraction2D>(
+        sycl_target, neso_mesh, boundary_groups, boundary_intersection_tolerance);
     reflection = std::make_shared<BoundaryReflection>(ndim, 1.0e-10);
   };
 
