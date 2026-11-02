@@ -33,11 +33,11 @@ public:
   void update_kinetic_velocity_moments();
   // write kinetic diagnostics to a vtkhdf file
   void write_kinetic_velocity_moment_diagnostics(int istep,
-                                                 std::vector<REAL>& ion_density);
+                                                 std::vector<REAL>& virtual_ion_density);
   // transfer kinetic moments to BOUT++ mesh
   void transfer_moments_to_plasma_mesh();
   // write BOUT++ style diagnostics on the BOUT++ mesh
-  void write_bout_diagnostics(const Field2D& ion_density, BoutReal particle_time);
+  void write_bout_diagnostics(const Field2D& virtual_ion_density, BoutReal particle_time);
   std::vector<REAL> get_density_kinetic_mesh();
 
   ~VantageDiagnosticsManager(); // free NESO-Particles objects
