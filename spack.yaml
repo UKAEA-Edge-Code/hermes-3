@@ -5,12 +5,12 @@
 spack:
   # add package specs to the `specs` list
   specs:
-  - hermes-3+vantagereactions ^boutpp+petsc+sundials ^petsc+hypre+mumps ^py-numpy@1.26.4 ^vantage.vantagereactions~enable_tests ^neso-rng-toolkit
+  - hermes-3+vantagereactions ^boutpp+petsc+sundials ^petsc+hypre+mumps ^vantage.vantagereactions~enable_tests ^neso-rng-toolkit
     ^neso.neso-particles~nvcxx+petsc~build_tests ^openblas ^neso.adaptivecpp ^hdf5 %gcc
   - cmake
   - py-meshio
   - py-matplotlib+animation
-  - py-pip
+  - "py-pip@26.2.2:"
   - py-xbout
   - py-xhermes
   - py-boutdata
