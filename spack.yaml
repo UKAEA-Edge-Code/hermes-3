@@ -10,7 +10,6 @@ spack:
   - cmake
   - py-meshio
   - py-matplotlib+animation
-  - "py-pip@26.2.2:"
   - py-xbout
   - py-xhermes
   - py-boutdata
@@ -36,6 +35,8 @@ spack:
       - spec: git@system
         prefix: /usr
       buildable: false
+    py-pip:
+      require: "@26.2.2:"
   develop:
     boutpp:
       path: ./external/BOUT-dev
