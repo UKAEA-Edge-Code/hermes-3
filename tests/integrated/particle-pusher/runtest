@@ -28,7 +28,7 @@ def get_neutral_mass(vtkhdf_file_path):
     # assume that a single .vtkhdf file corresponds to a single time slice
     with h5py.File(vtkhdf_file_path, "r") as dataset:
         density_cellvalues = np.copy(dataset["/VTKHDF/CellData/density"][:])
-        # ion_density_cellvalues = np.copy(dataset[f"/VTKHDF/CellData/ion_density"][:])
+        # ion_density_cellvalues = np.copy(dataset[f"/VTKHDF/CellData/virtual_ion_density"][:])
         volumes = np.copy(dataset["/VTKHDF/CellData/cellvolume"][:])
         # get the masses from this time
         total_neutral_mass = integrate_cellvalue(density_cellvalues, volumes)
@@ -38,7 +38,7 @@ def get_neutral_mass(vtkhdf_file_path):
 # consider how to parallelise this when the test is run in parallel
 def get_ion_mass(ncfile_path):
     with nc.Dataset(ncfile_path, mode="r") as ncdataset:
-        ion_density = np.copy(ncdataset.variables["ion_density"][:])
+        ion_density = np.copy(ncdataset.variables["virtual_ion_density"][:])
         cellareas = np.copy(ncdataset.variables["neso_cell_areas"][:])
     ion_mass_0 = np.sum(ion_density[0, :, :] * cellareas[:, :])
     ion_mass_end = np.sum(ion_density[-1, :, :] * cellareas[:, :])
@@ -74,7 +74,8 @@ def particle_push_input(
     input_file_string = f"""
 
     nout = 1
-    timestep = 1
+    timestep = {dt * nsteps}
+    MZ = 1  # Z grid size
 
     [mesh]
     J = 1
@@ -108,29 +109,32 @@ def particle_push_input(
     components = (d+, e, vantage)
     Nnorm = 1e19
 
+    # Density effectively fixed due to no sources.
+    # Must be set to evolved, otherwise solver complains.
     [d+]
-    type = evolve_density
+    type = evolve_density, fixed_temperature
     AA = 1
     charge = 1
+    temperature = 50  # [eV]
 
     [Nd+]
-    function = 1
+    function = 1e19 / hermes:Nnorm
     bndry_all = neumann
 
     [e]
-    type = quasineutral
+    type = quasineutral, fixed_temperature
     AA = 1/1836
     charge = -1
+    temperature = 50  # [eV]
 
     [vantage]
-    dt = {dt}
     nsteps = {nsteps}
+    ion_species = d+
+    neutral_species = d
     test_mass_conservation = true
     initial_neutral_pressure = 1
     initial_neutral_temperature = 1
     npart_per_cell = 20
-    background_ion_density = 1e19
-    background_ion_temperature = 50
     background_ion_Vy = 1
     remove_threshold = {remove_threshold}
     merge_threshold = {merge_threshold}

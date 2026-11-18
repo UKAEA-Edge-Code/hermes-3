@@ -1,5 +1,6 @@
 nout = 1
-timestep = 1
+timestep = 0.015
+MZ = 1  # Needed to set nz=1 if reading mesh from file
 
 [mesh]
 file = example_usn.grd.nc
@@ -32,8 +33,9 @@ AA = 1/1836
 charge = -1
 
 [vantage]
-dt = 0.005
 nsteps = 3
+
+neutral_species = d
 
 test_mass_conservation = true
 

@@ -15,7 +15,8 @@ def extended_kinetic_mesh_test_input(
 
     input_file_string = f"""
     nout = 1
-    timestep = 1
+    timestep = {dt * nsteps}
+    MZ = 1  # Z grid size
 
     [mesh]
     file="{bout_grid_file}"
@@ -35,28 +36,31 @@ def extended_kinetic_mesh_test_input(
     Nnorm = 1e19
     normalise_metric=false
 
+    # Density effectively fixed due to no sources.
+    # Must be set to evolved, otherwise solver complains.
     [d+]
-    type = evolve_density
+    type = evolve_density, fixed_temperature
     AA = 1
     charge = 1
+    temperature = 50  # [eV]
 
     [Nd+]
-    function = 1
+    function = 1e19 / hermes:Nnorm
 
     [e]
-    type = quasineutral
+    type = quasineutral, fixed_temperature
     AA = 1/1836
     charge = -1
+    temperature = 50  # [eV]
 
     [vantage]
-    dt = {dt}
     nsteps = {nsteps}
+    ion_species = d+
+    neutral_species = d
     test_mass_conservation = true
     initial_neutral_pressure = 1
     initial_neutral_temperature = 1
     npart_per_cell = 20
-    background_ion_density = 1e19
-    background_ion_temperature = 50
     background_ion_Vy = 1
     remove_threshold = {remove_threshold}
     merge_threshold = {merge_threshold}
@@ -81,6 +85,7 @@ def generate_BOUT_grid_data(base_grid_dir, kinetic_nc_file_path, verbose=True):
     input_file_string = """
     nout = 0
     timestep = 1
+    MZ = 1  # Z grid size
 
     [mesh]
     J = 1
@@ -129,6 +134,7 @@ def generate_BOUT_grid_data(base_grid_dir, kinetic_nc_file_path, verbose=True):
 
     [vantage]
     nsteps = 0
+    neutral_species = d
     test_mass_conservation = true
     npart_per_cell = 1
     """
@@ -402,6 +408,9 @@ def generate_BOUT_grid_data(base_grid_dir, kinetic_nc_file_path, verbose=True):
 
     # open the kinetic nc file and append mesh data
     with Dataset(kinetic_nc_file_path, mode="a") as ncdataset:
+        # Remove nz for consistency with typical grid files.
+        # Z resolution is set in input file by MZ=1.
+        ncdataset.renameVariable("nz", "nz_from_dump")
         if verbose:
             print(f"append: map_RZ_to_itriangle_0 to {kinetic_nc_file_path}")
         ptr_map_RZ_to_itriangle_0 = ncdataset.createVariable(

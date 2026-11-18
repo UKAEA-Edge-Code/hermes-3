@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
-import xhermes
-import numpy as np
 import json
-from time import time
-import os
+import sys
 from pathlib import Path
-import matplotlib.pyplot as plt
-from boututils.run_wrapper import shell, launch_safe
+from time import time
 
+import numpy as np
+import xhermes
+from boututils.run_wrapper import launch_safe, shell
 
 t0 = time()
 
@@ -24,7 +23,7 @@ Ne * Nn * Kion = Ne * Ne * Krec
 Where Kion and Krec are the AMJUEL ionisation and recombination rates, respectively, in units
 of m^3/s. They are functions of both Te and Ne which are stored in JSON files in Hermes-3.
 
-For a constant background Te and Ne, we can calculate the steady state neutral density 
+For a constant background Te and Ne, we can calculate the steady state neutral density
 by rearranging:
 
 Nn = (Ne * Ne * Krec) / (Ne * Kion)
@@ -70,7 +69,7 @@ s, out = launch_safe(f"./hermes-3 -d {path}", nproc=1, mthread=1, pipe=True)
 if s != 0:
     print(" => vantage-iz-rec-balance test failed: ")
     print(out)
-    exit(1)
+    sys.exit(1)
 
 t_run = time()
 print(f"vantage-iz-rec-balance: simulation took {t_run - t0:.2f}s")
@@ -101,9 +100,9 @@ Siz = ds_vantage["Siz"].mean(dim=["x", "y"]).bout.final_time().values
 Srec = ds_vantage["Srec"].mean(dim=["x", "y"]).bout.final_time().values
 Nn = ds_vantage["Nn"].mean(dim=["x", "y"]).isel(t=-2).values
 
-# Plasma parameters come from input file for now
-Te = ds.options["vantage"]["background_ion_temperature"]
-Ne = ds.options["vantage"]["background_ion_density"]
+# Plasma parameters come from the Hermes-3 output
+Te = ds["Te"].mean().values
+Ne = ds["Ne"].mean().values
 
 
 h4_2_1_5_coeffs = load_hermes_amjuel_coeffs(
