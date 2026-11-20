@@ -17,9 +17,35 @@ size_t get_num_cells_owned_bout_mesh(Mesh*& bout_mesh) {
   return num_cells_owned_bout_mesh;
 }
 
+std::map<PetscInt,PetscInt> get_serial_to_parallel_cell_index_map(
+  PetscInterface::DMPlexMeshCouplerDG0NumberingMap& nm,
+  VantageBasicMeshData& basic_mesh_data,
+  Mesh*& bout_mesh){
+  // maps that define which triangles are present at a given (R,Z) cell
+  Field2D map_RZ_to_itriangle_0 = basic_mesh_data.map_RZ_to_itriangle_0;
+  Field2D map_RZ_to_itriangle_1 = basic_mesh_data.map_RZ_to_itriangle_1;
+  // get data which defines the vertex coordinates
+  const std::vector<REAL> vertices = basic_mesh_data.vertices_data.vertices;
+  // get data that defines triangular cells
+  const std::vector<int> tri_cell_vertices =
+      basic_mesh_data.cell_definition.tri_cell_vertices;
+  // get triangle indices in serial, convert these to parallelised indices
+  std::set<PetscInt> itri_serial;
+  for (int ix = bout_mesh->xstart; ix <= bout_mesh->xend; ix++) {
+    for (int iy = bout_mesh->ystart; iy <= bout_mesh->yend; iy++) {
+      const PetscInt itri_0 = static_cast<PetscInt>(map_RZ_to_itriangle_0(ix, iy));
+      itri_serial.insert(itri_0);
+      const PetscInt itri_1 = static_cast<PetscInt>(map_RZ_to_itriangle_1(ix, iy));
+      itri_serial.insert(itri_1);
+    }
+  }
+  return nm.get_global_cell_indices(itri_serial);
+}
+
 // initialise a DMPlexMeshCouplerDG0 for coupling the kinetic mesh to the BOUT++ mesh
 std::shared_ptr<PetscInterface::DMPlexMeshCouplerDG0>
-get_mesh_coupler(DM& dm, std::vector<PetscInt>& kinetic_mesh_map,
+get_mesh_coupler(DM& dm,
+                const std::map<PetscInt,PetscInt>& itri_serial_to_parallel,
                  VantageBasicMeshData& basic_mesh_data, Mesh*& bout_mesh) {
   const size_t num_cells_owned_bout_mesh = get_num_cells_owned_bout_mesh(bout_mesh);
   // map the defines the coupling backward and forward transfers
@@ -37,10 +63,10 @@ get_mesh_coupler(DM& dm, std::vector<PetscInt>& kinetic_mesh_map,
   for (int ix = bout_mesh->xstart; ix <= bout_mesh->xend; ix++) {
     for (int iy = bout_mesh->ystart; iy <= bout_mesh->yend; iy++) {
       // get triangle areas, and total area for ratio in the backward weights
-      const int itri_0 = static_cast<int>(map_RZ_to_itriangle_0(ix, iy));
+      const PetscInt itri_0 = static_cast<PetscInt>(map_RZ_to_itriangle_0(ix, iy));
       const REAL area_0 =
           get_triangle_area(static_cast<size_t>(itri_0), vertices, tri_cell_vertices);
-      const int itri_1 = static_cast<int>(map_RZ_to_itriangle_1(ix, iy));
+      const PetscInt itri_1 = static_cast<PetscInt>(map_RZ_to_itriangle_1(ix, iy));
       const REAL area_1 =
           get_triangle_area(static_cast<size_t>(itri_1), vertices, tri_cell_vertices);
       const REAL total_area = area_0 + area_1;
@@ -48,11 +74,11 @@ get_mesh_coupler(DM& dm, std::vector<PetscInt>& kinetic_mesh_map,
       ASSERT1(total_area > 0.0);
       // lower triangle
       coupler_map.at(static_cast<size_t>(icell))
-          .push_back({kinetic_mesh_map.at(static_cast<size_t>(itri_0)), 1.0,
+          .push_back({itri_serial_to_parallel.at(itri_0), 1.0,
                       area_0 / total_area});
       // upper triangle
       coupler_map.at(static_cast<size_t>(icell))
-          .push_back({kinetic_mesh_map.at(static_cast<size_t>(itri_1)), 1.0,
+          .push_back({itri_serial_to_parallel.at(itri_1), 1.0,
                       area_1 / total_area});
       icell += 1;
     }
@@ -65,7 +91,8 @@ get_mesh_coupler(DM& dm, std::vector<PetscInt>& kinetic_mesh_map,
 // in the special case where the backward weights are known constants
 // useful for checks and diagnostics
 std::shared_ptr<PetscInterface::DMPlexMeshCouplerDG0>
-get_mesh_coupler_constant_weights(DM& dm, std::vector<PetscInt>& kinetic_mesh_map,
+get_mesh_coupler_constant_weights(DM& dm,
+                                  const std::map<PetscInt,PetscInt>& itri_serial_to_parallel,
                                   VantageBasicMeshData& basic_mesh_data, Mesh*& bout_mesh,
                                   REAL backward_weight_0, REAL backward_weight_1) {
   const size_t num_cells_owned_bout_mesh = get_num_cells_owned_bout_mesh(bout_mesh);
@@ -79,12 +106,12 @@ get_mesh_coupler_constant_weights(DM& dm, std::vector<PetscInt>& kinetic_mesh_ma
       // lower triangle
       coupler_map_0.at(static_cast<size_t>(icell))
           .push_back(
-              {kinetic_mesh_map.at(static_cast<size_t>(map_RZ_to_itriangle_0(ix, iy))),
+              {itri_serial_to_parallel.at(static_cast<PetscInt>(map_RZ_to_itriangle_0(ix, iy))),
                1.0, backward_weight_0});
       // upper triangle
       coupler_map_0.at(static_cast<size_t>(icell))
           .push_back(
-              {kinetic_mesh_map.at(static_cast<size_t>(map_RZ_to_itriangle_1(ix, iy))),
+              {itri_serial_to_parallel.at(static_cast<PetscInt>(map_RZ_to_itriangle_1(ix, iy))),
                1.0, backward_weight_1});
       icell += 1;
     }
@@ -96,7 +123,8 @@ get_mesh_coupler_constant_weights(DM& dm, std::vector<PetscInt>& kinetic_mesh_ma
 }
 
 std::vector<REAL> get_cell_volumes_on_plasma_mesh(
-    DM& dm, std::vector<PetscInt>& kinetic_mesh_map,
+    DM& dm,
+    const std::map<PetscInt,PetscInt>& itri_serial_to_parallel,
     VantageBasicMeshData& basic_mesh_data,
     std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh, Mesh*& bout_mesh) {
   const size_t num_cells_owned_bout_mesh = get_num_cells_owned_bout_mesh(bout_mesh);
@@ -107,7 +135,7 @@ std::vector<REAL> get_cell_volumes_on_plasma_mesh(
   std::vector<REAL> neso_cell_volumes_bmsh(num_cells_owned_bout_mesh);
   // first, make a mesh_coupler_dg0 object with unit weights
   const std::shared_ptr<PetscInterface::DMPlexMeshCouplerDG0> mesh_coupler_unit_weight =
-      get_mesh_coupler_constant_weights(dm, kinetic_mesh_map, basic_mesh_data, bout_mesh,
+      get_mesh_coupler_constant_weights(dm, itri_serial_to_parallel, basic_mesh_data, bout_mesh,
                                         1.0, 1.0);
   // obtain a list of kinetic mesh cell volumes
   std::vector<double> neso_cell_volumes_kmsh(num_cells_owned_kinetic_mesh);
@@ -121,7 +149,8 @@ std::vector<REAL> get_cell_volumes_on_plasma_mesh(
 }
 
 std::vector<REAL> get_cell_vertices_on_plasma_mesh(
-    DM& dm, std::vector<PetscInt>& kinetic_mesh_map,
+    DM& dm,
+    const std::map<PetscInt,PetscInt>& itri_serial_to_parallel,
     VantageBasicMeshData& basic_mesh_data,
     std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh, Mesh*& bout_mesh) {
   const size_t num_cells_owned_bout_mesh = get_num_cells_owned_bout_mesh(bout_mesh);
@@ -144,12 +173,12 @@ std::vector<REAL> get_cell_vertices_on_plasma_mesh(
   // first, make a mesh_coupler_dg0 object with unit weights from the lower triangle, and zero weight
   // for the upper triangle
   const std::shared_ptr<PetscInterface::DMPlexMeshCouplerDG0> mesh_coupler_0 =
-      get_mesh_coupler_constant_weights(dm, kinetic_mesh_map, basic_mesh_data, bout_mesh,
+      get_mesh_coupler_constant_weights(dm, itri_serial_to_parallel, basic_mesh_data, bout_mesh,
                                         1.0, 0.0);
   // second, make a mesh_coupler_dg0 object with unit weights from the upper triangle, and zero weight
   // for the lower triangle
   const std::shared_ptr<PetscInterface::DMPlexMeshCouplerDG0> mesh_coupler_1 =
-      get_mesh_coupler_constant_weights(dm, kinetic_mesh_map, basic_mesh_data, bout_mesh,
+      get_mesh_coupler_constant_weights(dm, itri_serial_to_parallel, basic_mesh_data, bout_mesh,
                                         0.0, 1.0);
   // obtain the cell coordinates for lower and upper triangles on the kinetic mesh
   std::vector<std::vector<REAL>> cell_vertices;
@@ -279,7 +308,7 @@ REAL cell_length(std::vector<std::vector<REAL>>& cell_vertices, std::size_t iv1,
 }
 
 void check_cell_centres(Options& alloptions, DM& dm,
-                        std::vector<PetscInt>& kinetic_mesh_map,
+                        const std::map<PetscInt,PetscInt>& itri_serial_to_parallel,
                         VantageBasicMeshData& basic_mesh_data,
                         std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh,
                         Mesh*& bout_mesh, BoutReal absolute_tolerance,
@@ -292,7 +321,7 @@ void check_cell_centres(Options& alloptions, DM& dm,
 
   BoutReal meters = get<BoutReal>(alloptions["units"]["meters"]);
   std::vector<REAL> neso_cell_vertices_plasma_mesh = get_cell_vertices_on_plasma_mesh(
-      dm, kinetic_mesh_map, basic_mesh_data, neso_mesh, bout_mesh);
+      dm, itri_serial_to_parallel, basic_mesh_data, neso_mesh, bout_mesh);
   // number of vertices per quad
   const size_t nquad_vertices = 4;
   // expected dimensionality
