@@ -9,17 +9,23 @@ using namespace NESO::Particles;
 // BOUT++ mesh, excluding guard cells
 size_t get_num_cells_owned_bout_mesh(Mesh*& bout_mesh);
 
+// create a map from serial to parallel (distributed) cell indices in the DMPlex
+std::map<PetscInt,PetscInt> get_serial_to_parallel_cell_index_map(
+  PetscInterface::DMPlexMeshCouplerDG0NumberingMap& nm,
+  VantageBasicMeshData& basic_mesh_data,
+  Mesh*& bout_mesh);
+
 // initialise a DMPlexMeshCouplerDG0 for coupling the kinetic mesh to the BOUT++ mesh
 std::shared_ptr<PetscInterface::DMPlexMeshCouplerDG0>
 get_mesh_coupler(DM& dm,
-                PetscInterface::DMPlexMeshCouplerDG0NumberingMap& nm,
+                const std::map<PetscInt,PetscInt>& itri_serial_to_parallel,
                  VantageBasicMeshData& basic_mesh_data, Mesh*& bout_mesh);
 
 // get the cell volumes from the NESO-Particles mesh
 // onto the same degrees of freedom owned by the local BOUT++ mesh
 std::vector<REAL> get_cell_volumes_on_plasma_mesh(
     DM& dm,
-    PetscInterface::DMPlexMeshCouplerDG0NumberingMap& nm,
+    const std::map<PetscInt,PetscInt>& itri_serial_to_parallel,
     VantageBasicMeshData& basic_mesh_data,
     std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh, Mesh*& bout_mesh);
 
@@ -33,7 +39,7 @@ void check_cell_volumes(std::vector<REAL> neso_cell_volumes_bmsh, Mesh*& bout_me
 // Check that the Rxy, Zxy cell centres of BOUT++ match the
 // inferred quad cell centres from the NESO-Particles mesh
 void check_cell_centres(Options& alloptions, DM& dm,
-                        PetscInterface::DMPlexMeshCouplerDG0NumberingMap& nm,
+                        const std::map<PetscInt,PetscInt>& itri_serial_to_parallel,
                         VantageBasicMeshData& basic_mesh_data,
                         std::shared_ptr<PetscInterface::DMPlexInterface>& neso_mesh,
                         Mesh*& bout_mesh, BoutReal absolute_tolerance,

@@ -204,7 +204,10 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
   PetscInterface::generic_distribute(&dm, BoutComm::get(), 1, &sf_kinetic_mesh);
   // get NESO-Particles map derived from sf_kinetic_mesh, for recording indicies of cells after parallelisation
   dm_numbering_map.initalise_post_distribute(dm, sf_kinetic_mesh);
-
+  // save the results for the map of serial to parallel (distributed) cell indices
+  const std::map<PetscInt,PetscInt> itri_cell_map = get_serial_to_parallel_cell_index_map(dm_numbering_map, basic_mesh_data, bout_mesh);
+  // free the dm numbering map from NESO-Particles -- all useful data is stored in itri_cell_map
+  dm_numbering_map.free();
   // label DMPlex boundaries
   PetscInterface::label_all_dmplex_boundaries(dm, PetscInterface::face_sets_label, 100);
   // diagnose the DMPlex by writing to file
@@ -332,7 +335,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
     auto domain = std::make_shared<Domain>(neso_mesh, mapper);
     // get the cell volumes from neso_mesh on the plasma mesh, in the compound index
     neso_mesh_cell_volumes_on_plasma_mesh = get_cell_volumes_on_plasma_mesh(
-        dm, dm_numbering_map, basic_mesh_data, neso_mesh, bout_mesh);
+        dm, itri_cell_map, basic_mesh_data, neso_mesh, bout_mesh);
     // if requested, check that neso_mesh cell volumes are identical
     // to bout_mesh cell volumes, otherwise, exit.
     if (mesh_options["test_dmplex_cell_volumes"].withDefault(true)) {
@@ -340,7 +343,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
     }
     if (mesh_options["test_dmplex_cell_centres"].withDefault(true)) {
       check_cell_centres(
-          alloptions, dm, dm_numbering_map, basic_mesh_data, neso_mesh, bout_mesh,
+          alloptions, dm, itri_cell_map, basic_mesh_data, neso_mesh, bout_mesh,
           mesh_options["dmplex_cell_centre_absolute_tolerance"].withDefault(1.0e-12),
           mesh_options["dmplex_cell_centre_relative_tolerance"].withDefault(0.0));
     }
@@ -438,7 +441,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
     scalar_dof_kinetic_mesh =
         std::vector<REAL>(static_cast<size_t>(num_cells_owned_kinetic_mesh));
     // object for transferring data between kinetic and bout mesh degree-of-freedom vectors
-    mesh_coupler_dg0 = get_mesh_coupler(dm, dm_numbering_map, basic_mesh_data, bout_mesh);
+    mesh_coupler_dg0 = get_mesh_coupler(dm, itri_cell_map, basic_mesh_data, bout_mesh);
     // object for evaluating/projecting particle properties
     // between the kinetic mesh degree-of-freedom vector and particles
     project_eval_dg0 = std::make_shared<PetscInterface::DMPlexProjectEvaluateDG>(
