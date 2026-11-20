@@ -627,7 +627,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
           convert_amjuel_format(iz_energy_rate_amjuel.get_coeffs());
 
       // Remap names: ionisation reaction expects "FLUID_TEMPERATURE" etc.
-      auto ionisation_rate_map = get_default_map();
+      PropertiesMap ionisation_rate_map;
       ionisation_rate_map[default_properties.fluid_density] = "ELECTRON_DENSITY";
       ionisation_rate_map[default_properties.fluid_temperature] = "ELECTRON_TEMPERATURE";
 
@@ -698,7 +698,7 @@ Vantage::Vantage(std::string name, Options& alloptions, Solver* solver)
       auto rec_energy_rate_coeffs =
           convert_amjuel_format(rec_energy_rate_amjuel.get_coeffs());
 
-      auto rec_rate_map = get_default_map();
+      PropertiesMap rec_rate_map;
       rec_rate_map[default_properties.fluid_density] = "ELECTRON_DENSITY";
       rec_rate_map[default_properties.fluid_temperature] = "ELECTRON_TEMPERATURE";
 
